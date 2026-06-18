@@ -4,8 +4,6 @@ import shlex
 import subprocess
 from pathlib import Path
 
-# ── Result type ───────────────────────────────────────────────────────────────
-
 
 class ToolResult:
     def __init__(self, command: str, stdout: str, stderr: str, returncode: int):

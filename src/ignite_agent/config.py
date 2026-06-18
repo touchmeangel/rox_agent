@@ -41,29 +41,16 @@ class ModelConfig:
 class StepConfig:
     model_key: str
     max_iterations: int
-    enabled: bool = True  # Default to True if not specified
+    enabled: bool = True 
 
-
-# ── Hardcoded Step Configurations (Base Defaults) ────────────────────────────
 STEPS: dict[str, StepConfig] = {
     "static_analysis": StepConfig(
         model_key="local",
         max_iterations=4,
     ),
-    "pattern_scan": StepConfig(
-        model_key="local",
-        max_iterations=5,
-        enabled=False,  # Flip when implemented
-    ),
-    "deep_reasoning": StepConfig(
+    "final_report": StepConfig(
         model_key="reasoning",
-        max_iterations=3,
-        enabled=False,
-    ),
-    "report": StepConfig(
-        model_key="local",
-        max_iterations=2,
-        enabled=True,
+        max_iterations=4,
     ),
 }
 

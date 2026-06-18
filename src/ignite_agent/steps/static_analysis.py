@@ -28,7 +28,9 @@ Your task for this step:
   2. Categorize each finding: high / medium / low / informational.
   3. For every HIGH or MEDIUM finding, read the affected source file to confirm
      it is a real issue and not a false positive.
-  4. When you have enough information, mark the step complete.
+  4. CRITICAL: If slither fails to execute due to compilation or framework setup errors,
+     do not loop execution! Pivot immediately to manual file scanning using 'list_sol_files'
+     and 'read_file' to locate vulnerability structures yourself.
 
 The slither JSON schema looks like:
   {{
@@ -62,5 +64,7 @@ Complete findings format:
 Start by running: slither ./ --json -"""
 
     def validate_complete(self, findings: dict) -> bool:
-        """Require at least one severity bucket to be present."""
-        return any(k in findings for k in ("high", "medium", "low", "informational"))
+        """Require at least one severity bucket or explicit warning fallback to be present."""
+        return any(
+            k in findings for k in ("high", "medium", "low", "informational", "warning")
+        )
