@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import subprocess
+import shlex
 from pathlib import Path
+
 
 # ── Result type ───────────────────────────────────────────────────────────────
 
@@ -42,18 +44,26 @@ class ToolResult:
 
 
 def run_command(command: str, cwd: str, timeout: int = 180) -> ToolResult:
+    """
+    Safe subprocess runner:
+    - uses shlex.split for argument parsing
+    """
     try:
+        cmd_list = shlex.split(command)
+
         result = subprocess.run(
-            command,
-            shell=True,
+            cmd_list,
+            shell=False,
             cwd=cwd,
             capture_output=True,
             text=True,
             timeout=timeout,
         )
         return ToolResult(command, result.stdout, result.stderr, result.returncode)
+
     except subprocess.TimeoutExpired:
         return ToolResult(command, "", f"Timed out after {timeout}s", 1)
+
     except Exception as exc:
         return ToolResult(command, "", str(exc), 1)
 
@@ -104,7 +114,6 @@ def shell(project_path: str, command: str) -> ToolResult:
 
 
 # ── Dispatcher ────────────────────────────────────────────────────────────────
-# The agent produces {"tool": "<name>", "args": "..."} — this maps it to a fn.
 
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "slither": "Run slither static analysis. args: extra flags, e.g. './ --json -' or '--print call-graph ./'",
