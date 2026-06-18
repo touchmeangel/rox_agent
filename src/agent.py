@@ -57,7 +57,7 @@ def run_audit(
     project_path: str, output_path: str | None = None
 ) -> dict[str, StepResult]:
     print("\n" + "═" * 70)
-    print("                https://github.com/touchmeangel/ignite")
+    print("                https://github.com/touchmeangel/ignite_agent")
     print("═" * 70)
     print(f"📁 Project : {project_path}")
     print(f"⏱️  Started : {datetime.now().isoformat(timespec='seconds')}")
