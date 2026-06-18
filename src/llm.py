@@ -10,7 +10,9 @@ console = Console()
 class LLMClient:
     def __init__(self, model_key: str):
         if model_key not in MODELS:
-            raise ValueError(f"Unknown model key '{model_key}'. Available: {list(MODELS)}")
+            raise ValueError(
+                f"Unknown model key '{model_key}'. Available: {list(MODELS)}"
+            )
         self.key = model_key
         self.cfg: ModelConfig = MODELS[model_key]
 
@@ -27,11 +29,13 @@ class LLMClient:
         from openai import OpenAI
 
         if not self.cfg.base_url:
-            raise ValueError(f"model '{self.key}' has provider=ollama but no base_url configured")
+            raise ValueError(
+                f"model '{self.key}' has provider=ollama but no base_url configured"
+            )
 
         client = OpenAI(
             base_url=f"{self.cfg.base_url}/v1",
-            api_key="ollama",          # Ollama ignores the key but SDK requires it
+            api_key="ollama",  # Ollama ignores the key but SDK requires it
         )
         resp = client.chat.completions.create(
             model=self.cfg.model,
@@ -51,7 +55,9 @@ class LLMClient:
 
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
-            raise EnvironmentError("ANTHROPIC_API_KEY is not set (check your .env file)")
+            raise EnvironmentError(
+                "ANTHROPIC_API_KEY is not set (check your .env file)"
+            )
 
         client = anthropic.Anthropic(api_key=api_key)
 
@@ -61,7 +67,7 @@ class LLMClient:
         if stream:
             full = ""
             t0 = time.perf_counter()
-            
+
             # Using rich status spinner for the live feed
             with console.status("[bold green]Streaming response...") as status:
                 with client.messages.stream(
@@ -77,7 +83,7 @@ class LLMClient:
                         status.update(
                             f"[bold green]Streaming...[/bold green] Received {len(full)} chars ({elapsed:.2f}s)"
                         )
-            
+
             console.print("[bold blue]✓ Done streaming from Anthropic[/bold blue]")
             return full
 
@@ -106,7 +112,7 @@ class LLMClient:
     def _collect_stream_openai(stream) -> str:
         full = ""
         t0 = time.perf_counter()
-        
+
         # Using rich status spinner for the OpenAI/Ollama stream
         with console.status("[bold green]Streaming response...") as status:
             for chunk in stream:
@@ -117,7 +123,7 @@ class LLMClient:
                     status.update(
                         f"[bold green]Streaming...[/bold green] Received {len(full)} chars ({elapsed:.2f}s)"
                     )
-                    
+
         console.print("[bold blue]✓ Done streaming from OpenAI/Ollama[/bold blue]")
         return full
 

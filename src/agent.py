@@ -20,6 +20,7 @@ from steps.base import StepResult
 
 # ── Runner ────────────────────────────────────────────────────────────────────
 
+
 def run_audit(project_path: str = PROJECT_PATH) -> dict[str, StepResult]:
     print(f"\n{'═' * 60}")
     print(f"  Solidity Audit Agent")
@@ -27,7 +28,7 @@ def run_audit(project_path: str = PROJECT_PATH) -> dict[str, StepResult]:
     print(f"  Started : {datetime.now().isoformat(timespec='seconds')}")
     print(f"{'═' * 60}")
 
-    context: dict = {}           # findings passed step → step
+    context: dict = {}  # findings passed step → step
     results: dict[str, StepResult] = {}
 
     for StepClass in PIPELINE:
@@ -38,8 +39,8 @@ def run_audit(project_path: str = PROJECT_PATH) -> dict[str, StepResult]:
         # Pass this step's output to subsequent steps
         context[step.name] = {
             "findings": result.findings,
-            "summary":  result.summary,
-            "success":  result.success,
+            "summary": result.summary,
+            "success": result.success,
         }
 
         if not result.success:
@@ -55,10 +56,10 @@ def _write_results(results: dict[str, StepResult], project_path: str) -> None:
         "generated_at": datetime.now().isoformat(),
         "steps": {
             name: {
-                "success":        r.success,
-                "iterations":     r.iterations_used,
-                "summary":        r.summary,
-                "findings":       r.findings,
+                "success": r.success,
+                "iterations": r.iterations_used,
+                "summary": r.summary,
+                "findings": r.findings,
             }
             for name, r in results.items()
         },

@@ -5,6 +5,7 @@ from pathlib import Path
 
 # ── Result type ───────────────────────────────────────────────────────────────
 
+
 class ToolResult:
     def __init__(self, command: str, stdout: str, stderr: str, returncode: int):
         self.command = command
@@ -39,6 +40,7 @@ class ToolResult:
 
 # ── Low-level runner ──────────────────────────────────────────────────────────
 
+
 def run_command(command: str, cwd: str, timeout: int = 180) -> ToolResult:
     try:
         result = subprocess.run(
@@ -58,6 +60,7 @@ def run_command(command: str, cwd: str, timeout: int = 180) -> ToolResult:
 
 # ── Named tools ───────────────────────────────────────────────────────────────
 
+
 def slither(project_path: str, args: str = "./") -> ToolResult:
     """Run slither. Use --json - for machine-readable output."""
     return run_command(f"slither {args}", cwd=project_path, timeout=240)
@@ -74,7 +77,9 @@ def git(project_path: str, args: str = "log --oneline -10") -> ToolResult:
 def read_file(project_path: str, relative_path: str) -> ToolResult:
     full = Path(project_path) / relative_path
     if not full.exists():
-        return ToolResult(f"cat {relative_path}", "", f"File not found: {relative_path}", 1)
+        return ToolResult(
+            f"cat {relative_path}", "", f"File not found: {relative_path}", 1
+        )
     try:
         content = full.read_text(errors="replace")
         return ToolResult(f"cat {relative_path}", content, "", 0)
@@ -102,23 +107,34 @@ def shell(project_path: str, command: str) -> ToolResult:
 # The agent produces {"tool": "<name>", "args": "..."} — this maps it to a fn.
 
 TOOL_DESCRIPTIONS: dict[str, str] = {
-    "slither":        "Run slither static analysis. args: extra flags, e.g. './ --json -' or '--print call-graph ./'",
-    "forge":          "Run forge. args: subcommand + flags, e.g. 'build', 'coverage', 'test -vvv'",
-    "git":            "Run git. args: subcommand, e.g. 'log --oneline -20'",
-    "read_file":      "Read a source file. args: path relative to project root, e.g. 'src/Vault.sol'",
+    "slither": "Run slither static analysis. args: extra flags, e.g. './ --json -' or '--print call-graph ./'",
+    "forge": "Run forge. args: subcommand + flags, e.g. 'build', 'coverage', 'test -vvv'",
+    "git": "Run git. args: subcommand, e.g. 'log --oneline -20'",
+    "read_file": "Read a source file. args: path relative to project root, e.g. 'src/Vault.sol'",
     "list_sol_files": "List all .sol files. args: optional glob, default '**/*.sol'",
-    "shell":          "Run any shell command. args: full command string",
+    "shell": "Run any shell command. args: full command string",
 }
 
 
 def dispatch(tool_name: str, args: str, project_path: str) -> ToolResult:
     """Route a model tool-call to the right function."""
     match tool_name:
-        case "slither":        return slither(project_path, args or "./")
-        case "forge":          return forge(project_path, args or "build")
-        case "git":            return git(project_path, args or "log --oneline -10")
-        case "read_file":      return read_file(project_path, args)
-        case "list_sol_files": return list_sol_files(project_path, args or "**/*.sol")
-        case "shell":          return shell(project_path, args)
+        case "slither":
+            return slither(project_path, args or "./")
+        case "forge":
+            return forge(project_path, args or "build")
+        case "git":
+            return git(project_path, args or "log --oneline -10")
+        case "read_file":
+            return read_file(project_path, args)
+        case "list_sol_files":
+            return list_sol_files(project_path, args or "**/*.sol")
+        case "shell":
+            return shell(project_path, args)
         case _:
-            return ToolResult(tool_name, "", f"Unknown tool '{tool_name}'. Available: {list(TOOL_DESCRIPTIONS)}", 1)
+            return ToolResult(
+                tool_name,
+                "",
+                f"Unknown tool '{tool_name}'. Available: {list(TOOL_DESCRIPTIONS)}",
+                1,
+            )

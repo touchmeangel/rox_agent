@@ -150,7 +150,7 @@ STRICT RULES
 - Chains do NOT replace findings
 - Uncertainty must be grounded in observed limitations of prior analysis
 """
-    
+
     def validate_complete(self, findings: dict) -> bool:
         required = {
             "final_risk_rating",

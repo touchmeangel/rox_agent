@@ -107,7 +107,9 @@ Invalid JSON or unknown status will cause a retry prompt."""
 
     def initial_prompt(self, context: dict) -> str:
         """First user message. Must be implemented by each step."""
-        raise NotImplementedError(f"{self.__class__.__name__} must implement initial_prompt()")
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement initial_prompt()"
+        )
 
     def validate_complete(self, findings: dict) -> bool:
         """
@@ -123,11 +125,13 @@ Invalid JSON or unknown status will cause a retry prompt."""
 
         messages: list[dict] = [
             {"role": "system", "content": self.system_prompt()},
-            {"role": "user",   "content": self.initial_prompt(context)},
+            {"role": "user", "content": self.initial_prompt(context)},
         ]
 
         print(f"\n{'─' * 60}")
-        print(f"[{self.name}] starting  model={self.cfg.model_key}  max_iter={self.cfg.max_iterations}")
+        print(
+            f"[{self.name}] starting  model={self.cfg.model_key}  max_iter={self.cfg.max_iterations}"
+        )
 
         for i in range(self.cfg.max_iterations):
             print(f"\n[{self.name}] iteration {i + 1}/{self.cfg.max_iterations}")
@@ -140,14 +144,18 @@ Invalid JSON or unknown status will cause a retry prompt."""
 
             # ── Could not parse ──
             if parsed is None:
-                print(f"[{self.name}] ⚠  response was not valid JSON — asking model to retry")
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        "Your response was not valid JSON. "
-                        "Reply with only a JSON object matching one of the two allowed shapes."
-                    ),
-                })
+                print(
+                    f"[{self.name}] ⚠  response was not valid JSON — asking model to retry"
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "Your response was not valid JSON. "
+                            "Reply with only a JSON object matching one of the two allowed shapes."
+                        ),
+                    }
+                )
                 continue
 
             status = parsed.get("status")
@@ -166,16 +174,18 @@ Invalid JSON or unknown status will cause a retry prompt."""
                         messages=messages,
                     )
                 # Findings failed validation — nudge the model
-                messages.append({
-                    "role": "user",
-                    "content": "The findings are incomplete. Continue your analysis.",
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "The findings are incomplete. Continue your analysis.",
+                    }
+                )
                 continue
 
             # ── Tool call ──
             if status == "tool_call":
-                tool   = parsed.get("tool", "")
-                args   = parsed.get("args", "")
+                tool = parsed.get("tool", "")
+                args = parsed.get("args", "")
                 reason = parsed.get("reason", "")
                 print(f"[{self.name}] tool={tool!r}  args={args!r}")
                 print(f"[{self.name}] reason: {reason}")
@@ -183,20 +193,24 @@ Invalid JSON or unknown status will cause a retry prompt."""
                 result = dispatch(tool, args, self.project_path)
                 output = result.truncated(max_chars=10_000)
 
-                messages.append({
-                    "role": "user",
-                    "content": f"Tool output:\n```\n{output}\n```\n\nContinue your analysis.",
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"Tool output:\n```\n{output}\n```\n\nContinue your analysis.",
+                    }
+                )
                 continue
 
             # ── Unknown status ──
-            messages.append({
-                "role": "user",
-                "content": (
-                    f"Unknown status value '{status}'. "
-                    "Use 'tool_call' to run a tool, or 'complete' when done."
-                ),
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        f"Unknown status value '{status}'. "
+                        "Use 'tool_call' to run a tool, or 'complete' when done."
+                    ),
+                }
+            )
 
         # Max iterations exhausted
         print(f"[{self.name}] ⚠  max iterations reached without completing")
