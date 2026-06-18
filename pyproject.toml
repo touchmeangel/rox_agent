@@ -22,7 +22,7 @@ dev = [
 ]
 
 [project.scripts]
-ignite_agent = "src/agent:main"
+ignite_agent = "src.agent:main"
 
 [tool.ruff]
 line-length = 88
