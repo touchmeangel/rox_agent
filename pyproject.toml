@@ -16,6 +16,7 @@ select = [
 ignore = [
     "E501",  # line too long (formatter handles this)
     "S101",  # use of assert (common in tests)
+    "S603",  # use of subprocess (false positives in our context)
 ]
 
 [tool.ruff.lint.per-file-ignores]

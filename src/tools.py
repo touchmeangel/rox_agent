@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import subprocess
 import shlex
+import subprocess
 from pathlib import Path
-
 
 # ── Result type ───────────────────────────────────────────────────────────────
 
