@@ -46,11 +46,11 @@ class StepConfig:
 STEPS: dict[str, StepConfig] = {
     "static_analysis": StepConfig(
         model_key="local",
-        max_iterations=4,
+        max_iterations=8,
     ),
     "final_report": StepConfig(
         model_key="reasoning",
-        max_iterations=4,
+        max_iterations=2,
     ),
 }
 
