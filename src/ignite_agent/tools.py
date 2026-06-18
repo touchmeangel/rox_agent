@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 
 from rich.console import Console
@@ -126,11 +127,17 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
 }
 
 
-def dispatch(tool_name: str, args: str, project_path: str) -> ToolResult:
-    """Route a model tool-call to the right function and log it visually."""
+def _log_raw(text: str):
+    """Bypass rich and print directly to sys.stdout so we don't break the host stream window."""
+    sys.stdout.write(text + "\n")
+    sys.stdout.flush()
 
-    console.print(
-        f"  [bold #83a598]⮑  Action:[/bold #83a598] [cyan]{tool_name}[/cyan] [dim]({args})[/dim]"
+
+def dispatch(tool_name: str, args: str, project_path: str) -> ToolResult:
+    """Route a model tool-call to the right function and log it visually within stream limits."""
+
+    _log_raw(
+        f"  \033[1;36m⮑  Action:\033[0m \033[36m{tool_name}\033[0m \033[38;5;245m({args})\033[0m"
     )
 
     match tool_name:
@@ -155,15 +162,18 @@ def dispatch(tool_name: str, args: str, project_path: str) -> ToolResult:
             )
 
     if not result.success:
-        console.print(
-            f"     [red]✗ Failed[/red] [dim](exit code {result.returncode})[/dim]"
+        _log_raw(
+            f"     \033[31m✗ Failed\033[0m \033[38;5;245m(exit code {result.returncode})\033[0m"
         )
-        console.print(f"[dim red]{result.truncated(max_chars=1000)}[/dim red]\n")
+        snippet = result.stderr.replace("\n", " ↵ ")
+        _log_raw(f"\033[38;5;245m     {snippet}...\033[0m\n")
     else:
         out_len = len(result.stdout) + len(result.stderr)
-        console.print(
-            f"     [green]✓ Success[/green] [dim]({out_len} bytes returned to agent)[/dim]"
+        _log_raw(
+            f"     \033[32m✓ Success\033[0m \033[38;5;245m({out_len} bytes returned to agent)\033[0m"
         )
-        console.print(f"[dim]{result.truncated(max_chars=1000)}[/dim]\n")
+        raw_text = result.stdout if result.stdout else result.stderr
+        snippet = raw_text.replace("\n", " ↵ ")
+        _log_raw(f"\033[38;5;245m     {snippet}...\033[0m\n")
 
     return result

@@ -44,27 +44,34 @@ class LLMClient:
             case _:
                 raise ValueError(f"Unknown provider: {self.cfg.provider}")
 
-    def _stream_render(self, delta_content: str, buffer: list[str]) -> str:
-        """Processes and prints data inside an eye-safe, tanned sliding window."""
+    def _render_stream(self, chunk_generator) -> str:
+        """Streams the LLM output as a single-line sliding window to prevent terminal flooding."""
         import sys
 
-        from rich.markup import escape
+        full_text = ""
+        window_size = 100
 
-        buffer.append(delta_content)
+        for text in chunk_generator:
+            if text:
+                full_text += text
 
-        safe_content = escape(delta_content)
+                flat_text = full_text.replace("\n", " ↵ ")
 
-        self.console.print(f"[{STREAM_STYLE}]{safe_content}[/]", end="")
+                display_text = flat_text[-window_size:]
 
+                sys.stdout.write(
+                    f"\r  \033[38;5;245m...{display_text:<{window_size}}\033[0m"
+                )
+                sys.stdout.flush()
+
+        sys.stdout.write("\r\033[K")
         sys.stdout.flush()
 
-        return delta_content
+        return full_text
 
     def _openai_compat(
         self, messages: list[dict], stream: bool, base_url: str | None, api_key: str
     ) -> str:
-        import sys
-
         from openai import OpenAI
 
         kwargs = {"api_key": api_key}
@@ -81,59 +88,47 @@ class LLMClient:
         )
 
         if stream:
-            full = ""
-            for chunk in resp:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    delta = chunk.choices[0].delta.content
-                    full += delta
 
-                    sys.stdout.write(f"\033[38;5;245m{delta}\033[0m")
-                    sys.stdout.flush()
+            def openai_generator():
+                for chunk in resp:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
 
-            print()
-            return full
+            return self._render_stream(openai_generator())
 
         return resp.choices[0].message.content or ""
 
     # ── Anthropic ─────────────────────────────────────────────────────────────
 
-    def _anthropic(self, messages: list[dict], stream: bool) -> str:
-        import anthropic
+    def _anthropic_compat(self, messages: list[dict], stream: bool) -> str:
+        from anthropic import Anthropic
 
-        key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not key:
-            raise OSError("ANTHROPIC_API_KEY is not set")
+        client = Anthropic(api_key=self.cfg.api_key)
 
-        client = anthropic.Anthropic(api_key=key)
-        system, filtered = "", []
-        for m in messages:
-            if m["role"] == "system" and not system:
-                system = m["content"]
-            else:
-                filtered.append(m)
+        system_prompt = next(
+            (m["content"] for m in messages if m["role"] == "system"), ""
+        )
+        api_messages = [m for m in messages if m["role"] != "system"]
 
         if stream:
-            full = ""
-            history_buffer = []
-            with client.messages.stream(
-                model=self.cfg.model,
-                max_tokens=self.cfg.max_tokens,
-                system=system,
-                messages=filtered,
-                temperature=self.cfg.temperature,
-            ) as s:
-                for text in s.text_stream:
-                    self._stream_render(text, history_buffer)
-                    full += text
-            print()
-            return full
+            def anthropic_generator():
+                with client.messages.stream(
+                    model=self.cfg.model,
+                    max_tokens=self.cfg.max_tokens,
+                    temperature=self.cfg.temperature,
+                    system=system_prompt,
+                    messages=api_messages,
+                ) as stream_obj:
+                    yield from stream_obj.text_stream
+
+            return self._render_stream(anthropic_generator())
 
         resp = client.messages.create(
             model=self.cfg.model,
             max_tokens=self.cfg.max_tokens,
-            system=system,
-            messages=filtered,
             temperature=self.cfg.temperature,
+            system=system_prompt,
+            messages=api_messages,
         )
         return resp.content[0].text
 

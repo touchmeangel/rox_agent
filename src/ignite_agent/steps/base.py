@@ -138,30 +138,17 @@ Invalid JSON or unknown status will cause a retry prompt."""
             {"role": "user", "content": self.initial_prompt(context)},
         ]
 
-        print(f"\n{'─' * 60}")
-        print(
-            f"[{self.name}] starting  model={self.cfg.model_key}  max_iter={self.cfg.max_iterations}"
-        )
-
         for i in range(self.cfg.max_iterations):
-            print(f"\n[{self.name}] iteration {i + 1}/{self.cfg.max_iterations}")
-
             raw = self.llm.chat(messages, stream=True)
             parsed = _extract_json(raw)
 
             messages.append({"role": "assistant", "content": raw})
 
             if parsed is None:
-                print(
-                    f"[{self.name}] ⚠  response was not valid JSON — asking model to retry"
-                )
                 messages.append(
                     {
                         "role": "user",
-                        "content": (
-                            "Your response was not valid JSON. "
-                            "Reply with only a JSON object matching one of the two allowed shapes."
-                        ),
+                        "content": "Your response was not valid JSON. Reply with only a JSON object.",
                     }
                 )
                 continue
@@ -171,7 +158,6 @@ Invalid JSON or unknown status will cause a retry prompt."""
             if status == "failed":
                 reason = parsed.get("reason", "unknown failure")
                 error = parsed.get("error", "unknown error")
-
                 return StepResult(
                     step_name=self.name,
                     success=False,
@@ -184,7 +170,6 @@ Invalid JSON or unknown status will cause a retry prompt."""
             if status == "complete":
                 findings = parsed.get("findings", {})
                 if self.validate_complete(findings):
-                    print(f"[{self.name}] ✓ complete after {i + 1} iteration(s)")
                     return StepResult(
                         step_name=self.name,
                         success=True,
@@ -204,11 +189,9 @@ Invalid JSON or unknown status will cause a retry prompt."""
             if status == "tool_call":
                 tool = parsed.get("tool", "")
                 args = parsed.get("args", "")
-                reason = parsed.get("reason", "")
-                print(f"[{self.name}] tool={tool!r}  args={args!r}")
-                print(f"[{self.name}] reason: {reason}")
 
                 result = dispatch(tool, args, self.project_path)
+
                 tool_payload = {
                     "tool": tool,
                     "args": args,
@@ -217,37 +200,26 @@ Invalid JSON or unknown status will cause a retry prompt."""
                     "stdout": result.stdout,
                     "stderr": result.stderr,
                 }
-
                 messages.append(
                     {"role": "user", "content": json.dumps(tool_payload, indent=2)}
                 )
+
                 if not result.success:
                     messages.append(
                         {
                             "role": "user",
-                            "content": (
-                                "TOOL EXECUTION FAILED.\n"
-                                "You must now choose ONE:\n"
-                                "- retry tool with corrected args\n"
-                                "- explicitly conclude analysis is incomplete\n"
-                            ),
+                            "content": "TOOL EXECUTION FAILED.\nChoose ONE: retry tool with corrected args or conclude failure.",
                         }
                     )
-
                 continue
 
             messages.append(
                 {
                     "role": "user",
-                    "content": (
-                        f"Unknown status value '{status}'. "
-                        "Use 'tool_call' to run a tool, or 'complete' when done."
-                    ),
+                    "content": f"Unknown status value '{status}'. Use 'tool_call' or 'complete'.",
                 }
             )
 
-        # Max iterations exhausted
-        print(f"[{self.name}] ⚠  max iterations reached without completing")
         return StepResult(
             step_name=self.name,
             success=False,

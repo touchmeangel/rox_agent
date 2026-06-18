@@ -91,9 +91,7 @@ def run_agent(
         }
 
         status = (
-            "[green]✓ completed[/green]"
-            if result.success
-            else "[red]⚠ incomplete[/red]"
+            "[green]✓ completed[/green]" if result.success else "[red]† failed[/red]"
         )
         console.print(
             f"\n[dim]#[/dim] Phase {status} using [yellow]{result.iterations_used}[/yellow] reasoning iterations."
