@@ -24,8 +24,11 @@ from steps.base import StepResult
 # CLI
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def parse_args():
-    parser = argparse.ArgumentParser(description="EVM Smart Contract Audit Agent | ignite")
+    parser = argparse.ArgumentParser(
+        description="EVM Smart Contract Audit Agent | ignite"
+    )
 
     parser.add_argument(
         "--project-path",
@@ -50,7 +53,10 @@ def parse_args():
 # Runner
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_audit(project_path: str, output_path: str | None = None) -> dict[str, StepResult]:
+
+def run_audit(
+    project_path: str, output_path: str | None = None
+) -> dict[str, StepResult]:
     print("\n" + "═" * 70)
     print("                https://github.com/touchmeangel/ignite")
     print("═" * 70)
@@ -93,6 +99,7 @@ def run_audit(project_path: str, output_path: str | None = None) -> dict[str, St
 # Output writer
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     output = {
         "generated_at": datetime.now().isoformat(),
@@ -120,6 +127,7 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
 # Pretty summary
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _print_summary(results: dict[str, StepResult], output_path: str | None):
     total_steps = len(results)
     failed_steps = sum(1 for r in results.values() if not r.success)
@@ -130,7 +138,9 @@ def _print_summary(results: dict[str, StepResult], output_path: str | None):
 
     for name, r in results.items():
         status = "✓" if r.success else "⚠"
-        print(f"{status} {name:<20} | iterations: {r.iterations_used:<3} | success: {r.success}")
+        print(
+            f"{status} {name:<20} | iterations: {r.iterations_used:<3} | success: {r.success}"
+        )
 
     print("─" * 70)
     print(f"Steps total   : {total_steps}")
@@ -138,6 +148,7 @@ def _print_summary(results: dict[str, StepResult], output_path: str | None):
     print(f"Output file   : {output_path if output_path else 'NOT SAVED'}")
 
     print("═" * 70 + "\n")
+
 
 if __name__ == "__main__":
     args = parse_args()
