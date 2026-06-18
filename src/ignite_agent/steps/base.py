@@ -75,6 +75,9 @@ class BaseStep:
         self.llm: LLMClient = get_llm(cfg.model_key)
         self.project_path: str = PROJECT_PATH
 
+    def select_context(self, global_context: dict) -> dict:
+        return global_context
+
     def system_prompt(self) -> str:
         tools_block = "\n".join(
             f"  {name}: {desc}" for name, desc in TOOL_DESCRIPTIONS.items()

@@ -63,7 +63,8 @@ def run_audit(
         print(f"\n▶ Running step: {step.name}")
         print("-" * 70)
 
-        result = step.run(context)
+        filtered_context = step.select_context(context)
+        result = step.run(filtered_context)
         results[step.name] = result
 
         context[step.name] = {
