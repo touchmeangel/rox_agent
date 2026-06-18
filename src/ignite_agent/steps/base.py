@@ -170,18 +170,18 @@ Invalid JSON or unknown status will cause a retry prompt."""
             
             if status == "failed":
                 reason = parsed.get("reason", "unknown failure")
+                error = parsed.get("error", "unknown error")
                 
                 return StepResult(
                     step_name=self.name,
                     success=False,
                     findings={
                         "error": {
-                            "reason": reason,
-                            "tool": parsed.get("tool"),
-                            "args": parsed.get("args"),
+                            "message": error,
+                            "reason": reason
                         }
                     },
-                    summary=f"[FAILED] {parsed.get('tool')} — {reason}",
+                    summary=f"[FAILED] {reason}",
                     iterations_used=i + 1,
                     messages=messages,
                 )
