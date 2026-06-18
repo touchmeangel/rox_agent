@@ -105,7 +105,7 @@ Two allowed shapes:
     "findings": {{ ... }},
     "summary":  "<concise paragraph>"
   }}
-  
+
   Step failed:
   {{
     "status": "failed",
@@ -167,20 +167,15 @@ Invalid JSON or unknown status will cause a retry prompt."""
                 continue
 
             status = parsed.get("status")
-            
+
             if status == "failed":
                 reason = parsed.get("reason", "unknown failure")
                 error = parsed.get("error", "unknown error")
-                
+
                 return StepResult(
                     step_name=self.name,
                     success=False,
-                    findings={
-                        "error": {
-                            "message": error,
-                            "reason": reason
-                        }
-                    },
+                    findings={"error": {"message": error, "reason": reason}},
                     summary=f"[FAILED] {reason}",
                     iterations_used=i + 1,
                     messages=messages,
@@ -223,21 +218,22 @@ Invalid JSON or unknown status will cause a retry prompt."""
                     "stderr": result.stderr,
                 }
 
-                messages.append({
-                    "role": "user",
-                    "content": json.dumps(tool_payload, indent=2)
-                })
+                messages.append(
+                    {"role": "user", "content": json.dumps(tool_payload, indent=2)}
+                )
                 if not result.success:
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            "TOOL EXECUTION FAILED.\n"
-                            "You must now choose ONE:\n"
-                            "- retry tool with corrected args\n"
-                            "- explicitly conclude analysis is incomplete\n"
-                        )
-                    })
-                
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "TOOL EXECUTION FAILED.\n"
+                                "You must now choose ONE:\n"
+                                "- retry tool with corrected args\n"
+                                "- explicitly conclude analysis is incomplete\n"
+                            ),
+                        }
+                    )
+
                 continue
 
             messages.append(

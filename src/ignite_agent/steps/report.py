@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
+
 from ignite_agent.steps.base import BaseStep
+
 
 class FinalReportStep(BaseStep):
     name = "final_report"
 
     def select_context(self, global_context: dict) -> dict:
         return {}
-    
+
     def initial_prompt(self, context: dict) -> str:
         return f"""
 You are producing the FINAL SECURITY AUDIT REPORT for a Web3 / EVM project.

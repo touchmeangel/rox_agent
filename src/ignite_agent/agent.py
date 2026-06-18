@@ -3,10 +3,6 @@ Audit orchestrator.
 
 Runs steps in order. Each step receives the accumulated findings from all
 prior steps as `context`.
-
-Usage:
-    python agent.py --project-path /my/contracts
-    python agent.py --project-path /my/contracts --output results.json
 """
 
 from __future__ import annotations
@@ -16,52 +12,73 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from rich.console import Console
+from rich.text import Text
+
 from ignite_agent.pipeline import PIPELINE
 from ignite_agent.steps.base import StepResult
+
+console = Console()
+
+ASCII_LOGO = """
+hiii
+"""
+
+
+def print_welcome_banner():
+    """Renders a clean, aesthetic startup interface."""
+    logo_text = Text(ASCII_LOGO, style="dim white")
+
+    meta_text = Text.assemble(
+        (
+            "\n──────────────────────────────────────────────────────────────\n",
+            "dim #444444",
+        ),
+        (" ENGINE ", "bold bg:#333333 #ffffff"),
+        ("  ignite EVM Autonomous Agent\n", "bold #b8bb26"),
+        (" SOURCE ", "bold bg:#333333 #ffffff"),
+        ("  https://github.com/touchmeangel/ignite_agent\n", "italic #83a598"),
+        (" TIME   ", "bold bg:#333333 #ffffff"),
+        f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n",
+        (
+            "──────────────────────────────────────────────────────────────",
+            "dim #444444",
+        ),
+    )
+
+    console.print(logo_text)
+    console.print(meta_text)
+    console.print()
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description="EVM Smart Contract Audit Agent | ignite"
     )
-
     parser.add_argument(
-        "--project-path",
-        type=str,
-        required=False,
-        default=".",
-        help="Path to the smart contract project",
+        "--project-path", type=str, required=False, default=".", help="Path to project"
     )
-
     parser.add_argument(
-        "--output",
-        type=str,
-        required=False,
-        default=None,
-        help="Optional path to save audit JSON results",
+        "--output", type=str, required=False, default=None, help="JSON path output"
     )
-
     return parser.parse_args()
 
 
-def run_audit(
+def run_agent(
     project_path: str, output_path: str | None = None
 ) -> dict[str, StepResult]:
-    print("\n" + "═" * 70)
-    print("                https://github.com/touchmeangel/ignite_agent")
-    print("═" * 70)
-    print(f"📁 Project : {project_path}")
-    print(f"⏱️  Started : {datetime.now().isoformat(timespec='seconds')}")
-    print("═" * 70 + "\n")
-
     context: dict = {}
     results: dict[str, StepResult] = {}
 
     for StepClass in PIPELINE:
         step = StepClass()
 
-        print(f"\n▶ Running step: {step.name}")
-        print("-" * 70)
+        console.print(
+            f"\n[bold #fe8019]▶[/bold #fe8019] [bold white]Running node processing phase:[/bold white] [cyan]{step.name}[/cyan]"
+        )
+        console.print(
+            "[dim]#─────────────────────────────────────────────────────────────────────[/dim]"
+        )
 
         filtered_context = step.select_context(context)
         result = step.run(filtered_context)
@@ -73,14 +90,20 @@ def run_audit(
             "success": result.success,
         }
 
-        status = "✓ completed" if result.success else "⚠ incomplete"
-        print(f"\n[{step.name}] {status} in {result.iterations_used} iterations")
-        print("-" * 70)
+        status = (
+            "[green]✓ completed[/green]"
+            if result.success
+            else "[red]⚠ incomplete[/red]"
+        )
+        console.print(
+            f"\n[dim]#[/dim] Phase {status} using [yellow]{result.iterations_used}[/yellow] reasoning iterations."
+        )
+        console.print(
+            "[dim]#─────────────────────────────────────────────────────────────────────[/dim]\n"
+        )
 
     if output_path:
         _write_results(results, output_path)
-
-    _print_summary(results, output_path)
 
     return results
 
@@ -98,44 +121,15 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
             for name, r in results.items()
         },
     }
-
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(output, indent=2))
 
-    print("\n" + "═" * 70)
-    print(f"💾 Audit results saved → {path}")
-    print("═" * 70 + "\n")
-
-
-def _print_summary(results: dict[str, StepResult], output_path: str | None):
-    total_steps = len(results)
-    failed_steps = sum(1 for r in results.values() if not r.success)
-
-    print("\n" + "═" * 70)
-    print("                     📊 AUDIT SUMMARY")
-    print("═" * 70)
-
-    for name, r in results.items():
-        status = "✓" if r.success else "⚠"
-        print(
-            f"{status} {name:<20} | iterations: {r.iterations_used:<3} | success: {r.success}"
-        )
-
-    print("─" * 70)
-    print(f"Steps total   : {total_steps}")
-    print(f"Steps failed  : {failed_steps}")
-    print(f"Output file   : {output_path if output_path else 'NOT SAVED'}")
-
-    print("═" * 70 + "\n")
-
 
 def main():
     args = parse_args()
-    run_audit(
-        project_path=args.project_path,
-        output_path=args.output,
-    )
+    print_welcome_banner()
+    run_agent(project_path=args.project_path, output_path=args.output)
 
 
 if __name__ == "__main__":

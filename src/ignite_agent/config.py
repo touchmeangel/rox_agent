@@ -41,7 +41,8 @@ class ModelConfig:
 class StepConfig:
     model_key: str
     max_iterations: int
-    enabled: bool = True 
+    enabled: bool = True
+
 
 STEPS: dict[str, StepConfig] = {
     "static_analysis": StepConfig(

@@ -4,6 +4,10 @@ import shlex
 import subprocess
 from pathlib import Path
 
+from rich.console import Console
+
+console = Console()
+
 
 class ToolResult:
     def __init__(self, command: str, stdout: str, stderr: str, returncode: int):
@@ -123,24 +127,43 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
 
 
 def dispatch(tool_name: str, args: str, project_path: str) -> ToolResult:
-    """Route a model tool-call to the right function."""
+    """Route a model tool-call to the right function and log it visually."""
+
+    console.print(
+        f"  [bold #83a598]⮑  Action:[/bold #83a598] [cyan]{tool_name}[/cyan] [dim]({args})[/dim]"
+    )
+
     match tool_name:
         case "slither":
-            return slither(project_path, args or "./")
+            result = slither(project_path, args or "./")
         case "forge":
-            return forge(project_path, args or "build")
+            result = forge(project_path, args or "build")
         case "git":
-            return git(project_path, args or "log --oneline -10")
+            result = git(project_path, args or "log --oneline -10")
         case "read_file":
-            return read_file(project_path, args)
+            result = read_file(project_path, args)
         case "list_sol_files":
-            return list_sol_files(project_path, args or "**/*.sol")
+            result = list_sol_files(project_path, args or "**/*.sol")
         case "shell":
-            return shell(project_path, args)
+            result = shell(project_path, args)
         case _:
-            return ToolResult(
+            result = ToolResult(
                 tool_name,
                 "",
                 f"Unknown tool '{tool_name}'. Available: {list(TOOL_DESCRIPTIONS)}",
                 1,
             )
+
+    if not result.success:
+        console.print(
+            f"     [red]✗ Failed[/red] [dim](exit code {result.returncode})[/dim]"
+        )
+        console.print(f"[dim red]{result.truncated(max_chars=1000)}[/dim red]\n")
+    else:
+        out_len = len(result.stdout) + len(result.stderr)
+        console.print(
+            f"     [green]✓ Success[/green] [dim]({out_len} bytes returned to agent)[/dim]"
+        )
+        console.print(f"[dim]{result.truncated(max_chars=1000)}[/dim]\n")
+
+    return result
