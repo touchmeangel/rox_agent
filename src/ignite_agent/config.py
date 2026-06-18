@@ -5,12 +5,25 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-_CONFIG_PATH = Path(__file__).parent / "config.json"
+_env_override = os.environ.get("IGNITE_CONFIG_PATH")
+
+if _env_override:
+    _CONFIG_PATH = Path(_env_override)
+else:
+    # Smart Auto-Detection Fallbacks (Lower Priority)
+    _POSSIBLE_PATHS = [
+        Path("/app/config.json"),
+        Path.cwd() / "config.json",
+    ]
+    _CONFIG_PATH = next((p for p in _POSSIBLE_PATHS if p.exists()), _POSSIBLE_PATHS[0])
 
 
 def _load_raw() -> dict:
     if not _CONFIG_PATH.exists():
-        raise FileNotFoundError(f"config.json not found at {_CONFIG_PATH}.")
+        raise FileNotFoundError(
+            f"Configuration file not found at: {_CONFIG_PATH}\n"
+            f"Hint: Set the 'IGNITE_CONFIG_PATH' environment variable to point to your config file."
+        )
     return json.loads(_CONFIG_PATH.read_text())
 
 
