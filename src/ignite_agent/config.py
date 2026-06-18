@@ -1,5 +1,3 @@
-"""Loads config.json and manages internal step definitions and pipeline execution order."""
-
 from __future__ import annotations
 
 import json
@@ -7,8 +5,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from steps.report import FinalReportStep
-from steps.static_analysis import StaticAnalysisStep
+from ignite_agent.steps.report import FinalReportStep
+from ignite_agent.steps.static_analysis import StaticAnalysisStep
 
 _CONFIG_PATH = Path(__file__).parent / "config.json"
 

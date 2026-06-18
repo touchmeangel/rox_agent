@@ -18,7 +18,7 @@ It ONLY:
 
 from __future__ import annotations
 
-from steps.base import BaseStep
+from ignite_agent.steps.base import BaseStep
 
 
 class FinalReportStep(BaseStep):

@@ -26,4 +26,4 @@ RUN pip3 install --no-cache-dir .
 VOLUME ["/project"]
 ENV PROJECT_PATH=/project
 
-ENTRYPOINT ["ignite_agent"]
+ENTRYPOINT ["python", "-m", "ignite_agent.agent"]

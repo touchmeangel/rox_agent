@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from config import MODELS, ModelConfig
+from ignite_agent.config import MODELS, ModelConfig
 
 
 class LLMClient:

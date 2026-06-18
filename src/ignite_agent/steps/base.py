@@ -22,9 +22,9 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from config import PROJECT_PATH, STEPS, StepConfig
-from llm import LLMClient, get_llm
-from tools import TOOL_DESCRIPTIONS, dispatch
+from ignite_agent.config import PROJECT_PATH, STEPS, StepConfig
+from ignite_agent.llm import LLMClient, get_llm
+from ignite_agent.tools import TOOL_DESCRIPTIONS, dispatch
 
 
 @dataclass
