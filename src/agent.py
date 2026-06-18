@@ -149,9 +149,12 @@ def _print_summary(results: dict[str, StepResult], output_path: str | None):
     print("═" * 70 + "\n")
 
 
-if __name__ == "__main__":
+def main():
     args = parse_args()
     run_audit(
         project_path=args.project_path,
         output_path=args.output,
     )
+
+if __name__ == "__main__":
+    main()

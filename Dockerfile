@@ -18,12 +18,12 @@ RUN curl -L https://foundry.paradigm.xyz | bash && foundryup
 RUN pip3 install --no-cache-dir slither-analyzer solc-select
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
 
 COPY . .
+
+RUN pip3 install --no-cache-dir .
 
 VOLUME ["/project"]
 ENV PROJECT_PATH=/project
 
-ENTRYPOINT ["python", "/app/src/agent.py"]
+ENTRYPOINT ["ignite_agent"]
