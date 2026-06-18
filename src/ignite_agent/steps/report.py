@@ -1,25 +1,7 @@
-"""
-Step: final_report
-
-Purpose
-───────
-Aggregate ALL previous step findings into a single EVM audit report.
-
-This step does NOT discover new vulnerabilities.
-It does NOT generate generic audit checklists.
-
-It ONLY:
-- consolidates prior findings
-- deduplicates issues
-- correlates exploit chains
-- identifies uncertainty / low-confidence areas in reasoning
-- produces final structured audit output
-"""
-
 from __future__ import annotations
 
+import json
 from ignite_agent.steps.base import BaseStep
-
 
 class FinalReportStep(BaseStep):
     name = "final_report"
@@ -150,6 +132,12 @@ STRICT RULES
 - Preserve all original findings even when grouped into chains
 - Chains do NOT replace findings
 - Uncertainty must be grounded in observed limitations of prior analysis
+
+───────────────
+INPUT FROM PRIOR STEPS
+───────────────
+
+{json.dumps(context, indent=2)}
 """
 
     def validate_complete(self, findings: dict) -> bool:

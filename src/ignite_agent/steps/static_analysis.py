@@ -1,16 +1,3 @@
-"""
-Step 1 — Static analysis.
-
-Runs `slither ./` and iteratively investigates findings.
-This is the worked example. The other steps follow the same pattern.
-
-The model will:
-  1.  Run slither (JSON output)
-  2.  For each high/medium finding, optionally read the source file
-  3.  Filter false positives
-  4.  Emit structured findings
-"""
-
 from __future__ import annotations
 
 from ignite_agent.steps.base import BaseStep
