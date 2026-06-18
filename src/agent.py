@@ -19,10 +19,6 @@ from pathlib import Path
 from config import PIPELINE
 from steps.base import StepResult
 
-# ─────────────────────────────────────────────────────────────────────────────
-# CLI
-# ─────────────────────────────────────────────────────────────────────────────
-
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -46,11 +42,6 @@ def parse_args():
     )
 
     return parser.parse_args()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Runner
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 def run_audit(
@@ -85,18 +76,12 @@ def run_audit(
         print(f"\n[{step.name}] {status} in {result.iterations_used} iterations")
         print("-" * 70)
 
-    # ── Write output only if requested ───────────────────────────────────────
     if output_path:
         _write_results(results, output_path)
 
     _print_summary(results, output_path)
 
     return results
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Output writer
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 def _write_results(results: dict[str, StepResult], output_path: str) -> None:
@@ -120,11 +105,6 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     print("\n" + "═" * 70)
     print(f"💾 Audit results saved → {path}")
     print("═" * 70 + "\n")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Pretty summary
-# ─────────────────────────────────────────────────────────────────────────────
 
 
 def _print_summary(results: dict[str, StepResult], output_path: str | None):
