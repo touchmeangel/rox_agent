@@ -17,14 +17,14 @@ The model drives; the loop just executes what it asks for.
 """
 
 from __future__ import annotations
+
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
-from llm import get_llm, LLMClient
-from tools import dispatch, TOOL_DESCRIPTIONS
-from config import STEPS, StepConfig, PROJECT_PATH
+from config import PROJECT_PATH, STEPS, StepConfig
+from llm import LLMClient, get_llm
+from tools import TOOL_DESCRIPTIONS, dispatch
 
 
 @dataclass
@@ -37,7 +37,7 @@ class StepResult:
     messages: list[dict] = field(default_factory=list)
 
 
-def _extract_json(text: str) -> Optional[dict]:
+def _extract_json(text: str) -> dict | None:
     """Pull the first valid JSON object out of a model response."""
     # 1. Direct parse (model did the right thing)
     try:

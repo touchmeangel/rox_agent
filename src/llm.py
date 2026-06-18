@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 import os
-from config import ModelConfig, MODELS
+
+from config import MODELS, ModelConfig
 
 
 class LLMClient:
@@ -76,7 +78,7 @@ class LLMClient:
 
         key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not key:
-            raise EnvironmentError("ANTHROPIC_API_KEY is not set")
+            raise OSError("ANTHROPIC_API_KEY is not set")
 
         client = anthropic.Anthropic(api_key=key)
         system, filtered = "", []

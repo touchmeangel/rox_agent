@@ -1,7 +1,7 @@
 from __future__ import annotations
+
 import subprocess
 from pathlib import Path
-
 
 # ── Result type ───────────────────────────────────────────────────────────────
 
@@ -91,7 +91,7 @@ def list_sol_files(project_path: str, pattern: str = "**/*.sol") -> ToolResult:
     path = Path(project_path)
     files = sorted(str(f.relative_to(path)) for f in path.glob(pattern))
     return ToolResult(
-        f"find . -name '*.sol'",
+        "find . -name '*.sol'",
         "\n".join(files) if files else "(no .sol files found)",
         "",
         0,
