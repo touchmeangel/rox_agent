@@ -2,56 +2,98 @@
 Audit orchestrator.
 
 Runs steps in order. Each step receives the accumulated findings from all
-prior steps as `context`, so later steps can reason about earlier ones.
+prior steps as `context`.
 
-Usage (from host via docker-compose):
-    PROJECT_PATH=/my/contracts docker-compose up
+Usage:
+    python agent.py --project-path /my/contracts
+    python agent.py --project-path /my/contracts --output results.json
 """
 
 from __future__ import annotations
+
 import json
-import sys
+import argparse
 from datetime import datetime
 from pathlib import Path
 
-from config import PROJECT_PATH, PIPELINE
+from config import PIPELINE
 from steps.base import StepResult
 
 
-# ── Runner ────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# CLI
+# ─────────────────────────────────────────────────────────────────────────────
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="EVM Smart Contract Audit Agent")
+
+    parser.add_argument(
+        "--project-path",
+        type=str,
+        required=False,
+        default=".",
+        help="Path to the smart contract project",
+    )
+
+    parser.add_argument(
+        "--output",
+        type=str,
+        required=False,
+        default=None,
+        help="Optional path to save audit JSON results",
+    )
+
+    return parser.parse_args()
 
 
-def run_audit(project_path: str = PROJECT_PATH) -> dict[str, StepResult]:
-    print(f"\n{'═' * 60}")
-    print(f"  Solidity Audit Agent")
-    print(f"  Project : {project_path}")
-    print(f"  Started : {datetime.now().isoformat(timespec='seconds')}")
-    print(f"{'═' * 60}")
+# ─────────────────────────────────────────────────────────────────────────────
+# Runner
+# ─────────────────────────────────────────────────────────────────────────────
 
-    context: dict = {}  # findings passed step → step
+def run_audit(project_path: str, output_path: str | None = None) -> dict[str, StepResult]:
+    print("\n" + "═" * 70)
+    print("                🛡️  SOLIDITY AUDIT AGENT")
+    print("═" * 70)
+    print(f"📁 Project : {project_path}")
+    print(f"⏱️  Started : {datetime.now().isoformat(timespec='seconds')}")
+    print("═" * 70 + "\n")
+
+    context: dict = {}
     results: dict[str, StepResult] = {}
 
     for StepClass in PIPELINE:
         step = StepClass()
+
+        print(f"\n▶ Running step: {step.name}")
+        print("-" * 70)
+
         result = step.run(context)
         results[step.name] = result
 
-        # Pass this step's output to subsequent steps
         context[step.name] = {
             "findings": result.findings,
             "summary": result.summary,
             "success": result.success,
         }
 
-        if not result.success:
-            print(f"[{step.name}] ⚠  step did not complete successfully, continuing")
+        status = "✓ completed" if result.success else "⚠ incomplete"
+        print(f"\n[{step.name}] {status} in {result.iterations_used} iterations")
+        print("-" * 70)
 
-    # Write results to project directory
-    _write_results(results, project_path)
+    # ── Write output only if requested ───────────────────────────────────────
+    if output_path:
+        _write_results(results, output_path)
+
+    _print_summary(results, output_path)
+
     return results
 
 
-def _write_results(results: dict[str, StepResult], project_path: str) -> None:
+# ─────────────────────────────────────────────────────────────────────────────
+# Output writer
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     output = {
         "generated_at": datetime.now().isoformat(),
         "steps": {
@@ -64,13 +106,42 @@ def _write_results(results: dict[str, StepResult], project_path: str) -> None:
             for name, r in results.items()
         },
     }
-    out_path = Path(project_path) / "audit_results.json"
-    out_path.write_text(json.dumps(output, indent=2))
-    print(f"\n{'═' * 60}")
-    print(f"  Audit complete → {out_path}")
-    print(f"{'═' * 60}\n")
 
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(output, indent=2))
+
+    print("\n" + "═" * 70)
+    print(f"💾 Audit results saved → {path}")
+    print("═" * 70 + "\n")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pretty summary
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _print_summary(results: dict[str, StepResult], output_path: str | None):
+    total_steps = len(results)
+    failed_steps = sum(1 for r in results.values() if not r.success)
+
+    print("\n" + "═" * 70)
+    print("                     📊 AUDIT SUMMARY")
+    print("═" * 70)
+
+    for name, r in results.items():
+        status = "✓" if r.success else "⚠"
+        print(f"{status} {name:<20} | iterations: {r.iterations_used:<3} | success: {r.success}")
+
+    print("─" * 70)
+    print(f"Steps total   : {total_steps}")
+    print(f"Steps failed  : {failed_steps}")
+    print(f"Output file   : {output_path if output_path else 'NOT SAVED'}")
+
+    print("═" * 70 + "\n")
 
 if __name__ == "__main__":
-    path = sys.argv[1] if len(sys.argv) > 1 else PROJECT_PATH
-    run_audit(path)
+    args = parse_args()
+    run_audit(
+        project_path=args.project_path,
+        output_path=args.output,
+    )
