@@ -17,14 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ignite_agent.steps.base import StepResult
-from ignite_agent.steps.report import FinalReportStep
-from ignite_agent.steps.static_analysis import StaticAnalysisStep
-
-# The active pipeline, using direct class references
-PIPELINE: list[type] = [
-    StaticAnalysisStep,
-    FinalReportStep,
-]
+from ignite_agent.pipeline import PIPELINE
 
 def parse_args():
     parser = argparse.ArgumentParser(
