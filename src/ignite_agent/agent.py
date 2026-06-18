@@ -16,8 +16,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from ignite_agent.steps.base import StepResult
 from ignite_agent.pipeline import PIPELINE
+from ignite_agent.steps.base import StepResult
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
