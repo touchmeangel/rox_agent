@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from rich.console import Console
+from rich.markup import escape
 
 STREAM_STYLE = "#706d6b"
 
@@ -45,28 +46,18 @@ class LLMClient:
                 raise ValueError(f"Unknown provider: {self.cfg.provider}")
 
     def _render_stream(self, chunk_generator) -> str:
-        """Streams the LLM output as a single-line sliding window to prevent terminal flooding."""
-        import sys
+        """Unifies the Rich terminal streaming logic for all providers."""
+        from rich.console import Console
 
+        stream_console = Console(force_terminal=True)
         full_text = ""
-        window_size = 100
 
         for text in chunk_generator:
             if text:
                 full_text += text
+                stream_console.print(f"[dim]{escape(text)}[/]", end="")
 
-                flat_text = full_text.replace("\n", " ↵ ")
-
-                display_text = flat_text[-window_size:]
-
-                sys.stdout.write(
-                    f"\r  \033[38;5;245m...{display_text:<{window_size}}\033[0m"
-                )
-                sys.stdout.flush()
-
-        sys.stdout.write("\r\033[K")
-        sys.stdout.flush()
-
+        print()
         return full_text
 
     def _openai_compat(
@@ -111,6 +102,7 @@ class LLMClient:
         api_messages = [m for m in messages if m["role"] != "system"]
 
         if stream:
+
             def anthropic_generator():
                 with client.messages.stream(
                     model=self.cfg.model,
