@@ -5,9 +5,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from ignite_agent.steps.report import FinalReportStep
-from ignite_agent.steps.static_analysis import StaticAnalysisStep
-
 _CONFIG_PATH = Path(__file__).parent / "config.json"
 
 
@@ -56,13 +53,6 @@ STEPS: dict[str, StepConfig] = {
         enabled=True,
     ),
 }
-
-# ── Define Execution Order ────────────────────────────────────────────────────
-# The active pipeline, using direct class references
-PIPELINE: list[type] = [
-    StaticAnalysisStep,
-    FinalReportStep,
-]
 
 _raw = _load_raw()
 
