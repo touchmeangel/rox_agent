@@ -25,7 +25,7 @@ from steps.base import StepResult
 # ─────────────────────────────────────────────────────────────────────────────
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="EVM Smart Contract Audit Agent")
+    parser = argparse.ArgumentParser(description="EVM Smart Contract Audit Agent | ignite")
 
     parser.add_argument(
         "--project-path",
