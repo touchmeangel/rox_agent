@@ -50,7 +50,7 @@ def run_command(command: str, cwd: str, timeout: int = 180) -> ToolResult:
     try:
         cmd_list = shlex.split(command)
 
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603 (we run everything in a controlled environment)
             cmd_list,
             shell=False,
             cwd=cwd,
