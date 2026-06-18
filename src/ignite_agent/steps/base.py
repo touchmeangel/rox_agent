@@ -105,6 +105,13 @@ Two allowed shapes:
     "findings": {{ ... }},
     "summary":  "<concise paragraph>"
   }}
+  
+  Step failed:
+  {{
+    "status": "failed",
+    "error": "...",
+    "reason": "..."
+  }}
 
 Invalid JSON or unknown status will cause a retry prompt."""
 
@@ -142,10 +149,8 @@ Invalid JSON or unknown status will cause a retry prompt."""
             raw = self.llm.chat(messages, stream=True)
             parsed = _extract_json(raw)
 
-            # Always append the assistant turn to history
             messages.append({"role": "assistant", "content": raw})
 
-            # ── Could not parse ──
             if parsed is None:
                 print(
                     f"[{self.name}] ⚠  response was not valid JSON — asking model to retry"
@@ -162,8 +167,25 @@ Invalid JSON or unknown status will cause a retry prompt."""
                 continue
 
             status = parsed.get("status")
+            
+            if status == "failed":
+                reason = parsed.get("reason", "unknown failure")
+                
+                return StepResult(
+                    step_name=self.name,
+                    success=False,
+                    findings={
+                        "error": {
+                            "reason": reason,
+                            "tool": parsed.get("tool"),
+                            "args": parsed.get("args"),
+                        }
+                    },
+                    summary=f"[FAILED] {parsed.get('tool')} — {reason}",
+                    iterations_used=i + 1,
+                    messages=messages,
+                )
 
-            # ── Step complete ──
             if status == "complete":
                 findings = parsed.get("findings", {})
                 if self.validate_complete(findings):
@@ -176,7 +198,6 @@ Invalid JSON or unknown status will cause a retry prompt."""
                         iterations_used=i + 1,
                         messages=messages,
                     )
-                # Findings failed validation — nudge the model
                 messages.append(
                     {
                         "role": "user",
@@ -185,7 +206,6 @@ Invalid JSON or unknown status will cause a retry prompt."""
                 )
                 continue
 
-            # ── Tool call ──
             if status == "tool_call":
                 tool = parsed.get("tool", "")
                 args = parsed.get("args", "")
@@ -194,17 +214,32 @@ Invalid JSON or unknown status will cause a retry prompt."""
                 print(f"[{self.name}] reason: {reason}")
 
                 result = dispatch(tool, args, self.project_path)
-                output = result.truncated(max_chars=10_000)
+                tool_payload = {
+                    "tool": tool,
+                    "args": args,
+                    "success": result.success,
+                    "returncode": result.returncode,
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                }
 
-                messages.append(
-                    {
+                messages.append({
+                    "role": "user",
+                    "content": json.dumps(tool_payload, indent=2)
+                })
+                if not result.success:
+                    messages.append({
                         "role": "user",
-                        "content": f"Tool output:\n```\n{output}\n```\n\nContinue your analysis.",
-                    }
-                )
+                        "content": (
+                            "TOOL EXECUTION FAILED.\n"
+                            "You must now choose ONE:\n"
+                            "- retry tool with corrected args\n"
+                            "- explicitly conclude analysis is incomplete\n"
+                        )
+                    })
+                
                 continue
 
-            # ── Unknown status ──
             messages.append(
                 {
                     "role": "user",
