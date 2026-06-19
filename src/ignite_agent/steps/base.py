@@ -8,6 +8,8 @@ from ignite_agent.config import PROJECT_PATH, STEPS, StepConfig
 from ignite_agent.llm import LLMClient, RollingWindow, get_llm
 from ignite_agent.tools import TOOL_DESCRIPTIONS, dispatch
 
+MAX_REPEATS = 2
+
 
 @dataclass
 class StepResult:
@@ -38,13 +40,10 @@ _INCOMPLETE_FINDINGS_PROMPT = (
 
 _FAILURE_RETRY_PROMPT = """\
 TOOL EXECUTION FAILED (exit {returncode}).
-
 ─── stderr ──────────────────────────────────
 {stderr}
 ─────────────────────────────────────────────
-
 Use your "thinking" field to work through this systematically:
-
   OBSERVE:  What is the exact error? (permissions? bad args? missing dependency? env issue?)
   ANALYZE:  Is this recoverable without user action?
   OPTIONS:  List every path forward:
@@ -53,9 +52,22 @@ Use your "thinking" field to work through this systematically:
             • web_search the specific error message
             • use shell to fix the environment (chmod, mkdir, pip install, export HOME=…)
   DECISION: Pick the best option. Do not give up until you have tried at least 2 alternatives.
-
 If — and only if — the error requires the user to act (e.g. missing API key, sudo required),
 use status "blocked" with an exact `suggested_fix` and a `fallback_action` if one exists.
+"""
+
+_REPEAT_CALL_PROMPT = """\
+You just issued the exact same tool call again — {tool} {args} — which has now failed \
+{repeat_count} time(s) in a row with the same error. Repeating it will not produce a \
+different result, so it is NOT an option this turn.
+
+You must do exactly one of the following:
+  • take a genuinely different action: a different tool, materially different args, or a
+    different diagnostic/repair strategy than anything already tried in this conversation
+  • report status "blocked" if this truly requires the user to act
+  • report status "failed" if you have exhausted every reasonable option
+
+Do not re-issue {tool} {args} in any form.
 """
 
 
@@ -64,18 +76,21 @@ def _extract_json(text: str) -> dict | None:
         return json.loads(text.strip())
     except json.JSONDecodeError:
         pass
+
     m = re.search(r"```(?:json)?\s*(\{.*?})\s*```", text, re.DOTALL)
     if m:
         try:
             return json.loads(m.group(1))
         except json.JSONDecodeError:
             pass
+
     m = re.search(r"\{.*}", text, re.DOTALL)
     if m:
         try:
             return json.loads(m.group(0))
         except json.JSONDecodeError:
             pass
+
     return None
 
 
@@ -96,6 +111,7 @@ class BaseStep:
             f"  {name}: {desc}" for name, desc in TOOL_DESCRIPTIONS.items()
         )
         return f"""You are an expert Solidity / EVM security auditor running inside an automated pipeline.
+
 The project under audit is at: {self.project_path}
 
 Available tools:
@@ -104,10 +120,9 @@ Available tools:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 OBSERVE → THINK → ACT  (mandatory for every turn)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 Every response MUST include a "thinking" field. Use it to reason before acting.
-Structure your thinking as:
 
+Structure your thinking as:
   OBSERVE:  What did the last tool output tell me?
             What do I know now that I didn't before?
   ANALYZE:  What does this mean? Is it a real issue or noise?
@@ -120,11 +135,12 @@ When a tool fails:
   • Think about root cause first.
   • Try at least 2 alternatives before declaring blocked or failed.
   • Use web_search when you need to understand an error you haven't seen before.
+  • Never repeat the exact same tool call twice in a row — if it failed once, a different
+    approach is required, not a retry.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RESPONSE SHAPES  (exactly one JSON object, no prose outside it)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 Run a tool:
 {{
   "thinking":  "<OBSERVE / ANALYZE / PLAN / ACT>",
@@ -184,9 +200,11 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
             {"role": "system", "content": self.system_prompt()},
             {"role": "user", "content": self.initial_prompt(context)},
         ]
-
         thinking_trace: list[str] = []
         blockers: list[dict] = []
+
+        last_signature: tuple[str, str] | None = None
+        repeat_count = 0
 
         for i in range(self.cfg.max_iterations):
             with RollingWindow(max_lines=6) as window:
@@ -242,6 +260,7 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                                 ),
                             }
                         )
+                        last_signature, repeat_count = None, 0
                         continue
 
                     return StepResult(
@@ -276,9 +295,20 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                 if status == "tool_call":
                     tool = parsed.get("tool", "")
                     args = parsed.get("args", "")
+                    signature = (tool, args)
+
+                    if signature == last_signature and repeat_count >= MAX_REPEATS:
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": _REPEAT_CALL_PROMPT.format(
+                                    tool=tool, args=args, repeat_count=repeat_count
+                                ),
+                            }
+                        )
+                        continue
 
                     result = dispatch(tool, args, self.project_path, window=window)
-
                     tool_payload = {
                         "tool": tool,
                         "args": args,
@@ -291,16 +321,35 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                         {"role": "user", "content": json.dumps(tool_payload, indent=2)}
                     )
 
-                    if not result.success:
+                    if result.success:
+                        last_signature, repeat_count = None, 0
+                        continue
+
+                    repeat_count = (
+                        repeat_count + 1 if signature == last_signature else 1
+                    )
+                    last_signature = signature
+
+                    if repeat_count >= MAX_REPEATS:
                         messages.append(
                             {
                                 "role": "user",
-                                "content": _FAILURE_RETRY_PROMPT.format(
-                                    returncode=result.returncode,
-                                    stderr=result.stderr[:1_500],
+                                "content": _REPEAT_CALL_PROMPT.format(
+                                    tool=tool, args=args, repeat_count=repeat_count
                                 ),
                             }
                         )
+                        continue
+
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": _FAILURE_RETRY_PROMPT.format(
+                                returncode=result.returncode,
+                                stderr=result.stderr[:1_500],
+                            ),
+                        }
+                    )
                     continue
 
                 messages.append(
