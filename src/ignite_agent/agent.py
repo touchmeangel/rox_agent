@@ -1,10 +1,3 @@
-"""
-Audit orchestrator.
-
-Runs steps in order. Each step receives the accumulated findings from all
-prior steps as `context`.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -13,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from rich import box
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -32,15 +25,30 @@ __(o )>
 
 
 def print_welcome_banner():
-    """Renders a clean, boxed startup interface."""
+    from ignite_agent.config import MODELS
+
     logo = Text(ASCII_LOGO, style=color)
 
-    info = Text.from_markup(
+    header = Text.from_markup(
         "[bold white]ignite[/bold white][dim]  ·  EVM Smart Contract Security Research Agent[/dim]\n\n"
-        "[white]Welcome back — point me at a repo and I'll start digging.[/white]\n\n"
-        f"[dim underline link={REPO_URL}]{REPO_URL.removeprefix('https://')}[/]\n"
+        "[white]Welcome back — point me at a repo and I'll start digging.[/white]\n"
+    )
+
+    models_table = Table.grid(padding=(0, 2))
+    models_table.add_column()
+    models_table.add_column(style="dim")
+    models_table.add_column(style="dim")
+    for key, cfg in MODELS.items():
+        models_table.add_row(
+            f"[{color}]{key}[/{color}]", cfg.model, f"({cfg.provider})"
+        )
+
+    footer = Text.from_markup(
+        f"\n[dim underline link={REPO_URL}]{REPO_URL.removeprefix('https://')}[/]\n"
         f"[dim]{datetime.now().strftime('%Y-%m-%d  %H:%M:%S')}[/dim]"
     )
+
+    info = Group(header, models_table, footer)
 
     grid = Table.grid(padding=(0, 4))
     grid.add_column()
@@ -93,12 +101,27 @@ def run_agent(
             f"[dim]{result.iterations_used} iteration{plural}[/dim]"
         )
 
-    console.print()
+    _print_summary(results)
 
     if output_path:
         _write_results(results, output_path)
 
     return results
+
+
+def _print_summary(results: dict[str, StepResult]) -> None:
+    succeeded = sum(1 for r in results.values() if r.success)
+    failed = len(results) - succeeded
+
+    parts = []
+    if succeeded:
+        parts.append(f"[green]✓ {succeeded} succeeded[/green]")
+    if failed:
+        parts.append(f"[red]✗ {failed} failed[/red]")
+    if not parts:
+        parts.append("[dim]no steps ran[/dim]")
+
+    console.print("\n" + "   ".join(parts) + "\n")
 
 
 def _write_results(results: dict[str, StepResult], output_path: str) -> None:
