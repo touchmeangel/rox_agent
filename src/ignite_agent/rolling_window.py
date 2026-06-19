@@ -23,7 +23,7 @@ class RollingWindow:
         self._current_spinner_line = None
         self._spin_thread = None
 
-    def start_spinner(self, text: str = "Thinking..."):
+    def start_spinner(self, text: str):
         self._spinning = True
         self._spinner_text = text
         self._spin_thread = threading.Thread(target=self._animate_spinner, daemon=True)
