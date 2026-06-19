@@ -27,7 +27,6 @@ def _load_raw() -> dict:
     return json.loads(_CONFIG_PATH.read_text())
 
 
-# ── Dataclasses ───────────────────────────────────────────────────────────────
 @dataclass
 class ModelConfig:
     provider: str
