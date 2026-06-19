@@ -12,42 +12,43 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from rich import box
 from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
 from ignite_agent.pipeline import PIPELINE
 from ignite_agent.steps.base import StepResult
 
 console = Console()
+color = "#ff79c6"
 
-ASCII_LOGO = """
-hiii
-"""
+REPO_URL = "https://github.com/touchmeangel/ignite_agent"
+
+ASCII_LOGO = r"""   __
+__(o )>
+\___)"""
 
 
 def print_welcome_banner():
-    """Renders a clean, aesthetic startup interface."""
-    logo_text = Text(ASCII_LOGO, style="dim white")
+    """Renders a clean, boxed startup interface."""
+    logo = Text(ASCII_LOGO, style=color)
 
-    meta_text = Text.assemble(
-        (
-            "\n──────────────────────────────────────────────────────────────\n",
-            "dim #444444",
-        ),
-        (" ENGINE ", "bold bg:#333333 #ffffff"),
-        ("  ignite EVM Autonomous Agent\n", "bold #b8bb26"),
-        (" SOURCE ", "bold bg:#333333 #ffffff"),
-        ("  https://github.com/touchmeangel/ignite_agent\n", "italic #83a598"),
-        (" TIME   ", "bold bg:#333333 #ffffff"),
-        f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n",
-        (
-            "──────────────────────────────────────────────────────────────",
-            "dim #444444",
-        ),
+    info = Text.from_markup(
+        "[bold white]ignite[/bold white][dim]  ·  EVM Smart Contract Security Research Agent[/dim]\n\n"
+        "[white]Welcome back — point me at a repo and I'll start digging.[/white]\n\n"
+        f"[dim underline link={REPO_URL}]{REPO_URL.removeprefix('https://')}[/]\n"
+        f"[dim]{datetime.now().strftime('%Y-%m-%d  %H:%M:%S')}[/dim]"
     )
 
-    console.print(logo_text)
-    console.print(meta_text)
+    grid = Table.grid(padding=(0, 4))
+    grid.add_column()
+    grid.add_column()
+    grid.add_row(logo, info)
+
+    console.print()
+    console.print(Panel(grid, box=box.ROUNDED, border_style="dim", padding=(1, 3)))
     console.print()
 
 
@@ -73,12 +74,7 @@ def run_agent(
     for StepClass in PIPELINE:
         step = StepClass()
 
-        console.print(
-            f"\n[bold #fe8019]▶[/bold #fe8019] [bold white]Running node processing phase:[/bold white] [cyan]{step.name}[/cyan]"
-        )
-        console.print(
-            "[dim]#─────────────────────────────────────────────────────────────────────[/dim]"
-        )
+        console.print(f"\n[{color}]●[/{color}] [bold white]{step.name}[/bold white]")
 
         filtered_context = step.select_context(context)
         result = step.run(filtered_context)
@@ -90,15 +86,14 @@ def run_agent(
             "success": result.success,
         }
 
-        status = (
-            "[green]✓ completed[/green]" if result.success else "[red]† failed[/red]"
-        )
+        icon = "[green]✓[/green]" if result.success else "[red]✗[/red]"
+        plural = "" if result.iterations_used == 1 else "s"
         console.print(
-            f"\n[dim]#[/dim] Phase {status} using [yellow]{result.iterations_used}[/yellow] reasoning iterations."
+            f"  [dim]⎿[/dim]  {icon}  "
+            f"[dim]{result.iterations_used} iteration{plural}[/dim]"
         )
-        console.print(
-            "[dim]#─────────────────────────────────────────────────────────────────────[/dim]\n"
-        )
+
+    console.print()
 
     if output_path:
         _write_results(results, output_path)
