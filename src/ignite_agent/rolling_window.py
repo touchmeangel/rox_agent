@@ -3,6 +3,7 @@ from rich.text import Text
 
 STREAM_STYLE = "dim"
 
+
 class RollingWindow:
     def __init__(self, max_lines: int = 4):
         from rich.console import Console

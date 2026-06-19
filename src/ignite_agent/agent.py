@@ -22,7 +22,7 @@ from ignite_agent.pipeline import PIPELINE
 from ignite_agent.steps.base import StepResult
 
 console = Console()
-color = "#ff79c6"
+color = "#1dcccc"
 
 REPO_URL = "https://github.com/touchmeangel/ignite_agent"
 

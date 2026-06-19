@@ -45,8 +45,7 @@ def _stream_subprocess(
     timeout: int,
     window: RollingWindow,
 ) -> tuple[str, str, int]:
-    """Run a subprocess, feeding stdout/stderr into `window` live as it arrives."""
-    proc = subprocess.Popen(
+    proc = subprocess.Popen( # noqa: S603, isolated docker environment
         args,
         cwd=cwd,
         stdout=subprocess.PIPE,
@@ -188,7 +187,9 @@ def _summary(result: ToolResult) -> str:
             return "[green]✓[/green]  (no output)"
         if total < 400:
             raw = result.stdout if result.stdout else result.stderr
-            snippet = next((line.strip() for line in raw.splitlines() if line.strip()), "")
+            snippet = next(
+                (line.strip() for line in raw.splitlines() if line.strip()), ""
+            )
             if snippet:
                 return f"[green]✓[/green]  {size}  [dim]·  {snippet[:72]}[/dim]"
         return f"[green]✓[/green]  {size}"

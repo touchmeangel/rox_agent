@@ -27,6 +27,7 @@ from ignite_agent.llm import LLMClient, get_llm
 from ignite_agent.tools import TOOL_DESCRIPTIONS, dispatch
 from ignite_agent.llm import RollingWindow
 
+
 @dataclass
 class StepResult:
     step_name: str

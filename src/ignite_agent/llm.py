@@ -3,6 +3,7 @@ from __future__ import annotations
 from ignite_agent.rolling_window import RollingWindow
 import os
 
+
 class LLMClient:
     def __init__(self, model_key: str):
         from ignite_agent.config import MODELS
