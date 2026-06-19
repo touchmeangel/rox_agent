@@ -19,35 +19,43 @@ class LLMClient:
         stream: bool = True,
         window: RollingWindow | None = None,
     ) -> str:
-        match self.cfg.provider:
-            case "ollama":
-                return self._openai(
-                    messages,
-                    stream,
-                    window,
-                    base_url=f"{self.cfg.base_url}/v1",
-                    api_key="ollama",
-                )
-            case "openai":
-                return self._openai(
-                    messages,
-                    stream,
-                    window,
-                    base_url=self.cfg.base_url,
-                    api_key=os.environ.get("OPENAI_API_KEY", ""),
-                )
-            case "google":
-                return self._openai(
-                    messages,
-                    stream,
-                    window,
-                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                    api_key=os.environ.get("GOOGLE_API_KEY", ""),
-                )
-            case "anthropic":
-                return self._anthropic(messages, stream, window)
-            case _:
-                raise ValueError(f"Unknown provider: {self.cfg.provider}")
+        if window is not None:
+            window.start_spinner("Thinking...")        
+
+        try:
+            match self.cfg.provider:
+                case "ollama":
+                    return self._openai(
+                        messages,
+                        stream,
+                        window,
+                        base_url=f"{self.cfg.base_url}/v1",
+                        api_key="ollama",
+                    )
+                case "openai":
+                    return self._openai(
+                        messages,
+                        stream,
+                        window,
+                        base_url=self.cfg.base_url,
+                        api_key=os.environ.get("OPENAI_API_KEY", ""),
+                    )
+                case "google":
+                    return self._openai(
+                        messages,
+                        stream,
+                        window,
+                        base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                        api_key=os.environ.get("GOOGLE_API_KEY", ""),
+                    )
+                case "anthropic":
+                    return self._anthropic(messages, stream, window)
+                case _:
+                    raise ValueError(f"Unknown provider: {self.cfg.provider}")
+        except Exception:
+            if window is not None:
+                window.stop_spinner()
+            raise
 
     def _render_stream(
         self,
@@ -56,13 +64,23 @@ class LLMClient:
         max_lines: int = 4,
     ) -> str:
         full = ""
+        iterator = iter(chunk_generator)
 
         if window is not None:
-            for chunk in chunk_generator:
-                if not chunk:
-                    continue
-                full += chunk
-                window.feed(chunk)
+            try:
+                first_chunk = next(iterator, None)
+            except StopIteration:
+                first_chunk = None
+            finally:
+                window.stop_spinner()
+                
+            if first_chunk:
+                full += first_chunk
+                window.feed(first_chunk)
+                for chunk in iterator:
+                    if chunk:
+                        full += chunk
+                        window.feed(chunk)
             return full
 
         with RollingWindow(max_lines) as local_window:
