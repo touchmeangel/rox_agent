@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import shlex
 import subprocess
+import threading
 from pathlib import Path
 
-from rich.console import Console
-
-from ignite_agent.llm import RollingWindow
-
-_console = Console(highlight=False)
+from ignite_agent.rolling_window import RollingWindow
 
 
 class ToolResult:
@@ -42,10 +39,72 @@ class ToolResult:
         )
 
 
-def run_command(command: str, cwd: str, timeout: int = 180) -> ToolResult:
+def _stream_subprocess(
+    args: list[str],
+    cwd: str,
+    timeout: int,
+    window: RollingWindow,
+) -> tuple[str, str, int]:
+    """Run a subprocess, feeding stdout/stderr into `window` live as it arrives."""
+    proc = subprocess.Popen(
+        args,
+        cwd=cwd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+
+    stdout_buf: list[str] = []
+    stderr_buf: list[str] = []
+    lock = threading.Lock()
+
+    def _pump(pipe, sink: list[str]) -> None:
+        try:
+            for line in iter(pipe.readline, ""):
+                sink.append(line)
+                with lock:
+                    window.feed(line)
+        finally:
+            pipe.close()
+
+    threads = [
+        threading.Thread(target=_pump, args=(proc.stdout, stdout_buf), daemon=True),
+        threading.Thread(target=_pump, args=(proc.stderr, stderr_buf), daemon=True),
+    ]
+    for t in threads:
+        t.start()
+
     try:
-        result = subprocess.run( # noqa: S603 were in controlled docker container
-            shlex.split(command),
+        returncode = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        for t in threads:
+            t.join(timeout=2)
+        stderr_buf.append(f"\nTimed out after {timeout}s")
+        return "".join(stdout_buf), "".join(stderr_buf), 1
+
+    for t in threads:
+        t.join()
+
+    return "".join(stdout_buf), "".join(stderr_buf), returncode
+
+
+def run_command(
+    command: str,
+    cwd: str,
+    timeout: int = 180,
+    window: RollingWindow | None = None,
+) -> ToolResult:
+    try:
+        args = shlex.split(command)
+        if window is not None:
+            stdout, stderr, returncode = _stream_subprocess(args, cwd, timeout, window)
+            return ToolResult(command, stdout, stderr, returncode)
+
+        result = subprocess.run(  # noqa: S603 were in controlled docker container
+            args,
             shell=False,
             cwd=cwd,
             capture_output=True,
@@ -59,16 +118,24 @@ def run_command(command: str, cwd: str, timeout: int = 180) -> ToolResult:
         return ToolResult(command, "", str(exc), 1)
 
 
-def slither(project_path: str, args: str = "./") -> ToolResult:
-    return run_command(f"slither {args}", cwd=project_path, timeout=240)
+def slither(
+    project_path: str, args: str = "./", window: RollingWindow | None = None
+) -> ToolResult:
+    return run_command(f"slither {args}", cwd=project_path, timeout=240, window=window)
 
 
-def forge(project_path: str, args: str = "build") -> ToolResult:
-    return run_command(f"forge {args}", cwd=project_path, timeout=180)
+def forge(
+    project_path: str, args: str = "build", window: RollingWindow | None = None
+) -> ToolResult:
+    return run_command(f"forge {args}", cwd=project_path, timeout=180, window=window)
 
 
-def git(project_path: str, args: str = "log --oneline -10") -> ToolResult:
-    return run_command(f"git {args}", cwd=project_path, timeout=30)
+def git(
+    project_path: str,
+    args: str = "log --oneline -10",
+    window: RollingWindow | None = None,
+) -> ToolResult:
+    return run_command(f"git {args}", cwd=project_path, timeout=30, window=window)
 
 
 def read_file(project_path: str, relative_path: str) -> ToolResult:
@@ -96,8 +163,10 @@ def list_sol_files(project_path: str, pattern: str = "**/*.sol") -> ToolResult:
     )
 
 
-def shell(project_path: str, command: str) -> ToolResult:
-    return run_command(command, cwd=project_path, timeout=120)
+def shell(
+    project_path: str, command: str, window: RollingWindow | None = None
+) -> ToolResult:
+    return run_command(command, cwd=project_path, timeout=120, window=window)
 
 
 TOOL_DESCRIPTIONS: dict[str, str] = {
@@ -127,40 +196,44 @@ def _summary(result: ToolResult) -> str:
     return f"[red]✗[/red]  exit {result.returncode}  {size}"
 
 
-def dispatch(tool_name: str, args: str, project_path: str) -> ToolResult:
-    match tool_name:
-        case "slither":
-            result = slither(project_path, args or "./")
-        case "forge":
-            result = forge(project_path, args or "build")
-        case "git":
-            result = git(project_path, args or "log --oneline -10")
-        case "read_file":
-            result = read_file(project_path, args)
-        case "list_sol_files":
-            result = list_sol_files(project_path, args or "**/*.sol")
-        case "shell":
-            result = shell(project_path, args)
-        case _:
-            result = ToolResult(
-                tool_name,
-                "",
-                f"Unknown tool '{tool_name}'. Available: {list(TOOL_DESCRIPTIONS)}",
-                1,
-            )
+def dispatch(
+    tool_name: str,
+    args: str,
+    project_path: str,
+    window: RollingWindow | None = None,
+) -> ToolResult:
+    owns_window = window is None
+    if owns_window:
+        window = RollingWindow()
+        window.__enter__()
 
-    with RollingWindow() as window:
+    try:
         window.feed(f"⎿  {tool_name}  {args}\n")
-        window.feed(f"   {_summary(result)}\n")
 
-    if not result.success:
-        body = (result.stderr or result.stdout).strip()
-        if body:
-            MAX = 4000
-            if len(body) > MAX:
-                body = body[:MAX] + f"\n... [truncated, {len(body) - MAX} more chars]"
-            for line in body.splitlines():
-                _console.print(f"     [dim]{line}[/dim]")
-            _console.print()
+        match tool_name:
+            case "slither":
+                result = slither(project_path, args or "./", window=window)
+            case "forge":
+                result = forge(project_path, args or "build", window=window)
+            case "git":
+                result = git(project_path, args or "log --oneline -10", window=window)
+            case "read_file":
+                result = read_file(project_path, args)
+            case "list_sol_files":
+                result = list_sol_files(project_path, args or "**/*.sol")
+            case "shell":
+                result = shell(project_path, args, window=window)
+            case _:
+                result = ToolResult(
+                    tool_name,
+                    "",
+                    f"Unknown tool '{tool_name}'. Available: {list(TOOL_DESCRIPTIONS)}",
+                    1,
+                )
+
+        window.feed(f"\n   {_summary(result)}\n")
+    finally:
+        if owns_window:
+            window.__exit__(None, None, None)
 
     return result

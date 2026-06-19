@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from ignite_agent.config import PROJECT_PATH, STEPS, StepConfig
 from ignite_agent.llm import LLMClient, get_llm
 from ignite_agent.tools import TOOL_DESCRIPTIONS, dispatch
-
+from ignite_agent.llm import RollingWindow
 
 @dataclass
 class StepResult:
@@ -139,86 +139,87 @@ Invalid JSON or unknown status will cause a retry prompt."""
         ]
 
         for i in range(self.cfg.max_iterations):
-            raw = self.llm.chat(messages, stream=True)
-            parsed = _extract_json(raw)
+            with RollingWindow(max_lines=6) as window:
+                raw = self.llm.chat(messages, stream=True, window=window)
+                parsed = _extract_json(raw)
 
-            messages.append({"role": "assistant", "content": raw})
+                messages.append({"role": "assistant", "content": raw})
 
-            if parsed is None:
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": "Your response was not valid JSON. Reply with only a JSON object.",
-                    }
-                )
-                continue
-
-            status = parsed.get("status")
-
-            if status == "failed":
-                reason = parsed.get("reason", "unknown failure")
-                error = parsed.get("error", "unknown error")
-                return StepResult(
-                    step_name=self.name,
-                    success=False,
-                    findings={"error": {"message": error, "reason": reason}},
-                    summary=f"[FAILED] {reason}",
-                    iterations_used=i + 1,
-                    messages=messages,
-                )
-
-            if status == "complete":
-                findings = parsed.get("findings", {})
-                if self.validate_complete(findings):
-                    return StepResult(
-                        step_name=self.name,
-                        success=True,
-                        findings=findings,
-                        summary=parsed.get("summary", ""),
-                        iterations_used=i + 1,
-                        messages=messages,
-                    )
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": "The findings are incomplete. Continue your analysis.",
-                    }
-                )
-                continue
-
-            if status == "tool_call":
-                tool = parsed.get("tool", "")
-                args = parsed.get("args", "")
-
-                result = dispatch(tool, args, self.project_path)
-
-                tool_payload = {
-                    "tool": tool,
-                    "args": args,
-                    "success": result.success,
-                    "returncode": result.returncode,
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                }
-                messages.append(
-                    {"role": "user", "content": json.dumps(tool_payload, indent=2)}
-                )
-
-                if not result.success:
+                if parsed is None:
                     messages.append(
                         {
                             "role": "user",
-                            "content": "TOOL EXECUTION FAILED.\nChoose ONE: retry tool with corrected args or conclude failure.",
+                            "content": "Your response was not valid JSON. Reply with only a JSON object.",
                         }
                     )
-                continue
+                    continue
 
-            messages.append(
-                {
-                    "role": "user",
-                    "content": f"Unknown status value '{status}'. Use 'tool_call' or 'complete'.",
-                }
-            )
+                status = parsed.get("status")
+
+                if status == "failed":
+                    reason = parsed.get("reason", "unknown failure")
+                    error = parsed.get("error", "unknown error")
+                    return StepResult(
+                        step_name=self.name,
+                        success=False,
+                        findings={"error": {"message": error, "reason": reason}},
+                        summary=f"[FAILED] {reason}",
+                        iterations_used=i + 1,
+                        messages=messages,
+                    )
+
+                if status == "complete":
+                    findings = parsed.get("findings", {})
+                    if self.validate_complete(findings):
+                        return StepResult(
+                            step_name=self.name,
+                            success=True,
+                            findings=findings,
+                            summary=parsed.get("summary", ""),
+                            iterations_used=i + 1,
+                            messages=messages,
+                        )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "The findings are incomplete. Continue your analysis.",
+                        }
+                    )
+                    continue
+
+                if status == "tool_call":
+                    tool = parsed.get("tool", "")
+                    args = parsed.get("args", "")
+
+                    result = dispatch(tool, args, self.project_path, window=window)
+
+                    tool_payload = {
+                        "tool": tool,
+                        "args": args,
+                        "success": result.success,
+                        "returncode": result.returncode,
+                        "stdout": result.stdout,
+                        "stderr": result.stderr,
+                    }
+                    messages.append(
+                        {"role": "user", "content": json.dumps(tool_payload, indent=2)}
+                    )
+
+                    if not result.success:
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": "TOOL EXECUTION FAILED.\nChoose ONE: retry tool with corrected args or conclude failure.",
+                            }
+                        )
+                    continue
+
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"Unknown status value '{status}'. Use 'tool_call' or 'complete'.",
+                    }
+                )
 
         return StepResult(
             step_name=self.name,

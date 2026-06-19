@@ -1,57 +1,7 @@
 from __future__ import annotations
 
+from ignite_agent.rolling_window import RollingWindow
 import os
-
-STREAM_STYLE = "dim"
-
-
-class RollingWindow:
-    def __init__(self, max_lines: int = 4):
-        from rich.console import Console
-
-        self.console = Console()
-        self.max_lines = max_lines
-        self.lines: list[str] = []
-        self.cur = ""
-        self.live = None
-
-    def _view(self):
-        from rich.text import Text
-
-        rows = (self.lines + ([self.cur] if self.cur else []))[-self.max_lines :]
-        text = Text.from_markup("\n".join(rows))
-        text.style = STREAM_STYLE
-        text.no_wrap = True
-        text.overflow = "ellipsis"
-        return text
-
-    def __enter__(self):
-        from rich.live import Live
-
-        self.live = Live(
-            self._view(),
-            console=self.console,
-            auto_refresh=False,
-            transient=False,
-            vertical_overflow="crop",
-        )
-        self.live.__enter__()
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        self.live.__exit__(exc_type, exc, tb)
-        self.console.print()
-        return False
-
-    def feed(self, text: str) -> None:
-        parts = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-        self.cur += parts[0]
-        for part in parts[1:]:
-            self.lines.append(self.cur)
-            self.cur = part
-        if self.live:
-            self.live.update(self._view(), refresh=True)
-
 
 class LLMClient:
     def __init__(self, model_key: str):
@@ -61,48 +11,71 @@ class LLMClient:
             raise ValueError(f"Unknown model key '{model_key}'.")
         self.cfg = MODELS[model_key]
 
-    def chat(self, messages: list[dict], stream: bool = True) -> str:
+    def chat(
+        self,
+        messages: list[dict],
+        stream: bool = True,
+        window: RollingWindow | None = None,
+    ) -> str:
         match self.cfg.provider:
             case "ollama":
-                return self._openai_compat(
+                return self._openai(
                     messages,
                     stream,
+                    window,
                     base_url=f"{self.cfg.base_url}/v1",
                     api_key="ollama",
                 )
             case "openai":
-                return self._openai_compat(
+                return self._openai(
                     messages,
                     stream,
+                    window,
                     base_url=self.cfg.base_url,
                     api_key=os.environ.get("OPENAI_API_KEY", ""),
                 )
             case "google":
-                return self._openai_compat(
+                return self._openai(
                     messages,
                     stream,
+                    window,
                     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                     api_key=os.environ.get("GOOGLE_API_KEY", ""),
                 )
             case "anthropic":
-                return self._anthropic(messages, stream)
+                return self._anthropic(messages, stream, window)
             case _:
                 raise ValueError(f"Unknown provider: {self.cfg.provider}")
 
-    def _render_stream(self, chunk_generator, max_lines: int = 4) -> str:
+    def _render_stream(
+        self,
+        chunk_generator,
+        window: RollingWindow | None = None,
+        max_lines: int = 4,
+    ) -> str:
         full = ""
-        with RollingWindow(max_lines) as window:
+
+        if window is not None:
             for chunk in chunk_generator:
                 if not chunk:
                     continue
                 full += chunk
                 window.feed(chunk)
+            return full
+
+        with RollingWindow(max_lines) as local_window:
+            for chunk in chunk_generator:
+                if not chunk:
+                    continue
+                full += chunk
+                local_window.feed(chunk)
         return full
 
-    def _openai_compat(
+    def _openai(
         self,
         messages: list[dict],
         stream: bool,
+        window: RollingWindow | None,
         base_url: str | None,
         api_key: str,
     ) -> str:
@@ -128,11 +101,13 @@ class LLMClient:
                     if chunk.choices and chunk.choices[0].delta.content:
                         yield chunk.choices[0].delta.content
 
-            return self._render_stream(_gen())
+            return self._render_stream(_gen(), window)
 
         return resp.choices[0].message.content or ""
 
-    def _anthropic(self, messages: list[dict], stream: bool) -> str:
+    def _anthropic(
+        self, messages: list[dict], stream: bool, window: RollingWindow | None
+    ) -> str:
         from anthropic import Anthropic
 
         key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -155,7 +130,7 @@ class LLMClient:
                 ) as s:
                     yield from s.text_stream
 
-            return self._render_stream(_gen())
+            return self._render_stream(_gen(), window)
 
         resp = client.messages.create(
             model=self.cfg.model,
