@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from ignite_agent.rolling_window import RollingWindow
 import os
+
+from ignite_agent.rolling_window import RollingWindow
 
 
 class LLMClient:

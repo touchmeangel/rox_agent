@@ -23,9 +23,8 @@ import re
 from dataclasses import dataclass, field
 
 from ignite_agent.config import PROJECT_PATH, STEPS, StepConfig
-from ignite_agent.llm import LLMClient, get_llm
+from ignite_agent.llm import LLMClient, RollingWindow, get_llm
 from ignite_agent.tools import TOOL_DESCRIPTIONS, dispatch
-from ignite_agent.llm import RollingWindow
 
 
 @dataclass

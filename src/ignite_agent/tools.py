@@ -45,7 +45,7 @@ def _stream_subprocess(
     timeout: int,
     window: RollingWindow,
 ) -> tuple[str, str, int]:
-    proc = subprocess.Popen( # noqa: S603, isolated docker environment
+    proc = subprocess.Popen(  # noqa: S603, isolated docker environment
         args,
         cwd=cwd,
         stdout=subprocess.PIPE,

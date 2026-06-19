@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+from rich.containers import Lines
 from rich.live import Live
 from rich.text import Text
 
@@ -15,13 +18,15 @@ class RollingWindow:
         self.live = None
 
     def _view(self):
-
         rows = (self.lines + ([self.cur] if self.cur else []))[-self.max_lines :]
         text = Text.from_markup("\n".join(rows))
         text.style = STREAM_STYLE
-        text.no_wrap = True
-        text.overflow = "ellipsis"
-        return text
+        text.no_wrap = False
+        text.overflow = "fold"
+
+        width = self.console.size.width
+        wrapped = text.wrap(self.console, width)
+        return Lines(list(wrapped)[-self.max_lines :])
 
     def __enter__(self):
         self.live = Live(
