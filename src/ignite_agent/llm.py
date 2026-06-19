@@ -2,10 +2,55 @@ from __future__ import annotations
 
 import os
 
-from rich.console import Console
-from rich.markup import escape
+STREAM_STYLE = "dim"
 
-STREAM_STYLE = "#706d6b"
+
+class RollingWindow:
+    def __init__(self, max_lines: int = 4):
+        from rich.console import Console
+
+        self.console = Console()
+        self.max_lines = max_lines
+        self.lines: list[str] = []
+        self.cur = ""
+        self.live = None
+
+    def _view(self):
+        from rich.text import Text
+
+        rows = (self.lines + ([self.cur] if self.cur else []))[-self.max_lines :]
+        text = Text.from_markup("\n".join(rows))
+        text.style = STREAM_STYLE
+        text.no_wrap = True
+        text.overflow = "ellipsis"
+        return text
+
+    def __enter__(self):
+        from rich.live import Live
+
+        self.live = Live(
+            self._view(),
+            console=self.console,
+            auto_refresh=False,
+            transient=False,
+            vertical_overflow="crop",
+        )
+        self.live.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.live.__exit__(exc_type, exc, tb)
+        self.console.print()
+        return False
+
+    def feed(self, text: str) -> None:
+        parts = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        self.cur += parts[0]
+        for part in parts[1:]:
+            self.lines.append(self.cur)
+            self.cur = part
+        if self.live:
+            self.live.update(self._view(), refresh=True)
 
 
 class LLMClient:
@@ -15,7 +60,6 @@ class LLMClient:
         if model_key not in MODELS:
             raise ValueError(f"Unknown model key '{model_key}'.")
         self.cfg = MODELS[model_key]
-        self.console = Console()
 
     def chat(self, messages: list[dict], stream: bool = True) -> str:
         match self.cfg.provider:
@@ -30,7 +74,7 @@ class LLMClient:
                 return self._openai_compat(
                     messages,
                     stream,
-                    base_url=None,
+                    base_url=self.cfg.base_url,
                     api_key=os.environ.get("OPENAI_API_KEY", ""),
                 )
             case "google":
@@ -45,27 +89,26 @@ class LLMClient:
             case _:
                 raise ValueError(f"Unknown provider: {self.cfg.provider}")
 
-    def _render_stream(self, chunk_generator) -> str:
-        """Unifies the Rich terminal streaming logic for all providers."""
-        from rich.console import Console
-
-        stream_console = Console(force_terminal=True)
-        full_text = ""
-
-        for text in chunk_generator:
-            if text:
-                full_text += text
-                stream_console.print(f"[dim]{escape(text)}[/]", end="")
-
-        print()
-        return full_text
+    def _render_stream(self, chunk_generator, max_lines: int = 4) -> str:
+        full = ""
+        with RollingWindow(max_lines) as window:
+            for chunk in chunk_generator:
+                if not chunk:
+                    continue
+                full += chunk
+                window.feed(chunk)
+        return full
 
     def _openai_compat(
-        self, messages: list[dict], stream: bool, base_url: str | None, api_key: str
+        self,
+        messages: list[dict],
+        stream: bool,
+        base_url: str | None,
+        api_key: str,
     ) -> str:
         from openai import OpenAI
 
-        kwargs = {"api_key": api_key}
+        kwargs: dict = {"api_key": api_key}
         if base_url:
             kwargs["base_url"] = base_url
         client = OpenAI(**kwargs)
@@ -80,47 +123,46 @@ class LLMClient:
 
         if stream:
 
-            def openai_generator():
+            def _gen():
                 for chunk in resp:
                     if chunk.choices and chunk.choices[0].delta.content:
                         yield chunk.choices[0].delta.content
 
-            return self._render_stream(openai_generator())
+            return self._render_stream(_gen())
 
         return resp.choices[0].message.content or ""
 
-    # ── Anthropic ─────────────────────────────────────────────────────────────
-
-    def _anthropic_compat(self, messages: list[dict], stream: bool) -> str:
+    def _anthropic(self, messages: list[dict], stream: bool) -> str:
         from anthropic import Anthropic
 
-        client = Anthropic(api_key=self.cfg.api_key)
+        key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not key:
+            raise OSError("ANTHROPIC_API_KEY is not set")
+        client = Anthropic(api_key=key)
 
-        system_prompt = next(
-            (m["content"] for m in messages if m["role"] == "system"), ""
-        )
-        api_messages = [m for m in messages if m["role"] != "system"]
+        system = next((m["content"] for m in messages if m["role"] == "system"), "")
+        filtered = [m for m in messages if m["role"] != "system"]
 
         if stream:
 
-            def anthropic_generator():
+            def _gen():
                 with client.messages.stream(
                     model=self.cfg.model,
                     max_tokens=self.cfg.max_tokens,
                     temperature=self.cfg.temperature,
-                    system=system_prompt,
-                    messages=api_messages,
-                ) as stream_obj:
-                    yield from stream_obj.text_stream
+                    system=system,
+                    messages=filtered,
+                ) as s:
+                    yield from s.text_stream
 
-            return self._render_stream(anthropic_generator())
+            return self._render_stream(_gen())
 
         resp = client.messages.create(
             model=self.cfg.model,
             max_tokens=self.cfg.max_tokens,
             temperature=self.cfg.temperature,
-            system=system_prompt,
-            messages=api_messages,
+            system=system,
+            messages=filtered,
         )
         return resp.content[0].text
 

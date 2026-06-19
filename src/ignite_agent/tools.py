@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import shlex
 import subprocess
-import sys
 from pathlib import Path
 
 from rich.console import Console
 
-console = Console()
+from ignite_agent.llm import RollingWindow
+
+_console = Console(highlight=False)
 
 
 class ToolResult:
@@ -30,31 +31,21 @@ class ToolResult:
         return "\n".join(parts)
 
     def truncated(self, max_chars: int = 12_000) -> str:
-        """Return string representation, truncated with a clear marker."""
         full = str(self)
         if len(full) <= max_chars:
             return full
         half = max_chars // 2
         return (
             full[:half]
-            + f"\n\n... [output truncated — {len(full) - max_chars} chars omitted] ...\n\n"
+            + f"\n\n... [truncated — {len(full) - max_chars} chars omitted] ...\n\n"
             + full[-half:]
         )
 
 
-# ── Low-level runner ──────────────────────────────────────────────────────────
-
-
 def run_command(command: str, cwd: str, timeout: int = 180) -> ToolResult:
-    """
-    Safe subprocess runner:
-    - uses shlex.split for argument parsing
-    """
     try:
-        cmd_list = shlex.split(command)
-
-        result = subprocess.run(  # noqa: S603 (we run everything in a controlled environment)
-            cmd_list,
+        result = subprocess.run( # noqa: S603 were in controlled docker container
+            shlex.split(command),
             shell=False,
             cwd=cwd,
             capture_output=True,
@@ -62,19 +53,13 @@ def run_command(command: str, cwd: str, timeout: int = 180) -> ToolResult:
             timeout=timeout,
         )
         return ToolResult(command, result.stdout, result.stderr, result.returncode)
-
     except subprocess.TimeoutExpired:
         return ToolResult(command, "", f"Timed out after {timeout}s", 1)
-
     except Exception as exc:
         return ToolResult(command, "", str(exc), 1)
 
 
-# ── Named tools ───────────────────────────────────────────────────────────────
-
-
 def slither(project_path: str, args: str = "./") -> ToolResult:
-    """Run slither. Use --json - for machine-readable output."""
     return run_command(f"slither {args}", cwd=project_path, timeout=240)
 
 
@@ -93,8 +78,9 @@ def read_file(project_path: str, relative_path: str) -> ToolResult:
             f"cat {relative_path}", "", f"File not found: {relative_path}", 1
         )
     try:
-        content = full.read_text(errors="replace")
-        return ToolResult(f"cat {relative_path}", content, "", 0)
+        return ToolResult(
+            f"cat {relative_path}", full.read_text(errors="replace"), "", 0
+        )
     except Exception as exc:
         return ToolResult(f"cat {relative_path}", "", str(exc), 1)
 
@@ -111,35 +97,37 @@ def list_sol_files(project_path: str, pattern: str = "**/*.sol") -> ToolResult:
 
 
 def shell(project_path: str, command: str) -> ToolResult:
-    """Escape hatch: run any command the agent requests."""
     return run_command(command, cwd=project_path, timeout=120)
 
 
-# ── Dispatcher ────────────────────────────────────────────────────────────────
-
 TOOL_DESCRIPTIONS: dict[str, str] = {
-    "slither": "Run slither static analysis. args: extra flags, e.g. './ --json -' or '--print call-graph ./'",
-    "forge": "Run forge. args: subcommand + flags, e.g. 'build', 'coverage', 'test -vvv'",
-    "git": "Run git. args: subcommand, e.g. 'log --oneline -20'",
-    "read_file": "Read a source file. args: path relative to project root, e.g. 'src/Vault.sol'",
-    "list_sol_files": "List all .sol files. args: optional glob, default '**/*.sol'",
+    "slither": "Run slither static analysis. args: extra flags e.g. './ --json -'",
+    "forge": "Run forge. args: subcommand + flags e.g. 'build', 'coverage', 'test -vvv'",
+    "git": "Run git. args: subcommand e.g. 'log --oneline -20'",
+    "read_file": "Read a source file. args: path relative to project root e.g. 'src/Vault.sol'",
+    "list_sol_files": "List all .sol files. args: optional glob default '**/*.sol'",
     "shell": "Run any shell command. args: full command string",
 }
 
 
-def _log_raw(text: str):
-    """Bypass rich and print directly to sys.stdout so we don't break the host stream window."""
-    sys.stdout.write(text + "\n")
-    sys.stdout.flush()
+def _summary(result: ToolResult) -> str:
+    total = len(result.stdout) + len(result.stderr)
+    size = f"{total / 1024:.1f} KB" if total >= 1024 else f"{total} B"
+
+    if result.success:
+        if total == 0:
+            return "[green]✓[/green]  (no output)"
+        if total < 400:
+            raw = result.stdout if result.stdout else result.stderr
+            snippet = next((line.strip() for line in raw.splitlines() if line.strip()), "")
+            if snippet:
+                return f"[green]✓[/green]  {size}  [dim]·  {snippet[:72]}[/dim]"
+        return f"[green]✓[/green]  {size}"
+
+    return f"[red]✗[/red]  exit {result.returncode}  {size}"
 
 
 def dispatch(tool_name: str, args: str, project_path: str) -> ToolResult:
-    """Route a model tool-call to the right function and log it visually within stream limits."""
-
-    _log_raw(
-        f"  \033[1;36m⮑  Action:\033[0m \033[36m{tool_name}\033[0m \033[38;5;245m({args})\033[0m"
-    )
-
     match tool_name:
         case "slither":
             result = slither(project_path, args or "./")
@@ -161,19 +149,18 @@ def dispatch(tool_name: str, args: str, project_path: str) -> ToolResult:
                 1,
             )
 
+    with RollingWindow() as window:
+        window.feed(f"⎿  {tool_name}  {args}\n")
+        window.feed(f"   {_summary(result)}\n")
+
     if not result.success:
-        _log_raw(
-            f"     \033[31m✗ Failed\033[0m \033[38;5;245m(exit code {result.returncode})\033[0m"
-        )
-        snippet = result.stderr.replace("\n", " ↵ ")
-        _log_raw(f"\033[38;5;245m     {snippet}...\033[0m\n")
-    else:
-        out_len = len(result.stdout) + len(result.stderr)
-        _log_raw(
-            f"     \033[32m✓ Success\033[0m \033[38;5;245m({out_len} bytes returned to agent)\033[0m"
-        )
-        raw_text = result.stdout if result.stdout else result.stderr
-        snippet = raw_text.replace("\n", " ↵ ")
-        _log_raw(f"\033[38;5;245m     {snippet}...\033[0m\n")
+        body = (result.stderr or result.stdout).strip()
+        if body:
+            MAX = 4000
+            if len(body) > MAX:
+                body = body[:MAX] + f"\n... [truncated, {len(body) - MAX} more chars]"
+            for line in body.splitlines():
+                _console.print(f"     [dim]{line}[/dim]")
+            _console.print()
 
     return result
