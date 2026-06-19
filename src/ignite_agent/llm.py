@@ -20,7 +20,7 @@ class LLMClient:
         window: RollingWindow | None = None,
     ) -> str:
         if window is not None:
-            window.start_spinner("Thinking...")        
+            window.start_spinner("Thinking...")
 
         try:
             match self.cfg.provider:
@@ -73,7 +73,7 @@ class LLMClient:
                 first_chunk = None
             finally:
                 window.stop_spinner()
-                
+
             if first_chunk:
                 full += first_chunk
                 window.feed(first_chunk)
