@@ -172,14 +172,6 @@ def main():
 
     print_welcome_banner()
 
-    if debug_target:
-        dest = (
-            debug_target
-            if debug_target not in ("stderr", "-")
-            else "stderr (this terminal / `docker logs`)"
-        )
-        console.print(f"[dim]Debug logging on → {dest}[/dim]\n")
-
     run_agent(project_path=args.project_path, output_path=args.output)
 
 
