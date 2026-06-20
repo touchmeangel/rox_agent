@@ -1,43 +1,19 @@
 from __future__ import annotations
 
+import re
 import shlex
 import subprocess
 import threading
+import time
+import urllib.error
+import urllib.request
+from html import unescape
 from pathlib import Path
+from ddgs import DDGS
 
 from ignite_agent.rolling_window import RollingWindow
-
-
-class ToolResult:
-    def __init__(self, command: str, stdout: str, stderr: str, returncode: int):
-        self.command = command
-        self.stdout = stdout.strip()
-        self.stderr = stderr.strip()
-        self.returncode = returncode
-        self.success = returncode == 0
-
-    def __str__(self) -> str:
-        parts = [f"$ {self.command}"]
-        if self.stdout:
-            parts.append(self.stdout)
-        if self.stderr:
-            label = "STDERR" if not self.success else "STDERR (warnings)"
-            parts.append(f"{label}:\n{self.stderr}")
-        if not self.stdout and not self.stderr:
-            parts.append("(no output)")
-        return "\n".join(parts)
-
-    def truncated(self, max_chars: int = 12_000) -> str:
-        full = str(self)
-        if len(full) <= max_chars:
-            return full
-        half = max_chars // 2
-        return (
-            full[:half]
-            + f"\n\n... [truncated — {len(full) - max_chars} chars omitted] ...\n\n"
-            + full[-half:]
-        )
-
+from ignite_agent.search_state import SearchState
+from ignite_agent.tool_result import ToolResult
 
 def _stream_subprocess(
     args: list[str],
@@ -97,7 +73,7 @@ def run_command(
     window: RollingWindow | None = None,
 ) -> ToolResult:
     try:
-        args = shlex.split(command)
+        args = ["bash", "-c", command]
         if window is not None:
             stdout, stderr, returncode = _stream_subprocess(args, cwd, timeout, window)
             return ToolResult(command, stdout, stderr, returncode)
@@ -168,6 +144,81 @@ def shell(
     return run_command(command, cwd=project_path, timeout=120, window=window)
 
 
+def _web_search_ddgs(query: str, max_results: int = 5) -> ToolResult:
+    query = query.strip()
+    label = f"web_search {query!r}"
+    if not query:
+        return ToolResult(label, "", "Empty query.", 1)
+
+    results = None
+    last_exc: Exception | None = None
+    for attempt in range(2):
+        try:
+            results = DDGS().text(query, max_results=max_results, backend="auto")
+            last_exc = None
+            break
+        except Exception as exc:
+            last_exc = exc
+            if attempt == 0:
+                time.sleep(1.5)
+
+    if last_exc is not None:
+        return ToolResult(label, "", f"Search failed after retry: {last_exc}", 1)
+    if not results:
+        return ToolResult(label, "(no results)", "", 0)
+
+    lines = []
+    for i, r in enumerate(results, 1):
+        lines.append(
+            f"[{i}] {r.get('title', '')}\n"
+            f"    {r.get('href', '')}\n"
+            f"    {r.get('body', '')[:400]}\n"
+        )
+    return ToolResult(label, "\n".join(lines), "", 0)
+
+
+def web_search(query: str, max_results: int = 5) -> ToolResult:
+    return _web_search_ddgs(query, max_results)
+
+
+def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
+    """Fetch a URL and return its readable text content (tags stripped)."""
+    url = url.strip()
+    label = f"web_fetch {url}"
+
+    req = urllib.request.Request(
+        url, headers={"User-Agent": "Mozilla/5.0 (compatible; ignite-agent/1.0)"}
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            raw = resp.read()
+            charset = resp.headers.get_content_charset() or "utf-8"
+            html_text = raw.decode(charset, errors="replace")
+    except urllib.error.HTTPError as exc:
+        return ToolResult(label, "", f"HTTP {exc.code}", 1)
+    except urllib.error.URLError as exc:
+        return ToolResult(label, "", f"Network error: {exc.reason}", 1)
+    except Exception as exc:
+        return ToolResult(label, "", str(exc), 1)
+
+    html_text = re.sub(
+        r"(?is)<(script|style|nav|footer|header)\b.*?</\1>", " ", html_text
+    )
+    text = re.sub(r"(?s)<[^>]+>", " ", html_text)
+    text = unescape(text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n\s*\n+", "\n\n", text)
+    text = text.strip()
+
+    note = ""
+    if len(text) > max_chars:
+        text = text[:max_chars]
+        note = f"\n\n... [truncated to {max_chars} chars — fetch a narrower URL/section if you need more]"
+
+    return ToolResult(label, text + note, "", 0)
+
+
 TOOL_DESCRIPTIONS: dict[str, str] = {
     "slither": "Run slither static analysis. args: extra flags e.g. './ --json -'",
     "forge": "Run forge. args: subcommand + flags e.g. 'build', 'coverage', 'test -vvv'",
@@ -175,6 +226,22 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "read_file": "Read a source file. args: path relative to project root e.g. 'src/Vault.sol'",
     "list_sol_files": "List all .sol files. args: optional glob default '**/*.sol'",
     "shell": "Run any shell command. args: full command string",
+    "web_search": (
+        "Search the web — error messages, library/tool docs, CVEs, version-specific "
+        "behavior. args: a short specific query (3-8 words). Put the exact error "
+        "string or exception name in the query, not a vague description — e.g. "
+        "'PermissionError .solc-select/artifacts docker' not 'why does slither "
+        "not work'. Narrow with site: when you know the best source, e.g. "
+        "'site:github.com/crytic/slither <error>'. If results aren't relevant, "
+        "narrow the query and search again rather than giving up. Budget is "
+        "limited per step — make each query count."
+    ),
+    "web_fetch": (
+        "Fetch the full text of one specific URL — use after web_search when a "
+        "result's snippet isn't enough (e.g. a GitHub issue thread, a full docs "
+        "page, a changelog). args: the exact URL from a web_search result. "
+        "Counts against the same per-step search budget as web_search."
+    ),
 }
 
 
@@ -202,6 +269,7 @@ def dispatch(
     args: str,
     project_path: str,
     window: RollingWindow | None = None,
+    search_state: SearchState | None = None,
 ) -> ToolResult:
     owns_window = window is None
     if owns_window:
@@ -224,6 +292,18 @@ def dispatch(
                 result = list_sol_files(project_path, args or "**/*.sol")
             case "shell":
                 result = shell(project_path, args, window=window)
+            case "web_search":
+                result = (
+                    search_state.consume("web_search", args, lambda: web_search(args))
+                    if search_state is not None
+                    else web_search(args)
+                )
+            case "web_fetch":
+                result = (
+                    search_state.consume("web_fetch", args, lambda: web_fetch(args))
+                    if search_state is not None
+                    else web_fetch(args)
+                )
             case _:
                 result = ToolResult(
                     tool_name,
