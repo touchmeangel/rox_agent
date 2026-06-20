@@ -14,6 +14,8 @@ from rich.text import Text
 from ignite_agent.pipeline import PIPELINE
 from ignite_agent.steps.base import StepResult
 
+from ignite_agent.tools import default_debug_logger
+
 console = Console()
 color = "#1dcccc"
 
@@ -69,6 +71,26 @@ def parse_args():
     )
     parser.add_argument(
         "--output", type=str, required=False, default=None, help="JSON path output"
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help=(
+            "Log the full, unsummarized stdout/stderr of every tool call to "
+            "stderr — useful for seeing exactly what the model is seeing, "
+            "and works fine in a container since it doesn't need a volume "
+            "(just `docker logs`)."
+        ),
+    )
+    parser.add_argument(
+        "--debug-log",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Write full tool I/O as JSONL to PATH instead of stderr. "
+            "Implies --debug."
+        ),
     )
     return parser.parse_args()
 
@@ -144,7 +166,20 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
 
 def main():
     args = parse_args()
+
+    debug_target = args.debug_log or ("stderr" if args.debug else None)
+    default_debug_logger.configure(debug_target)
+
     print_welcome_banner()
+
+    if debug_target:
+        dest = (
+            debug_target
+            if debug_target != "stderr"
+            else "stderr (this terminal / `docker logs`)"
+        )
+        console.print(f"[dim]Debug logging on → {dest}[/dim]\n")
+
     run_agent(project_path=args.project_path, output_path=args.output)
 
 

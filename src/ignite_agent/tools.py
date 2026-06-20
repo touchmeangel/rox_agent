@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import shlex
 import subprocess
 import threading
 import time
@@ -14,6 +13,11 @@ from ddgs import DDGS
 from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.search_state import SearchState
 from ignite_agent.tool_result import ToolResult
+from ignite_agent.debug_logger import DebugLogger
+
+
+default_debug_logger = DebugLogger()
+
 
 def _stream_subprocess(
     args: list[str],
@@ -270,7 +274,10 @@ def dispatch(
     project_path: str,
     window: RollingWindow | None = None,
     search_state: SearchState | None = None,
+    debug_logger: DebugLogger | None = None,
 ) -> ToolResult:
+    debug_logger = debug_logger or default_debug_logger
+
     owns_window = window is None
     if owns_window:
         window = RollingWindow()
@@ -312,6 +319,7 @@ def dispatch(
                     1,
                 )
 
+        debug_logger.log(tool_name, args, result)
         window.feed(f"\n   {_summary(result)}\n")
     finally:
         if owns_window:
