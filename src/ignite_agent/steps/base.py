@@ -7,8 +7,7 @@ from dataclasses import dataclass, field
 from ignite_agent.config import PROJECT_PATH, STEPS, StepConfig
 from ignite_agent.llm import LLMClient, RollingWindow, get_llm
 from ignite_agent.tools import TOOL_DESCRIPTIONS, dispatch
-
-MAX_REPEATS = 2
+from ignite_agent.search_state import SearchState
 
 
 @dataclass
@@ -39,35 +38,29 @@ _INCOMPLETE_FINDINGS_PROMPT = (
 )
 
 _FAILURE_RETRY_PROMPT = """\
-TOOL EXECUTION FAILED (exit {returncode}).
-─── stderr ──────────────────────────────────
+TOOL FAILED (exit {returncode}). {iterations_left} iterations remain.
+
+stderr:
 {stderr}
-─────────────────────────────────────────────
-Use your "thinking" field to work through this systematically:
-  OBSERVE:  What is the exact error? (permissions? bad args? missing dependency? env issue?)
-  ANALYZE:  Is this recoverable without user action?
-  OPTIONS:  List every path forward:
-            • retry with corrected args
-            • use a different tool or command
-            • web_search the specific error message
-            • use shell to fix the environment (chmod, mkdir, pip install, export HOME=…)
-  DECISION: Pick the best option. Do not give up until you have tried at least 2 alternatives.
-If — and only if — the error requires the user to act (e.g. missing API key, sudo required),
-use status "blocked" with an exact `suggested_fix` and a `fallback_action` if one exists.
+
+Apply OBSERVE → ANALYZE → PLAN → ACT (see your instructions). If this error is \
+unfamiliar, your PLAN should include a web_search — if you're unsure how to phrase \
+it, this query is extracted directly from the error and is a safe starting point:
+
+  "{suggested_query}"
+
+This exact command may not be repeated unmodified — a repeat will be blocked \
+before it runs.\
 """
 
 _REPEAT_CALL_PROMPT = """\
-You just issued the exact same tool call again — {tool} {args} — which has now failed \
-{repeat_count} time(s) in a row with the same error. Repeating it will not produce a \
-different result, so it is NOT an option this turn.
+BLOCKED: {tool} {args} just failed and was not re-run — repeating it would \
+produce the same failure. {iterations_left} iterations remain.
 
-You must do exactly one of the following:
-  • take a genuinely different action: a different tool, materially different args, or a
-    different diagnostic/repair strategy than anything already tried in this conversation
-  • report status "blocked" if this truly requires the user to act
-  • report status "failed" if you have exhausted every reasonable option
-
-Do not re-issue {tool} {args} in any form.
+Choose one:
+  • a materially different command (different tool, different args, different strategy)
+  • status "blocked" if this needs the user to act
+  • status "failed" if you've exhausted every reasonable option
 """
 
 
@@ -92,6 +85,24 @@ def _extract_json(text: str) -> dict | None:
             pass
 
     return None
+
+
+_ERROR_LINE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):?\s*(.*)$")
+
+
+def _suggest_search_query(stderr: str, max_len: int = 120) -> str | None:
+    lines = [l.strip() for l in stderr.splitlines() if l.strip()]
+    if not lines:
+        return None
+
+    # Prefer the last line that looks like "SomeError: message" / "SomeException: message"
+    for line in reversed(lines):
+        m = _ERROR_LINE_RE.match(line)
+        if m:
+            exc_name, msg = m.groups()
+            return f"{exc_name} {msg}".strip()[:max_len]
+
+    return lines[-1][:max_len]
 
 
 class BaseStep:
@@ -124,19 +135,17 @@ Every response MUST include a "thinking" field. Use it to reason before acting.
 
 Structure your thinking as:
   OBSERVE:  What did the last tool output tell me?
-            What do I know now that I didn't before?
-  ANALYZE:  What does this mean? Is it a real issue or noise?
-            Are there conflicting signals?
-  PLAN:     What are my options? Which is best? Why?
-  ACT:      What am I about to do? Exactly what args / fields?
+  ANALYZE:  What does this mean? Real issue or noise? Conflicting signals?
+  PLAN:     What are my options here, and which is best?
+  ACT:      What am I about to do, exactly?
 
 When a tool fails:
-  • Do NOT immediately give up.
-  • Think about root cause first.
-  • Try at least 2 alternatives before declaring blocked or failed.
-  • Use web_search when you need to understand an error you haven't seen before.
-  • Never repeat the exact same tool call twice in a row — if it failed once, a different
-    approach is required, not a retry.
+  • Don't give up immediately — think about root cause first.
+  • If the error is unfamiliar, web_search the exact error string or exception
+    name (not a vague description), and web_fetch a result if the snippet
+    alone isn't enough to act on.
+  • Never repeat the exact same tool call twice in a row — if it failed once,
+    the next attempt must be a genuinely different approach.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RESPONSE SHAPES  (exactly one JSON object, no prose outside it)
@@ -203,10 +212,12 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
         thinking_trace: list[str] = []
         blockers: list[dict] = []
 
-        last_signature: tuple[str, str] | None = None
-        repeat_count = 0
+        last_failed_signature: tuple[str, str] | None = None
+        search_state = SearchState()
 
         for i in range(self.cfg.max_iterations):
+            iterations_left = self.cfg.max_iterations - i - 1
+
             with RollingWindow(max_lines=6) as window:
                 raw = self.llm.chat(messages, stream=True, window=window)
 
@@ -260,7 +271,7 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                                 ),
                             }
                         )
-                        last_signature, repeat_count = None, 0
+                        last_failed_signature = None
                         continue
 
                     return StepResult(
@@ -297,18 +308,25 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                     args = parsed.get("args", "")
                     signature = (tool, args)
 
-                    if signature == last_signature and repeat_count >= MAX_REPEATS:
+                    if signature == last_failed_signature:
                         messages.append(
                             {
                                 "role": "user",
                                 "content": _REPEAT_CALL_PROMPT.format(
-                                    tool=tool, args=args, repeat_count=repeat_count
+                                    tool=tool, args=args, iterations_left=iterations_left
                                 ),
                             }
                         )
                         continue
 
-                    result = dispatch(tool, args, self.project_path, window=window)
+                    result = dispatch(
+                        tool,
+                        args,
+                        self.project_path,
+                        window=window,
+                        search_state=search_state,
+                    )
+
                     tool_payload = {
                         "tool": tool,
                         "args": args,
@@ -316,37 +334,25 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                         "returncode": result.returncode,
                         "stdout": result.stdout[:10_000],
                         "stderr": result.stderr[:3_000],
+                        "system_note": f"{iterations_left} iterations remaining.",
                     }
                     messages.append(
                         {"role": "user", "content": json.dumps(tool_payload, indent=2)}
                     )
 
                     if result.success:
-                        last_signature, repeat_count = None, 0
+                        last_failed_signature = None
                         continue
 
-                    repeat_count = (
-                        repeat_count + 1 if signature == last_signature else 1
-                    )
-                    last_signature = signature
-
-                    if repeat_count >= MAX_REPEATS:
-                        messages.append(
-                            {
-                                "role": "user",
-                                "content": _REPEAT_CALL_PROMPT.format(
-                                    tool=tool, args=args, repeat_count=repeat_count
-                                ),
-                            }
-                        )
-                        continue
-
+                    last_failed_signature = signature
                     messages.append(
                         {
                             "role": "user",
                             "content": _FAILURE_RETRY_PROMPT.format(
                                 returncode=result.returncode,
                                 stderr=result.stderr[:1_500],
+                                iterations_left=iterations_left,
+                                suggested_query=_suggest_search_query(result.stderr),
                             ),
                         }
                     )
@@ -369,3 +375,4 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
             thinking_trace=thinking_trace,
             blockers=blockers,
         )
+    
