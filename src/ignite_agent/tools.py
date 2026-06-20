@@ -12,12 +12,10 @@ from pathlib import Path
 
 from ddgs import DDGS
 
-from ignite_agent.debug_logger import DebugLogger
+from ignite_agent.debug_logger import DebugLogger, default_debug_logger
 from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.search_state import SearchState
 from ignite_agent.tool_result import ToolResult
-
-default_debug_logger = DebugLogger()
 
 
 def _stream_subprocess(

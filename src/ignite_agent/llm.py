@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import time
 
+from ignite_agent.debug_logger import DebugLogger, default_debug_logger
 from ignite_agent.rolling_window import RollingWindow
 
 
@@ -18,14 +20,20 @@ class LLMClient:
         messages: list[dict],
         stream: bool = True,
         window: RollingWindow | None = None,
+        step_name: str = "",
+        debug_logger: DebugLogger | None = None,
     ) -> str:
+        debug_logger = debug_logger or default_debug_logger
+
         if window is not None:
             window.start_spinner("Thinking...")
+
+        start = time.time()
 
         try:
             match self.cfg.provider:
                 case "ollama":
-                    return self._openai(
+                    result = self._openai(
                         messages,
                         stream,
                         window,
@@ -33,7 +41,7 @@ class LLMClient:
                         api_key="ollama",
                     )
                 case "openai":
-                    return self._openai(
+                    result = self._openai(
                         messages,
                         stream,
                         window,
@@ -41,7 +49,7 @@ class LLMClient:
                         api_key=os.environ.get("OPENAI_API_KEY", ""),
                     )
                 case "google":
-                    return self._openai(
+                    result = self._openai(
                         messages,
                         stream,
                         window,
@@ -49,13 +57,32 @@ class LLMClient:
                         api_key=os.environ.get("GOOGLE_API_KEY", ""),
                     )
                 case "anthropic":
-                    return self._anthropic(messages, stream, window)
+                    result = self._anthropic(messages, stream, window)
                 case _:
                     raise ValueError(f"Unknown provider: {self.cfg.provider}")
-        except Exception:
+        except Exception as exc:
             if window is not None:
                 window.stop_spinner()
+            debug_logger.log_llm_call(
+                step=step_name,
+                provider=self.cfg.provider,
+                model=self.cfg.model,
+                messages=messages,
+                response="",
+                duration_s=time.time() - start,
+                error=str(exc),
+            )
             raise
+
+        debug_logger.log_llm_call(
+            step=step_name,
+            provider=self.cfg.provider,
+            model=self.cfg.model,
+            messages=messages,
+            response=result,
+            duration_s=time.time() - start,
+        )
+        return result
 
     def _render_stream(
         self,

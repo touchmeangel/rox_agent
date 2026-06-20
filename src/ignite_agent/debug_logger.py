@@ -6,7 +6,6 @@ from pathlib import Path
 
 from ignite_agent.tool_result import ToolResult
 
-
 class DebugLogger:
     def __init__(self, target: str | None = None):
         self.target = target
@@ -19,20 +18,12 @@ class DebugLogger:
     def configure(self, target: str | None) -> None:
         self.target = target
 
-    def log(self, tool_name: str, args: str, result: ToolResult) -> None:
+    def _write(self, record: dict) -> None:
         if not self.enabled:
             return
-
-        record = {
-            "ts": time.time(),
-            "tool": tool_name,
-            "args": args,
-            "returncode": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        }
-        line = json.dumps(record, ensure_ascii=False)
-
+ 
+        line = json.dumps(record, ensure_ascii=False, default=str)
+ 
         with self._lock:
             if self.target in ("stderr", "-"):
                 print(line, file=sys.stderr, flush=True)
@@ -44,3 +35,46 @@ class DebugLogger:
                     fh.write(line + "\n")
             except OSError as exc:
                 print(f"[debug log write failed: {exc}]", file=sys.stderr)
+
+    def log(self, tool_name: str, args: str, result: ToolResult) -> None:
+        self._write(
+            {
+                "ts": time.time(),
+                "category": "tool",
+                "tool": tool_name,
+                "args": args,
+                "returncode": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            }
+        )
+
+    def log_llm_call(
+        self,
+        *,
+        step: str,
+        provider: str,
+        model: str,
+        messages: list[dict],
+        response: str,
+        duration_s: float,
+        error: str | None = None,
+    ) -> None:
+        self._write(
+            {
+                "ts": time.time(),
+                "category": "llm_call",
+                "step": step,
+                "provider": provider,
+                "model": model,
+                "duration_s": round(duration_s, 3),
+                "messages": messages,
+                "response": response,
+                "error": error,
+            }
+        )
+ 
+    def log_event(self, category: str, **fields) -> None:
+        self._write({"ts": time.time(), "category": category, **fields})
+        
+default_debug_logger = DebugLogger()

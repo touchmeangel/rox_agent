@@ -11,9 +11,9 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from ignite_agent.debug_logger import default_debug_logger
 from ignite_agent.pipeline import PIPELINE
 from ignite_agent.steps.base import StepResult
-from ignite_agent.tools import default_debug_logger
 
 console = Console()
 color = "#1dcccc"
@@ -70,14 +70,17 @@ def parse_args():
     )
     parser.add_argument(
         "--output", type=str, required=False, default=None, help="JSON path output"
-    )   
+    )
     parser.add_argument(
         "--debug",
         type=str,
         default=None,
         metavar="PATH",
         help=(
-            "Write full tool I/O as JSONL to PATH instead of stderr."
+            "Log full tool calls, full LLM requests/responses, and step "
+            "lifecycle events. Pass 'stderr' (or '-') to print as JSONL to "
+            "stderr — useful in a container since `docker logs` picks it up "
+            "without a volume mount — or a file PATH to append JSONL there."
         ),
     )
     return parser.parse_args()
@@ -86,6 +89,8 @@ def parse_args():
 def run_agent(
     project_path: str, output_path: str | None = None
 ) -> dict[str, StepResult]:
+    default_debug_logger.log_event("agent_run_start", project_path=project_path)
+
     context: dict = {}
     results: dict[str, StepResult] = {}
 
@@ -115,6 +120,13 @@ def run_agent(
 
     if output_path:
         _write_results(results, output_path)
+
+    default_debug_logger.log_event(
+        "agent_run_complete",
+        project_path=project_path,
+        succeeded=sum(1 for r in results.values() if r.success),
+        failed=sum(1 for r in results.values() if not r.success),
+    )
 
     return results
 
@@ -163,7 +175,7 @@ def main():
     if debug_target:
         dest = (
             debug_target
-            if debug_target != "stderr"
+            if debug_target not in ("stderr", "-")
             else "stderr (this terminal / `docker logs`)"
         )
         console.print(f"[dim]Debug logging on → {dest}[/dim]\n")

@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass, field
 
 from ignite_agent.config import PROJECT_PATH, STEPS, StepConfig
+from ignite_agent.debug_logger import default_debug_logger
 from ignite_agent.llm import LLMClient, RollingWindow, get_llm
 from ignite_agent.search_state import SearchState
 from ignite_agent.tools import TOOL_DESCRIPTIONS, dispatch
@@ -205,6 +206,10 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
         if not self.cfg.enabled:
             return StepResult(self.name, True, {}, "Step disabled.", 0)
 
+        default_debug_logger.log_event(
+            "step_start", step=self.name, max_iterations=self.cfg.max_iterations
+        )
+
         messages: list[dict] = [
             {"role": "system", "content": self.system_prompt()},
             {"role": "user", "content": self.initial_prompt(context)},
@@ -218,8 +223,17 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
         for i in range(self.cfg.max_iterations):
             iterations_left = self.cfg.max_iterations - i - 1
 
+            default_debug_logger.log_event(
+                "iteration_start",
+                step=self.name,
+                iteration=i + 1,
+                iterations_left=iterations_left,
+            )
+
             with RollingWindow(max_lines=6) as window:
-                raw = self.llm.chat(messages, stream=True, window=window)
+                raw = self.llm.chat(
+                    messages, stream=True, window=window, step_name=self.name
+                )
 
                 parsed = _extract_json(raw)
                 messages.append({"role": "assistant", "content": raw})
@@ -228,12 +242,22 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                     thinking_trace.append(parsed["thinking"])
 
                 if parsed is None:
+                    default_debug_logger.log_event(
+                        "invalid_json", step=self.name, iteration=i + 1, raw=raw
+                    )
                     messages.append({"role": "user", "content": _INVALID_JSON_PROMPT})
                     continue
 
                 status = parsed.get("status")
 
                 if status == "failed":
+                    default_debug_logger.log_event(
+                        "step_failed",
+                        step=self.name,
+                        iteration=i + 1,
+                        error=parsed.get("error"),
+                        reason=parsed.get("reason"),
+                    )
                     return StepResult(
                         step_name=self.name,
                         success=False,
@@ -258,6 +282,9 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                         "can_continue": parsed.get("can_continue", False),
                     }
                     blockers.append(blocker)
+                    default_debug_logger.log_event(
+                        "step_blocked", step=self.name, iteration=i + 1, blocker=blocker
+                    )
 
                     fallback = blocker.get("fallback_action")
                     if fallback and blocker.get("can_continue"):
@@ -288,6 +315,13 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                 if status == "complete":
                     findings = parsed.get("findings", {})
                     if self.validate_complete(findings):
+                        default_debug_logger.log_event(
+                            "step_complete",
+                            step=self.name,
+                            iteration=i + 1,
+                            summary=parsed.get("summary", ""),
+                            findings=findings,
+                        )
                         return StepResult(
                             step_name=self.name,
                             success=True,
@@ -298,6 +332,12 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                             thinking_trace=thinking_trace,
                             blockers=blockers,
                         )
+                    default_debug_logger.log_event(
+                        "incomplete_findings",
+                        step=self.name,
+                        iteration=i + 1,
+                        findings=findings,
+                    )
                     messages.append(
                         {"role": "user", "content": _INCOMPLETE_FINDINGS_PROMPT}
                     )
@@ -309,6 +349,13 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                     signature = (tool, args)
 
                     if signature == last_failed_signature:
+                        default_debug_logger.log_event(
+                            "repeat_call_blocked",
+                            step=self.name,
+                            iteration=i + 1,
+                            tool=tool,
+                            args=args,
+                        )
                         messages.append(
                             {
                                 "role": "user",
@@ -320,6 +367,15 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                             }
                         )
                         continue
+
+                    default_debug_logger.log_event(
+                        "tool_call_issued",
+                        step=self.name,
+                        iteration=i + 1,
+                        tool=tool,
+                        args=args,
+                        reason=parsed.get("reason", ""),
+                    )
 
                     result = dispatch(
                         tool,
@@ -360,6 +416,9 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                     )
                     continue
 
+                default_debug_logger.log_event(
+                    "unknown_status", step=self.name, iteration=i + 1, status=status
+                )
                 messages.append(
                     {
                         "role": "user",
@@ -367,6 +426,11 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                     }
                 )
 
+        default_debug_logger.log_event(
+            "step_iteration_limit",
+            step=self.name,
+            max_iterations=self.cfg.max_iterations,
+        )
         return StepResult(
             step_name=self.name,
             success=False,
