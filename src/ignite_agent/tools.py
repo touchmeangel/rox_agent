@@ -5,16 +5,17 @@ import subprocess
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from html import unescape
 from pathlib import Path
+
 from ddgs import DDGS
 
+from ignite_agent.debug_logger import DebugLogger
 from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.search_state import SearchState
 from ignite_agent.tool_result import ToolResult
-from ignite_agent.debug_logger import DebugLogger
-
 
 default_debug_logger = DebugLogger()
 
@@ -190,12 +191,21 @@ def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
     url = url.strip()
     label = f"web_fetch {url}"
 
-    req = urllib.request.Request(
+    scheme = urllib.parse.urlsplit(url).scheme.lower()
+    if scheme not in ("http", "https"):
+        return ToolResult(
+            label,
+            "",
+            f"Refused: scheme '{scheme or '(none)'}' is not allowed — only http/https URLs can be fetched.",
+            1,
+        )
+
+    req = urllib.request.Request(  # noqa: S310 - allowlist above
         url, headers={"User-Agent": "Mozilla/5.0 (compatible; ignite-agent/1.0)"}
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310 - allowlist above
             raw = resp.read()
             charset = resp.headers.get_content_charset() or "utf-8"
             html_text = raw.decode(charset, errors="replace")

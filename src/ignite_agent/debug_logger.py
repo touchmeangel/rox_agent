@@ -1,9 +1,11 @@
-from ignite_agent.tool_result import ToolResult
-from pathlib import Path
-import threading
-import time
 import json
 import sys
+import threading
+import time
+from pathlib import Path
+
+from ignite_agent.tool_result import ToolResult
+
 
 class DebugLogger:
     def __init__(self, target: str | None = None):

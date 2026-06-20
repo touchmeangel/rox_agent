@@ -13,7 +13,6 @@ from rich.text import Text
 
 from ignite_agent.pipeline import PIPELINE
 from ignite_agent.steps.base import StepResult
-
 from ignite_agent.tools import default_debug_logger
 
 console = Console()
@@ -88,8 +87,7 @@ def parse_args():
         default=None,
         metavar="PATH",
         help=(
-            "Write full tool I/O as JSONL to PATH instead of stderr. "
-            "Implies --debug."
+            "Write full tool I/O as JSONL to PATH instead of stderr. Implies --debug."
         ),
     )
     return parser.parse_args()

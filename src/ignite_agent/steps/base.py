@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 
 from ignite_agent.config import PROJECT_PATH, STEPS, StepConfig
 from ignite_agent.llm import LLMClient, RollingWindow, get_llm
-from ignite_agent.tools import TOOL_DESCRIPTIONS, dispatch
 from ignite_agent.search_state import SearchState
+from ignite_agent.tools import TOOL_DESCRIPTIONS, dispatch
 
 
 @dataclass
@@ -91,7 +91,7 @@ _ERROR_LINE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):?\s*
 
 
 def _suggest_search_query(stderr: str, max_len: int = 120) -> str | None:
-    lines = [l.strip() for l in stderr.splitlines() if l.strip()]
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
     if not lines:
         return None
 
@@ -313,7 +313,9 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                             {
                                 "role": "user",
                                 "content": _REPEAT_CALL_PROMPT.format(
-                                    tool=tool, args=args, iterations_left=iterations_left
+                                    tool=tool,
+                                    args=args,
+                                    iterations_left=iterations_left,
                                 ),
                             }
                         )
@@ -375,4 +377,3 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
             thinking_trace=thinking_trace,
             blockers=blockers,
         )
-    

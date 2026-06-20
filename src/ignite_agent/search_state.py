@@ -1,13 +1,12 @@
+from collections.abc import Callable
+from dataclasses import dataclass, field
+
 from ignite_agent.tool_result import ToolResult
 
-from dataclasses import dataclass, field
-from typing import Callable
 
 @dataclass
 class SearchState:
-    max_calls: int = field(
-        default=6
-    )
+    max_calls: int = field(default=6)
     used: int = 0
     _cache: dict[str, ToolResult] = field(default_factory=dict)
 
@@ -44,7 +43,9 @@ class SearchState:
         self._cache[key] = result
 
         if result.success:
-            footer = f"\n\n({self.remaining()} of {self.max_calls} step searches remaining)"
+            footer = (
+                f"\n\n({self.remaining()} of {self.max_calls} step searches remaining)"
+            )
             result = ToolResult(
                 result.command, result.stdout + footer, result.stderr, result.returncode
             )
