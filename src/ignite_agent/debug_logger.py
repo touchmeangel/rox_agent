@@ -6,6 +6,7 @@ from pathlib import Path
 
 from ignite_agent.tool_result import ToolResult
 
+
 class DebugLogger:
     def __init__(self, target: str | None = None):
         self.target = target
@@ -21,9 +22,9 @@ class DebugLogger:
     def _write(self, record: dict) -> None:
         if not self.enabled:
             return
- 
+
         line = json.dumps(record, ensure_ascii=False, default=str)
- 
+
         with self._lock:
             if self.target in ("stderr", "-"):
                 print(line, file=sys.stderr, flush=True)
@@ -73,8 +74,9 @@ class DebugLogger:
                 "error": error,
             }
         )
- 
+
     def log_event(self, category: str, **fields) -> None:
         self._write({"ts": time.time(), "category": category, **fields})
-        
+
+
 default_debug_logger = DebugLogger()
