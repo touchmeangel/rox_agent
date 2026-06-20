@@ -70,24 +70,14 @@ def parse_args():
     )
     parser.add_argument(
         "--output", type=str, required=False, default=None, help="JSON path output"
-    )
+    )   
     parser.add_argument(
         "--debug",
-        action="store_true",
-        help=(
-            "Log the full, unsummarized stdout/stderr of every tool call to "
-            "stderr — useful for seeing exactly what the model is seeing, "
-            "and works fine in a container since it doesn't need a volume "
-            "(just `docker logs`)."
-        ),
-    )
-    parser.add_argument(
-        "--debug-log",
         type=str,
         default=None,
         metavar="PATH",
         help=(
-            "Write full tool I/O as JSONL to PATH instead of stderr. Implies --debug."
+            "Write full tool I/O as JSONL to PATH instead of stderr."
         ),
     )
     return parser.parse_args()
@@ -165,7 +155,7 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
 def main():
     args = parse_args()
 
-    debug_target = args.debug_log or ("stderr" if args.debug else None)
+    debug_target = args.debug
     default_debug_logger.configure(debug_target)
 
     print_welcome_banner()
