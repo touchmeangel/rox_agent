@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 from dataclasses import dataclass
@@ -10,7 +11,6 @@ _env_override = os.environ.get("IGNITE_CONFIG_PATH")
 if _env_override:
     _CONFIG_PATH = Path(_env_override)
 else:
-    # Smart Auto-Detection Fallbacks (Lower Priority)
     _POSSIBLE_PATHS = [
         Path("/app/config.json"),
         Path.cwd() / "config.json",
@@ -34,6 +34,7 @@ class ModelConfig:
     temperature: float
     max_tokens: int
     base_url: str | None = None
+    api_key_env: str | None = None  # Explicit environment target tracking
 
 
 @dataclass
@@ -58,8 +59,12 @@ _raw = _load_raw()
 _models = _raw.get("models", {})
 _task_routing = _raw.get("task_routing", {})
 
-MODELS: dict[str, ModelConfig] = {
-    key: ModelConfig(**_models.get(val, {})) for key, val in _task_routing.items()
-}
+MODELS: dict[str, ModelConfig] = {}
+valid_fields = {f.name for f in dataclasses.fields(ModelConfig)}
+
+for key, val in _task_routing.items():
+    raw_model_dict = _models.get(val, {})
+    filtered_dict = {k: v for k, v in raw_model_dict.items() if k in valid_fields}
+    MODELS[key] = ModelConfig(**filtered_dict)
 
 PROJECT_PATH: str = os.environ.get("PROJECT_PATH", "/project")
