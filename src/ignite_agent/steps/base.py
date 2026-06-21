@@ -6,9 +6,11 @@ from dataclasses import dataclass, field
 
 from ignite_agent.config import PROJECT_PATH, STEPS, StepConfig
 from ignite_agent.debug_logger import default_debug_logger
-from ignite_agent.llm import LLMClient, RollingWindow, get_llm
+from ignite_agent.llm import LLMClient, ToolResultEntry, get_llm
+from ignite_agent.planning import UPDATE_PLAN_SPEC, Plan
+from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.search_state import SearchState
-from ignite_agent.tools import TOOL_DESCRIPTIONS, dispatch
+from ignite_agent.tools import TOOL_SPECS, dispatch
 
 
 @dataclass
@@ -21,72 +23,31 @@ class StepResult:
     messages: list[dict] = field(default_factory=list)
     thinking_trace: list[str] = field(default_factory=list)  # captured model reasoning
     blockers: list[dict] = field(default_factory=list)  # user-side issues surfaced
+    plan: list[dict] = field(default_factory=list)  # final update_plan checklist state
 
 
-_INVALID_JSON_PROMPT = (
-    "Your response was not valid JSON. "
-    'Reply with a single JSON object that always includes a "thinking" field.'
+_INCOMPLETE_FINDINGS_HINT = (
+    "Those findings are incomplete — required fields are missing or empty. "
+    "Review what you have, fill in the gaps, and call submit_findings again when it's complete."
 )
 
-_UNKNOWN_STATUS_PROMPT = (
-    "Unknown status '{status}'. "
-    "Valid values: 'tool_call', 'complete', 'blocked', 'failed'."
+_REPEAT_CALL_HINT = (
+    "BLOCKED: this exact call (same tool, same arguments) just failed and was not re-run — "
+    "repeating it would produce the same failure. Choose one:\n"
+    "  - a materially different command (different tool, different args, different strategy)\n"
+    "  - report_blocker if this needs the user to act\n"
+    "  - report_failed if you've exhausted every reasonable option"
 )
 
-_INCOMPLETE_FINDINGS_PROMPT = (
-    "The findings are incomplete — required fields are missing. "
-    "Review what you have, fill in the gaps, and reply with a complete 'complete' object."
+_REPEAT_BLOCK_LIMIT = (
+    2  # consecutive client-side blocks of the *same* call before giving up
 )
 
-_FAILURE_RETRY_PROMPT = """\
-TOOL FAILED (exit {returncode}). {iterations_left} iterations remain.
-
-stderr:
-{stderr}
-
-Apply OBSERVE → ANALYZE → PLAN → ACT (see your instructions). If this error is \
-unfamiliar, your PLAN should include a web_search — if you're unsure how to phrase \
-it, this query is extracted directly from the error and is a safe starting point:
-
-  "{suggested_query}"
-
-This exact command may not be repeated unmodified — a repeat will be blocked \
-before it runs.\
-"""
-
-_REPEAT_CALL_PROMPT = """\
-BLOCKED: {tool} {args} just failed and was not re-run — repeating it would \
-produce the same failure. {iterations_left} iterations remain.
-
-Choose one:
-  • a materially different command (different tool, different args, different strategy)
-  • status "blocked" if this needs the user to act
-  • status "failed" if you've exhausted every reasonable option
-"""
-
-
-def _extract_json(text: str) -> dict | None:
-    try:
-        return json.loads(text.strip())
-    except json.JSONDecodeError:
-        pass
-
-    m = re.search(r"```(?:json)?\s*(\{.*?})\s*```", text, re.DOTALL)
-    if m:
-        try:
-            return json.loads(m.group(1))
-        except json.JSONDecodeError:
-            pass
-
-    m = re.search(r"\{.*}", text, re.DOTALL)
-    if m:
-        try:
-            return json.loads(m.group(0))
-        except json.JSONDecodeError:
-            pass
-
-    return None
-
+_NUDGE_FINISH_PROMPT = (
+    "That was text only, with no tool call. A step only ends when you call submit_findings, "
+    "report_blocker, or report_failed — if you're still working, call a tool; if you're done, "
+    "call submit_findings now."
+)
 
 _ERROR_LINE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):?\s*(.*)$")
 
@@ -95,14 +56,11 @@ def _suggest_search_query(stderr: str, max_len: int = 120) -> str | None:
     lines = [line.strip() for line in stderr.splitlines() if line.strip()]
     if not lines:
         return None
-
-    # Prefer the last line that looks like "SomeError: message" / "SomeException: message"
     for line in reversed(lines):
         m = _ERROR_LINE_RE.match(line)
         if m:
             exc_name, msg = m.groups()
             return f"{exc_name} {msg}".strip()[:max_len]
-
     return lines[-1][:max_len]
 
 
@@ -119,75 +77,51 @@ class BaseStep:
         return global_context
 
     def system_prompt(self) -> str:
-        tools_block = "\n".join(
-            f"  {name}: {desc}" for name, desc in TOOL_DESCRIPTIONS.items()
-        )
+        """Right-altitude system prompt: specific enough to steer behavior,
+        without hardcoding brittle response formatting. Tool *descriptions*
+        live in ignite_agent/tools.py's TOOL_SPECS — the provider assembles
+        those into the effective system prompt automatically when `tools=`
+        is passed, so nothing here duplicates that listing.
+        https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents
+        """
         return f"""You are an expert Solidity / EVM security auditor running inside an automated pipeline.
 
+<context>
 The project under audit is at: {self.project_path}
+</context>
 
-Available tools:
-{tools_block}
+<working_method>
+You work in a loop: read the last tool result, decide what it tells you, then act — either by
+calling a tool, or, once you're confident, by finishing the step (see <finishing>).
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-OBSERVE → THINK → ACT  (mandatory for every turn)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Every response MUST include a "thinking" field. Use it to reason before acting.
+A few habits that matter:
+  - When a tool call fails, diagnose before retrying. Read the actual error. Never repeat the
+    exact same tool call with the exact same arguments twice in a row — the harness will block
+    it. Change something concrete instead: different flags, a different tool, or web_search the
+    exact error string if it's unfamiliar.
+  - You don't need a rigid checklist before every tool call — a short, concrete reason for the
+    action you're about to take is enough. Spend more words reasoning when it's actually
+    warranted: conflicting signals, an unfamiliar failure, or choosing between two real
+    strategies.
+  - Use update_plan for any step with three or more distinct pieces of work, so progress stays
+    visible. Skip it for anything you can finish in one or two tool calls — don't maintain a
+    todo list for a single trivial action.
+  - Prefer the most specific tool that fits (slither/forge/git/read_file) over shell — it gives
+    cleaner signal about what you're doing. Reach for shell when you genuinely need
+    general-purpose composition (grep, jq, etc).
+</working_method>
 
-Structure your thinking as:
-  OBSERVE:  What did the last tool output tell me?
-  ANALYZE:  What does this mean? Real issue or noise? Conflicting signals?
-  PLAN:     What are my options here, and which is best?
-  ACT:      What am I about to do, exactly?
-
-When a tool fails:
-  • Don't give up immediately — think about root cause first.
-  • If the error is unfamiliar, web_search the exact error string or exception
-    name (not a vague description), and web_fetch a result if the snippet
-    alone isn't enough to act on.
-  • Never repeat the exact same tool call twice in a row — if it failed once,
-    the next attempt must be a genuinely different approach.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RESPONSE SHAPES  (exactly one JSON object, no prose outside it)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Run a tool:
-{{
-  "thinking":  "<OBSERVE / ANALYZE / PLAN / ACT>",
-  "status":    "tool_call",
-  "tool":      "<tool_name>",
-  "args":      "<arguments string>",
-  "reason":    "<one sentence: why this specific call>"
-}}
-
-Step complete:
-{{
-  "thinking":  "<what I found; am I confident; any remaining gaps>",
-  "status":    "complete",
-  "findings":  {{ ... }},
-  "summary":   "<concise paragraph>"
-}}
-
-Blocked — a genuine environment issue the user must fix first:
-{{
-  "thinking":        "<root-cause reasoning; what I already tried>",
-  "status":          "blocked",
-  "issue":           "<what is blocking, specifically>",
-  "suggested_fix":   "<exact command or step the user should run>",
-  "fallback_action": "<what I will try instead — or null if none>",
-  "can_continue":    true | false
-}}
-
-Failed — unrecoverable after exhausting all options:
-{{
-  "thinking": "<everything I tried and why nothing worked>",
-  "status":   "failed",
-  "error":    "<technical error>",
-  "reason":   "<why this cannot be recovered automatically>"
-}}
-
-Invalid JSON or unknown status → a retry prompt will be sent automatically.
-The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
+<finishing>
+A step only ends when you call one of these three tools — plain text alone does not end it:
+  - submit_findings — you're done and confident in the result.
+  - report_blocker — a genuine environment problem (missing tool, broken install, missing
+    credentials) that you can't resolve yourself. Set fallback_action + can_continue if you have
+    a reasonable workaround; otherwise leave can_continue false.
+  - report_failed — you've exhausted every reasonable option and the task cannot complete.
+Don't call submit_findings until you've actually verified what you're reporting. A clean forge
+build is a prerequisite for trusting slither output; partial results or unresolved errors are
+not "done."
+</finishing>"""
 
     def initial_prompt(self, context: dict) -> str:
         """First user message. Must be implemented by each step."""
@@ -202,6 +136,80 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
         """
         return True
 
+    def findings_schema(self) -> dict:
+        """JSON Schema for the `findings` argument of submit_findings.
+        Override in steps that want the provider itself to enforce
+        required/typed fields, on top of validate_complete()'s runtime check.
+        """
+        return {"type": "object"}
+
+    def _terminal_tool_specs(self) -> list[dict]:
+        return [
+            {
+                "name": "submit_findings",
+                "description": (
+                    "Finish this step successfully. Only call this once you've actually "
+                    "verified what you're reporting — not on a hunch."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "findings": self.findings_schema(),
+                        "summary": {
+                            "type": "string",
+                            "description": "Concise paragraph summarizing what you found.",
+                        },
+                    },
+                    "required": ["findings", "summary"],
+                },
+            },
+            {
+                "name": "report_blocker",
+                "description": (
+                    "Report a genuine environment issue that needs the user to act before "
+                    "this step can finish (missing tool, broken install, missing credentials, "
+                    "permissions, etc) — not a finding about the audited code itself."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "issue": {
+                            "type": "string",
+                            "description": "What is blocking, specifically.",
+                        },
+                        "suggested_fix": {
+                            "type": "string",
+                            "description": "Exact command or step the user should run.",
+                        },
+                        "fallback_action": {
+                            "type": ["string", "null"],
+                            "description": "What you'll try instead, or null if there isn't one.",
+                        },
+                        "can_continue": {
+                            "type": "boolean",
+                            "description": "True if you can proceed with fallback_action right now without waiting for the user.",
+                        },
+                    },
+                    "required": ["issue", "suggested_fix", "can_continue"],
+                },
+            },
+            {
+                "name": "report_failed",
+                "description": "Report that this step is unrecoverable after exhausting every reasonable option.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "error": {"type": "string", "description": "Technical error."},
+                        "reason": {
+                            "type": "string",
+                            "description": "Why this cannot be recovered automatically.",
+                        },
+                    },
+                    "required": ["error", "reason"],
+                },
+            },
+        ]
+
     def run(self, context: dict) -> StepResult:
         if not self.cfg.enabled:
             return StepResult(self.name, True, {}, "Step disabled.", 0)
@@ -210,15 +218,23 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
             "step_start", step=self.name, max_iterations=self.cfg.max_iterations
         )
 
+        system = self.system_prompt()
+        tools = TOOL_SPECS + [UPDATE_PLAN_SPEC] + self._terminal_tool_specs()
+
         messages: list[dict] = [
-            {"role": "system", "content": self.system_prompt()},
-            {"role": "user", "content": self.initial_prompt(context)},
+            {"role": "user", "content": self.initial_prompt(context)}
         ]
         thinking_trace: list[str] = []
         blockers: list[dict] = []
+        plan = Plan()
 
         last_failed_signature: tuple[str, str] | None = None
+        consecutive_repeat_blocks = 0
         search_state = SearchState()
+
+        last_no_tool_call_text: str | None = None
+        consecutive_no_tool_call_repeats = 0
+        NO_TOOL_CALL_REPEAT_LIMIT = 3
 
         for i in range(self.cfg.max_iterations):
             iterations_left = self.cfg.max_iterations - i - 1
@@ -230,201 +246,283 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
                 iterations_left=iterations_left,
             )
 
-            with RollingWindow(max_lines=6) as window:
-                raw = self.llm.chat(
-                    messages, stream=True, window=window, step_name=self.name
+            with RollingWindow(max_lines=8) as window:
+                turn = self.llm.chat_with_tools(
+                    messages,
+                    tools=tools,
+                    system=system,
+                    window=window,
+                    step_name=self.name,
+                )
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "text": turn.text,
+                        "tool_calls": turn.tool_calls,
+                        "raw": turn.raw,
+                    }
                 )
 
-                parsed = _extract_json(raw)
-                messages.append({"role": "assistant", "content": raw})
+                rationale = turn.thinking or turn.text
+                if rationale:
+                    thinking_trace.append(rationale)
 
-                if parsed and parsed.get("thinking"):
-                    thinking_trace.append(parsed["thinking"])
-
-                if parsed is None:
+                if not turn.tool_calls:
                     default_debug_logger.log_event(
-                        "invalid_json", step=self.name, iteration=i + 1, raw=raw
-                    )
-                    messages.append({"role": "user", "content": _INVALID_JSON_PROMPT})
-                    continue
-
-                status = parsed.get("status")
-
-                if status == "failed":
-                    default_debug_logger.log_event(
-                        "step_failed",
-                        step=self.name,
-                        iteration=i + 1,
-                        error=parsed.get("error"),
-                        reason=parsed.get("reason"),
-                    )
-                    return StepResult(
-                        step_name=self.name,
-                        success=False,
-                        findings={
-                            "error": {
-                                "message": parsed.get("error", "unknown error"),
-                                "reason": parsed.get("reason", "unknown failure"),
-                            }
-                        },
-                        summary=f"[FAILED] {parsed.get('reason', '')}",
-                        iterations_used=i + 1,
-                        messages=messages,
-                        thinking_trace=thinking_trace,
-                        blockers=blockers,
+                        "no_tool_call", step=self.name, iteration=i + 1, text=turn.text
                     )
 
-                if status == "blocked":
-                    blocker = {
-                        "issue": parsed.get("issue", ""),
-                        "suggested_fix": parsed.get("suggested_fix", ""),
-                        "fallback_action": parsed.get("fallback_action"),
-                        "can_continue": parsed.get("can_continue", False),
-                    }
-                    blockers.append(blocker)
-                    default_debug_logger.log_event(
-                        "step_blocked", step=self.name, iteration=i + 1, blocker=blocker
-                    )
+                    if turn.text and turn.text == last_no_tool_call_text:
+                        consecutive_no_tool_call_repeats += 1
+                    else:
+                        consecutive_no_tool_call_repeats = 1
+                    last_no_tool_call_text = turn.text
 
-                    fallback = blocker.get("fallback_action")
-                    if fallback and blocker.get("can_continue"):
-                        messages.append(
-                            {
-                                "role": "user",
-                                "content": (
-                                    f"That blocker has been logged and the user will be notified.\n"
-                                    f"You indicated a fallback is available: '{fallback}'.\n"
-                                    f"Proceed with the fallback now."
-                                ),
-                            }
-                        )
-                        last_failed_signature = None
-                        continue
-
-                    return StepResult(
-                        step_name=self.name,
-                        success=False,
-                        findings={"blocked": blocker},
-                        summary=f"[BLOCKED] {blocker['issue']}. Fix: {blocker['suggested_fix']}",
-                        iterations_used=i + 1,
-                        messages=messages,
-                        thinking_trace=thinking_trace,
-                        blockers=blockers,
-                    )
-
-                if status == "complete":
-                    findings = parsed.get("findings", {})
-                    if self.validate_complete(findings):
+                    if consecutive_no_tool_call_repeats >= NO_TOOL_CALL_REPEAT_LIMIT:
                         default_debug_logger.log_event(
-                            "step_complete",
+                            "no_tool_call_stuck",
                             step=self.name,
                             iteration=i + 1,
-                            summary=parsed.get("summary", ""),
-                            findings=findings,
+                            repeats=consecutive_no_tool_call_repeats,
+                            text=turn.text,
                         )
                         return StepResult(
                             step_name=self.name,
-                            success=True,
-                            findings=findings,
-                            summary=parsed.get("summary", ""),
+                            success=False,
+                            findings={
+                                "error": {
+                                    "message": (
+                                        "Model repeated the same text-only response "
+                                        f"{consecutive_no_tool_call_repeats} times without ever producing a "
+                                        "real tool call."
+                                    ),
+                                    "reason": (
+                                        "No native tool_calls were ever populated for this provider/model, even "
+                                        "though the text looks like it's attempting one. This usually means the "
+                                        "model or provider isn't actually emitting structured tool calls — e.g. "
+                                        "an Ollama model whose chat template doesn't support tool calling, or a "
+                                        "streaming response where tool_calls deltas aren't being surfaced. Check "
+                                        "`ollama show <model> --modelfile` for a `{{ if .Tools }}` block, or try "
+                                        "a model/tag known to support native tool calling."
+                                    ),
+                                }
+                            },
+                            summary=(
+                                "Step aborted early — the model never produced a real tool call, it only "
+                                "wrote text that looked like one."
+                            ),
                             iterations_used=i + 1,
                             messages=messages,
                             thinking_trace=thinking_trace,
                             blockers=blockers,
+                            plan=plan.as_dicts(),
                         )
-                    default_debug_logger.log_event(
-                        "incomplete_findings",
-                        step=self.name,
-                        iteration=i + 1,
-                        findings=findings,
-                    )
-                    messages.append(
-                        {"role": "user", "content": _INCOMPLETE_FINDINGS_PROMPT}
-                    )
+
+                    messages.append({"role": "user", "content": _NUDGE_FINISH_PROMPT})
                     continue
 
-                if status == "tool_call":
-                    tool = parsed.get("tool", "")
-                    args = parsed.get("args", "")
-                    signature = (tool, args)
+                consecutive_no_tool_call_repeats = 0
+                last_no_tool_call_text = None
 
-                    if signature == last_failed_signature:
+                tool_results: list[ToolResultEntry] = []
+                terminal_result: StepResult | None = None
+
+                for call in turn.tool_calls:
+                    if call.name == "submit_findings":
+                        findings = call.input.get("findings", {})
+                        if self.validate_complete(findings):
+                            default_debug_logger.log_event(
+                                "step_complete",
+                                step=self.name,
+                                iteration=i + 1,
+                                summary=call.input.get("summary", ""),
+                                findings=findings,
+                            )
+                            terminal_result = StepResult(
+                                step_name=self.name,
+                                success=True,
+                                findings=findings,
+                                summary=call.input.get("summary", ""),
+                                iterations_used=i + 1,
+                            )
+                            tool_results.append(
+                                ToolResultEntry(call.id, "Findings accepted.")
+                            )
+                        else:
+                            default_debug_logger.log_event(
+                                "incomplete_findings",
+                                step=self.name,
+                                iteration=i + 1,
+                                findings=findings,
+                            )
+                            tool_results.append(
+                                ToolResultEntry(
+                                    call.id, _INCOMPLETE_FINDINGS_HINT, is_error=True
+                                )
+                            )
+
+                    elif call.name == "report_blocker":
+                        blocker = {
+                            "issue": call.input.get("issue", ""),
+                            "suggested_fix": call.input.get("suggested_fix", ""),
+                            "fallback_action": call.input.get("fallback_action"),
+                            "can_continue": bool(call.input.get("can_continue", False)),
+                        }
+                        blockers.append(blocker)
                         default_debug_logger.log_event(
-                            "repeat_call_blocked",
+                            "step_blocked",
                             step=self.name,
                             iteration=i + 1,
-                            tool=tool,
-                            args=args,
+                            blocker=blocker,
                         )
-                        messages.append(
-                            {
-                                "role": "user",
-                                "content": _REPEAT_CALL_PROMPT.format(
-                                    tool=tool,
-                                    args=args,
-                                    iterations_left=iterations_left,
-                                ),
+                        if blocker["fallback_action"] and blocker["can_continue"]:
+                            tool_results.append(
+                                ToolResultEntry(
+                                    call.id,
+                                    "Logged; the user will be notified. Proceed with your "
+                                    f"stated fallback now: {blocker['fallback_action']}",
+                                )
+                            )
+                            last_failed_signature = None
+                            consecutive_repeat_blocks = 0
+                        else:
+                            terminal_result = StepResult(
+                                step_name=self.name,
+                                success=False,
+                                findings={"blocked": blocker},
+                                summary=f"[BLOCKED] {blocker['issue']}. Fix: {blocker['suggested_fix']}",
+                                iterations_used=i + 1,
+                            )
+                            tool_results.append(
+                                ToolResultEntry(call.id, "Blocker recorded.")
+                            )
+
+                    elif call.name == "report_failed":
+                        default_debug_logger.log_event(
+                            "step_failed",
+                            step=self.name,
+                            iteration=i + 1,
+                            error=call.input.get("error"),
+                            reason=call.input.get("reason"),
+                        )
+                        terminal_result = StepResult(
+                            step_name=self.name,
+                            success=False,
+                            findings={
+                                "error": {
+                                    "message": call.input.get("error", "unknown error"),
+                                    "reason": call.input.get(
+                                        "reason", "unknown failure"
+                                    ),
+                                }
+                            },
+                            summary=f"[FAILED] {call.input.get('reason', '')}",
+                            iterations_used=i + 1,
+                        )
+                        tool_results.append(
+                            ToolResultEntry(call.id, "Failure recorded.")
+                        )
+
+                    elif call.name == "update_plan":
+                        plan.update(call.input.get("todos", []))
+                        window.feed(plan.render_line())
+                        tool_results.append(ToolResultEntry(call.id, "Plan updated."))
+
+                    else:
+                        signature = (call.name, json.dumps(call.input, sort_keys=True))
+                        if signature == last_failed_signature:
+                            consecutive_repeat_blocks += 1
+                            default_debug_logger.log_event(
+                                "repeat_call_blocked",
+                                step=self.name,
+                                iteration=i + 1,
+                                tool=call.name,
+                                args=call.input,
+                                repeats=consecutive_repeat_blocks,
+                            )
+                            tool_results.append(
+                                ToolResultEntry(
+                                    call.id, _REPEAT_CALL_HINT, is_error=True
+                                )
+                            )
+
+                            if consecutive_repeat_blocks >= _REPEAT_BLOCK_LIMIT:
+                                terminal_result = StepResult(
+                                    step_name=self.name,
+                                    success=False,
+                                    findings={
+                                        "error": {
+                                            "message": (
+                                                f"Model repeated the same blocked call ({call.name}) "
+                                                f"{consecutive_repeat_blocks} times in a row."
+                                            ),
+                                            "reason": (
+                                                "After the first real failure, every retry was the exact same "
+                                                "call with the exact same arguments — each one was blocked "
+                                                "client-side without re-executing, and the model never tried "
+                                                "anything different."
+                                            ),
+                                        }
+                                    },
+                                    summary=(
+                                        f"Step aborted early — stuck repeating a blocked '{call.name}' call."
+                                    ),
+                                    iterations_used=i + 1,
+                                )
+                            continue
+
+                        default_debug_logger.log_event(
+                            "tool_call_issued",
+                            step=self.name,
+                            iteration=i + 1,
+                            tool=call.name,
+                            args=call.input,
+                        )
+                        result = dispatch(
+                            call.name,
+                            call.input,
+                            self.project_path,
+                            window=window,
+                            search_state=search_state,
+                        )
+
+                        if result.success:
+                            last_failed_signature = None
+                            consecutive_repeat_blocks = 0
+                            payload = {
+                                "tool": call.name,
+                                "success": True,
+                                "stdout": result.stdout,
+                                "stderr": result.stderr,
+                                "system_note": f"{iterations_left} iterations remaining.",
                             }
-                        )
-                        continue
+                            tool_results.append(
+                                ToolResultEntry(call.id, json.dumps(payload, indent=2))
+                            )
+                        else:
+                            last_failed_signature = signature
+                            hint = (
+                                f"TOOL FAILED (exit {result.returncode}). {iterations_left} iterations remain.\n\n"
+                                f"stderr:\n{result.stderr}\n\n"
+                                "Apply observe -> diagnose -> act: don't immediately retry. If this error is "
+                                "unfamiliar, web_search the exact error string or exception name"
+                            )
+                            suggestion = _suggest_search_query(result.stderr)
+                            if suggestion:
+                                hint += f' — this query is extracted from the error and is a safe start:\n  "{suggestion}"'
+                            hint += "\n\nThis exact call will be blocked if you repeat it unmodified."
+                            tool_results.append(
+                                ToolResultEntry(call.id, hint, is_error=True)
+                            )
 
-                    default_debug_logger.log_event(
-                        "tool_call_issued",
-                        step=self.name,
-                        iteration=i + 1,
-                        tool=tool,
-                        args=args,
-                        reason=parsed.get("reason", ""),
-                    )
+                if terminal_result is not None:
+                    terminal_result.messages = messages
+                    terminal_result.thinking_trace = thinking_trace
+                    terminal_result.blockers = blockers
+                    terminal_result.plan = plan.as_dicts()
+                    return terminal_result
 
-                    result = dispatch(
-                        tool,
-                        args,
-                        self.project_path,
-                        window=window,
-                        search_state=search_state,
-                    )
-
-                    tool_payload = {
-                        "tool": tool,
-                        "args": args,
-                        "success": result.success,
-                        "returncode": result.returncode,
-                        "stdout": result.stdout[:10_000],
-                        "stderr": result.stderr[:3_000],
-                        "system_note": f"{iterations_left} iterations remaining.",
-                    }
-                    messages.append(
-                        {"role": "user", "content": json.dumps(tool_payload, indent=2)}
-                    )
-
-                    if result.success:
-                        last_failed_signature = None
-                        continue
-
-                    last_failed_signature = signature
-                    messages.append(
-                        {
-                            "role": "user",
-                            "content": _FAILURE_RETRY_PROMPT.format(
-                                returncode=result.returncode,
-                                stderr=result.stderr[:1_500],
-                                iterations_left=iterations_left,
-                                suggested_query=_suggest_search_query(result.stderr),
-                            ),
-                        }
-                    )
-                    continue
-
-                default_debug_logger.log_event(
-                    "unknown_status", step=self.name, iteration=i + 1, status=status
-                )
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": _UNKNOWN_STATUS_PROMPT.format(status=status),
-                    }
-                )
+                messages.append({"role": "tool_results", "results": tool_results})
 
         default_debug_logger.log_event(
             "step_iteration_limit",
@@ -440,4 +538,5 @@ The "thinking" field is REQUIRED in every response. Omitting it is invalid."""
             messages=messages,
             thinking_trace=thinking_trace,
             blockers=blockers,
+            plan=plan.as_dicts(),
         )

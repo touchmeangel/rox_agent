@@ -111,10 +111,14 @@ def run_agent(
 
         icon = "[green]✓[/green]" if result.success else "[red]✗[/red]"
         plural = "" if result.iterations_used == 1 else "s"
-        console.print(
+        line = (
             f"  [dim]⎿[/dim]  {icon}  "
             f"[dim]{result.iterations_used} iteration{plural}[/dim]"
         )
+        if result.plan:
+            done = sum(1 for item in result.plan if item.get("status") == "completed")
+            line += f"  [dim]·  {done}/{len(result.plan)} planned steps done[/dim]"
+        console.print(line)
 
     _print_summary(results)
 
@@ -155,6 +159,8 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
                 "iterations": r.iterations_used,
                 "summary": r.summary,
                 "findings": r.findings,
+                "plan": r.plan,
+                "blockers": r.blockers,
             }
             for name, r in results.items()
         },

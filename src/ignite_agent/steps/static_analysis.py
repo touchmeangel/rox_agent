@@ -6,6 +6,9 @@ from ignite_agent.steps.base import BaseStep
 class StaticAnalysisStep(BaseStep):
     name = "static_analysis"
 
+    def select_context(self, global_context: dict) -> dict:
+        return {}
+
     def initial_prompt(self, context: dict) -> str:
         return f"""You are starting a security audit.
 Project path: {self.project_path}

@@ -9,7 +9,7 @@ class FinalReportStep(BaseStep):
     name = "final_report"
 
     def select_context(self, global_context: dict) -> dict:
-        return {}
+        return global_context
 
     def initial_prompt(self, context: dict) -> str:
         return f"""

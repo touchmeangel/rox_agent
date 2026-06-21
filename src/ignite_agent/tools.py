@@ -7,7 +7,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from html import unescape
 from pathlib import Path
 
@@ -121,7 +121,11 @@ def read_file(project_path: str, relative_path: str) -> ToolResult:
     full = Path(project_path) / relative_path
     if not full.exists():
         return ToolResult(
-            f"cat {relative_path}", "", f"File not found: {relative_path}", 1
+            f"cat {relative_path}",
+            "",
+            f"File not found: {relative_path}. Use list_sol_files or shell('find . -iname ...') "
+            f"to locate the right path — relative paths are resolved against the project root.",
+            1,
         )
     try:
         return ToolResult(
@@ -175,7 +179,7 @@ def _web_search_ddgs(query: str, max_results: int = 5) -> ToolResult:
             1,
         )
 
-    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     if not results:
         return ToolResult(label, f"(no results — today is {today})", "", 0)
 
@@ -246,30 +250,192 @@ def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
     return ToolResult(label, text + note, "", 0)
 
 
-TOOL_DESCRIPTIONS: dict[str, str] = {
-    "slither": "Run slither static analysis. args: extra flags e.g. './ --json -'",
-    "forge": "Run forge. args: subcommand + flags e.g. 'build', 'coverage', 'test -vvv'",
-    "git": "Run git. args: subcommand e.g. 'log --oneline -20'",
-    "read_file": "Read a source file. args: path relative to project root e.g. 'src/Vault.sol'",
-    "list_sol_files": "List all .sol files. args: optional glob default '**/*.sol'",
-    "shell": "Run any shell command. args: full command string",
-    "web_search": (
-        "Search the web — error messages, library/tool docs, CVEs, version-specific "
-        "behavior. args: a short specific query (3-8 words). Put the exact error "
-        "string or exception name in the query, not a vague description — e.g. "
-        "'PermissionError .solc-select/artifacts docker' not 'why does slither "
-        "not work'. Narrow with site: when you know the best source, e.g. "
-        "'site:github.com/crytic/slither <error>'. If results aren't relevant, "
-        "narrow the query and search again rather than giving up. Budget is "
-        "limited per step — make each query count."
-    ),
-    "web_fetch": (
-        "Fetch the full text of one specific URL — use after web_search when a "
-        "result's snippet isn't enough (e.g. a GitHub issue thread, a full docs "
-        "page, a changelog). args: the exact URL from a web_search result. "
-        "Counts against the same per-step search budget as web_search."
-    ),
-}
+TOOL_SPECS: list[dict] = [
+    {
+        "name": "slither",
+        "description": (
+            "Run Slither static analysis against the project. Use this early to get a "
+            "broad first pass of automated findings (reentrancy, access control, "
+            "uninitialized state, etc.) before manually reading source. "
+            "Pass '--json -' for machine-readable output if you plan to parse results "
+            "programmatically; otherwise the default text report is usually easier to scan."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "flags": {
+                    "type": "string",
+                    "description": "Extra CLI flags/target, e.g. './' or './ --json -' or './ --exclude-dependencies'.",
+                    "default": "./",
+                }
+            },
+        },
+    },
+    {
+        "name": "forge",
+        "description": (
+            "Run Foundry's forge. Use 'build' to confirm the project compiles before "
+            "trusting any analysis of it, 'test -vvv' to run the test suite with verbose "
+            "traces, or 'coverage' to see which branches tests actually exercise. A clean "
+            "build is a prerequisite for trusting slither output — if build fails, fix or "
+            "note that before treating static-analysis results as reliable."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "subcommand": {
+                    "type": "string",
+                    "description": "forge subcommand + flags, e.g. 'build', 'test -vvv', 'coverage'.",
+                    "default": "build",
+                }
+            },
+        },
+    },
+    {
+        "name": "git",
+        "description": (
+            "Run read-only git commands to understand project history — when a suspicious "
+            "pattern was introduced, who touched a file, what changed in the last commit."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "string",
+                    "description": "git subcommand + flags, e.g. 'log --oneline -20' or 'log -p -- src/Vault.sol'.",
+                    "default": "log --oneline -10",
+                }
+            },
+        },
+    },
+    {
+        "name": "read_file",
+        "description": "Read one source file in full. path is relative to the project root.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Path relative to the project root, e.g. 'src/Vault.sol'.",
+                }
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "list_sol_files",
+        "description": "List Solidity source files matching a glob, to orient yourself before reading specific files.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pattern": {
+                    "type": "string",
+                    "description": "Glob pattern relative to the project root.",
+                    "default": "**/*.sol",
+                }
+            },
+        },
+    },
+    {
+        "name": "shell",
+        "description": (
+            "Run an arbitrary shell command for anything the other tools don't cover "
+            "(grep across files, jq-parsing JSON output, inspecting node_modules/lib, etc). "
+            "Prefer the dedicated tools (slither/forge/git/read_file) when they fit — they "
+            "give the harness clearer signal about what you're doing — and reach for shell "
+            "when you genuinely need general-purpose composition."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Full shell command string.",
+                }
+            },
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "web_search",
+        "description": (
+            "Search the web for current, version-specific, or hard-to-recall information: "
+            "exact error messages, library/tool documentation, CVEs, changelogs, known "
+            "vulnerability classes (SWC registry), or how a specific Slither/Foundry flag "
+            "behaves.\n\n"
+            "Query style:\n"
+            "  - Keep it short and specific: 3-6 words. Put the literal error string or "
+            "exception name in the query verbatim, not a paraphrase — e.g. "
+            "'PermissionError .solc-select artifacts docker', not 'why does slither not work'.\n"
+            "  - Don't append a year or 'latest' unless freshness genuinely changes the answer — "
+            "every result already comes back stamped with today's date, so you don't need to "
+            "smuggle one into the query, and doing so tends to narrow results without "
+            "improving them.\n"
+            "  - Make each query meaningfully different from your last one. If results are "
+            "off-target, narrow or rephrase rather than repeating the same query verbatim.\n"
+            "  - 'site:' narrowing is fine once you know the best source (e.g. "
+            "'site:github.com/crytic/slither <error>'), but try a plain query first.\n"
+            "  - When choosing what to open with web_fetch, prefer primary sources — "
+            "docs.soliditylang.org, book.getfoundry.sh, github.com/crytic/slither, "
+            "github.com/foundry-rs/foundry, the SWC registry, OpenZeppelin docs, the "
+            "project's own GitHub issues — over SEO blogspam or forum mirrors.\n\n"
+            "Budget: this step has a limited number of searches. A single error string or "
+            "flag lookup should take 1-2 calls; save 3+ for genuinely ambiguous problems."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "3-6 word query. Include exact error/exception text verbatim when searching an error.",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "description": "Number of results to return.",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 10,
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "web_fetch",
+        "description": (
+            "Fetch the full text of one specific URL — use this after web_search when a "
+            "result's snippet isn't enough to act on (a GitHub issue thread, a full docs "
+            "page, a changelog). Pass the exact URL from a web_search result, not a guessed "
+            "or constructed one. Counts against the same per-step search budget as web_search."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Exact URL to fetch, taken from a prior web_search result.",
+                }
+            },
+            "required": ["url"],
+        },
+    },
+]
+
+# Names dispatched through this module. update_plan / submit_findings /
+# report_blocker / report_failed are handled directly by BaseStep.run() since
+# they mutate step-local control flow rather than touching the project,
+# network, or filesystem — see ignite_agent/planning.py and steps/base.py.
+DISPATCHABLE_TOOL_NAMES: frozenset[str] = frozenset(spec["name"] for spec in TOOL_SPECS)
+
+
+def _truncate(text: str, limit: int, what: str) -> str:
+    if len(text) <= limit:
+        return text
+    omitted = len(text) - limit
+    return (
+        text[:limit] + f"\n\n... [{what} truncated — {omitted} more chars omitted. "
+        f"Use a more targeted command (narrower flags, grep, head/tail) to see more.]"
+    )
 
 
 def _summary(result: ToolResult) -> str:
@@ -293,7 +459,7 @@ def _summary(result: ToolResult) -> str:
 
 def dispatch(
     tool_name: str,
-    args: str,
+    tool_input: dict,
     project_path: str,
     window: RollingWindow | None = None,
     search_state: SearchState | None = None,
@@ -306,43 +472,77 @@ def dispatch(
         window = RollingWindow()
         window.__enter__()
 
+    args_repr = ", ".join(f"{k}={v!r}" for k, v in tool_input.items())
+
     try:
-        window.feed(f"⎿  {tool_name}  {args}\n")
+        window.feed(f"⎿  {tool_name}  {args_repr}\n")
 
         match tool_name:
             case "slither":
-                result = slither(project_path, args or "./", window=window)
+                result = slither(
+                    project_path, tool_input.get("flags") or "./", window=window
+                )
             case "forge":
-                result = forge(project_path, args or "build", window=window)
+                result = forge(
+                    project_path, tool_input.get("subcommand") or "build", window=window
+                )
             case "git":
-                result = git(project_path, args or "log --oneline -10", window=window)
+                result = git(
+                    project_path,
+                    tool_input.get("args") or "log --oneline -10",
+                    window=window,
+                )
             case "read_file":
-                result = read_file(project_path, args)
-            case "list_sol_files":
-                result = list_sol_files(project_path, args or "**/*.sol")
-            case "shell":
-                result = shell(project_path, args, window=window)
-            case "web_search":
+                path = tool_input.get("path", "")
                 result = (
-                    search_state.consume("web_search", args, lambda: web_search(args))
+                    read_file(project_path, path)
+                    if path
+                    else ToolResult("read_file", "", "Missing required 'path'.", 1)
+                )
+            case "list_sol_files":
+                result = list_sol_files(
+                    project_path, tool_input.get("pattern") or "**/*.sol"
+                )
+            case "shell":
+                command = tool_input.get("command", "")
+                result = (
+                    shell(project_path, command, window=window)
+                    if command
+                    else ToolResult("shell", "", "Missing required 'command'.", 1)
+                )
+            case "web_search":
+                query = tool_input.get("query", "")
+                max_results = tool_input.get("max_results", 5)
+                result = (
+                    search_state.consume(
+                        "web_search", query, lambda: web_search(query, max_results)
+                    )
                     if search_state is not None
-                    else web_search(args)
+                    else web_search(query, max_results)
                 )
             case "web_fetch":
+                url = tool_input.get("url", "")
                 result = (
-                    search_state.consume("web_fetch", args, lambda: web_fetch(args))
+                    search_state.consume("web_fetch", url, lambda: web_fetch(url))
                     if search_state is not None
-                    else web_fetch(args)
+                    else web_fetch(url)
                 )
             case _:
                 result = ToolResult(
                     tool_name,
                     "",
-                    f"Unknown tool '{tool_name}'. Available: {list(TOOL_DESCRIPTIONS)}",
+                    f"Unknown tool '{tool_name}'. Available: {sorted(DISPATCHABLE_TOOL_NAMES)}",
                     1,
                 )
 
-        debug_logger.log(tool_name, args, result)
+        result = ToolResult(
+            result.command,
+            _truncate(result.stdout, 10_000, "stdout"),
+            _truncate(result.stderr, 3_000, "stderr"),
+            result.returncode,
+        )
+
+        debug_logger.log(tool_name, args_repr, result)
         window.feed(f"\n   {_summary(result)}\n")
     finally:
         if owns_window:
