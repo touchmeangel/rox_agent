@@ -45,7 +45,7 @@ class StepConfig:
 
 STEPS: dict[str, StepConfig] = {
     "static_analysis": StepConfig(
-        model_key="local",
+        model_key="reasoning",
         max_iterations=16,
     ),
     "final_report": StepConfig(
@@ -55,22 +55,11 @@ STEPS: dict[str, StepConfig] = {
 }
 
 _raw = _load_raw()
+_models = _raw.get("models", {})
+_task_routing = _raw.get("task_routing", {})
 
 MODELS: dict[str, ModelConfig] = {
-    key: ModelConfig(**val) for key, val in _raw.get("models", {}).items()
+    key: ModelConfig(**_models.get(val, {})) for key, val in _task_routing.items()
 }
-
-_task_routing = _raw.get("task_routing", {})
-_user_default_model = _task_routing.get("default")
-
-for step_name, step_cfg in STEPS.items():
-    assigned_model = _task_routing.get(step_name, _user_default_model)
-
-    if assigned_model:
-        if assigned_model not in MODELS:
-            raise ValueError(
-                f"Step '{step_name}' is routed to an undefined model: '{assigned_model}'"
-            )
-        step_cfg.model_key = assigned_model
 
 PROJECT_PATH: str = os.environ.get("PROJECT_PATH", "/project")
