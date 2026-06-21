@@ -7,6 +7,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import UTC, datetime
 from html import unescape
 from pathlib import Path
 
@@ -166,11 +167,19 @@ def _web_search_ddgs(query: str, max_results: int = 5) -> ToolResult:
                 time.sleep(1.5)
 
     if last_exc is not None:
-        return ToolResult(label, "", f"Search failed after retry: {last_exc}", 1)
-    if not results:
-        return ToolResult(label, "(no results)", "", 0)
+        return ToolResult(
+            label,
+            "",
+            f"Search failed after retry: {last_exc}. Try a shorter or differently-worded "
+            f"query rather than retrying this exact one.",
+            1,
+        )
 
-    lines = []
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+    if not results:
+        return ToolResult(label, f"(no results — today is {today})", "", 0)
+
+    lines = [f"(search run {today})\n"]
     for i, r in enumerate(results, 1):
         lines.append(
             f"[{i}] {r.get('title', '')}\n"
@@ -194,7 +203,8 @@ def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
         return ToolResult(
             label,
             "",
-            f"Refused: scheme '{scheme or '(none)'}' is not allowed — only http/https URLs can be fetched.",
+            f"Refused: scheme '{scheme or '(none)'}' is not allowed — only http/https URLs can be fetched. "
+            f"Pass the exact URL string from a web_search result.",
             1,
         )
 
@@ -208,7 +218,12 @@ def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
             charset = resp.headers.get_content_charset() or "utf-8"
             html_text = raw.decode(charset, errors="replace")
     except urllib.error.HTTPError as exc:
-        return ToolResult(label, "", f"HTTP {exc.code}", 1)
+        return ToolResult(
+            label,
+            "",
+            f"HTTP {exc.code} fetching {url} — try a web_search instead of guessing a different URL.",
+            1,
+        )
     except urllib.error.URLError as exc:
         return ToolResult(label, "", f"Network error: {exc.reason}", 1)
     except Exception as exc:
