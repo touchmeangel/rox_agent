@@ -1,25 +1,70 @@
 FROM python:3.11-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
 
-RUN apt-get update && apt-get install -y \
-        curl git build-essential libssl-dev \
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    FOUNDRY_DIR=/root/.foundry \
+    PATH="/root/.foundry/bin:/usr/local/bin:${PATH}"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential libssl-dev pkg-config \
+    git \
+    curl wget ca-certificates \
+    jq \
+    ripgrep \
+    fd-find \
+    xxd file binutils \
+    cloc \
+    tree \
+    bc \
+    unzip \
+    && ln -s /usr/bin/fdfind /usr/local/bin/fd \
     && rm -rf /var/lib/apt/lists/*
 
-ENV FOUNDRY_DIR=/root/.foundry
-ENV PATH="${FOUNDRY_DIR}/bin:${PATH}"
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN curl -L https://foundry.paradigm.xyz | bash && foundryup
 
-RUN pip install --no-cache-dir slither-analyzer solc-select
+RUN pip install --no-cache-dir \
+    slither-analyzer \
+    solc-select \
+    semgrep \
+    pyevmasm \
+    web3 \
+    eth-abi \
+    crytic-compile
+
+RUN npm install -g \
+    solhint
+
+RUN RUST_ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "aarch64" || echo "x86_64") && \
+    curl -fsSL "https://github.com/Cyfrin/aderyn/releases/latest/download/aderyn-${RUST_ARCH}-unknown-linux-musl.tar.gz" \
+    | tar -xz -C /usr/local/bin/ && \
+    chmod +x /usr/local/bin/aderyn
+
+RUN solc-select install 0.8.28 && \
+    solc-select install 0.8.26 && \
+    solc-select install 0.8.24 && \
+    solc-select install 0.8.20 && \
+    solc-select install 0.8.19 && \
+    solc-select install 0.8.17 && \
+    solc-select install 0.8.15 && \
+    solc-select install 0.8.13 && \
+    solc-select install 0.8.0  && \
+    solc-select install 0.7.6  && \
+    solc-select install 0.6.12 && \
+    solc-select use 0.8.28
 
 WORKDIR /app
-
 COPY . .
 RUN pip install --no-cache-dir .
 
 VOLUME ["/project"]
 ENV PROJECT_PATH=/project
-
 ENV PYTHONPATH=/app/src
 
 ENTRYPOINT ["python", "-m", "ignite_agent.agent"]
