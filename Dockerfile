@@ -41,11 +41,6 @@ RUN pip install --no-cache-dir \
 RUN npm install -g \
     solhint
 
-RUN RUST_ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "aarch64" || echo "x86_64") && \
-    curl -fsSL "https://github.com/Cyfrin/aderyn/releases/latest/download/aderyn-${RUST_ARCH}-unknown-linux-musl.tar.gz" \
-    | tar -xz -C /usr/local/bin/ && \
-    chmod +x /usr/local/bin/aderyn
-
 RUN solc-select install 0.8.28 && \
     solc-select install 0.8.26 && \
     solc-select install 0.8.24 && \
