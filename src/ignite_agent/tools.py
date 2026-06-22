@@ -359,28 +359,42 @@ TOOL_SPECS: list[dict] = [
     {
         "name": "web_search",
         "description": (
-            "Search the web for current, version-specific, or hard-to-recall information: "
-            "exact error messages, library/tool documentation, CVEs, changelogs, known "
-            "vulnerability classes (SWC registry), or how a specific Slither/Foundry flag "
-            "behaves.\n\n"
-            "Query style:\n"
-            "  - Keep it short and specific: 3-6 words. Put the literal error string or "
-            "exception name in the query verbatim, not a paraphrase — e.g. "
-            "'PermissionError .solc-select artifacts docker', not 'why does slither not work'.\n"
-            "  - Don't append a year or 'latest' unless freshness genuinely changes the answer — "
-            "every result already comes back stamped with today's date, so you don't need to "
-            "smuggle one into the query, and doing so tends to narrow results without "
-            "improving them.\n"
-            "  - Make each query meaningfully different from your last one. If results are "
-            "off-target, narrow or rephrase rather than repeating the same query verbatim.\n"
-            "  - 'site:' narrowing is fine once you know the best source (e.g. "
-            "'site:github.com/crytic/slither <error>'), but try a plain query first.\n"
-            "  - When choosing what to open with web_fetch, prefer primary sources — "
-            "docs.soliditylang.org, book.getfoundry.sh, github.com/crytic/slither, "
-            "github.com/foundry-rs/foundry, the SWC registry, OpenZeppelin docs, the "
-            "project's own GitHub issues — over SEO blogspam or forum mirrors.\n\n"
-            "Budget: this step has a limited number of searches. A single error string or "
-            "flag lookup should take 1-2 calls; save 3+ for genuinely ambiguous problems."
+            "Search the web for security-relevant information you don't have locally: "
+            "known vulnerability patterns and attack classes, past audit findings for this "
+            "or similar protocols, CVEs and security advisories, EIP/ERC edge cases, "
+            "on-chain exploit post-mortems, protocol documentation, and tool errors.\n\n"
+            "WHAT TO SEARCH FOR:\n"
+            "  - Attack patterns and vulnerability classes: 'ERC4626 inflation attack', "
+            "'cross-chain replay', 'permit front-running ERC20', 'read-only reentrancy'\n"
+            "  - Past findings on this protocol or similar ones: 'Compound governor audit findings', "
+            "'Uniswap v3 C4 report'\n"
+            "  - Exploit post-mortems: 'Euler Finance exploit analysis', 'Nomad bridge hack'\n"
+            "  - EIP/ERC specifications and known edge cases: 'EIP-4337 bundler validation rules', "
+            "'ERC-777 reentrancy hook'\n"
+            "  - Compiler and library advisories: 'solidity ABIEncoderV2 bug', "
+            "'openzeppelin 4.9 security advisory'\n"
+            "  - Tool errors: paste the exact exception or error line verbatim, not a paraphrase\n\n"
+            "QUERY STYLE:\n"
+            "  - 3-6 words, specific technical terms. Exact error text verbatim beats a description.\n"
+            "  - Each query should be meaningfully different from the last — rephrase on a miss, "
+            "don't repeat verbatim.\n\n"
+            "SEARCH OPERATORS (use intentionally, not by default):\n"
+            "  site:domain  — restrict to a source you trust, e.g. "
+            "'reentrancy site:github.com/code-423n4'\n"
+            '  "phrase"     — exact match for a pattern name or error string, e.g. '
+            "'\"first deposit\" inflation attack'\n"
+            "  -term        — exclude noisy results, e.g. 'proxy storage collision -transparent'\n\n"
+            "PREFERRED SOURCES:\n"
+            "  Audit reports:     solodit.xyz, code4rena.com, audits.sherlock.xyz, "
+            "github.com/trailofbits/publications\n"
+            "  Vulnerability DBs: swcregistry.io, github.com/crytic/not-so-smart-contracts\n"
+            "  Exploit analysis:  rekt.news, medium.com/immunefi, blog.openzeppelin.com\n"
+            "  Protocol specs:    eips.ethereum.org, docs.openzeppelin.com, ethereum.org/developers\n"
+            "  Tool docs:         book.getfoundry.sh, github.com/crytic/slither, "
+            "docs.soliditylang.org\n\n"
+            "BUDGET: limited searches per step. A single error lookup or pattern check takes "
+            "1-2 calls. Save 3+ for genuinely ambiguous patterns or researching an unfamiliar "
+            "protocol from scratch."
         ),
         "input_schema": {
             "type": "object",
@@ -421,10 +435,6 @@ TOOL_SPECS: list[dict] = [
     },
 ]
 
-# Names dispatched through this module. update_plan / submit_findings /
-# report_blocker / report_failed are handled directly by BaseStep.run() since
-# they mutate step-local control flow rather than touching the project,
-# network, or filesystem — see ignite_agent/planning.py and steps/base.py.
 DISPATCHABLE_TOOL_NAMES: frozenset[str] = frozenset(spec["name"] for spec in TOOL_SPECS)
 
 
