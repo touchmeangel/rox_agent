@@ -5,8 +5,10 @@ ARG TARGETARCH
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    FOUNDRY_DIR=/root/.foundry \
-    PATH="/root/.foundry/bin:/usr/local/bin:${PATH}"
+    SOLC_SELECT_PATH=/home/shared/.solc-select \
+    FOUNDRY_DIR=/home/shared/.foundry \
+    HOME=/tmp \
+    PATH="/home/shared/.foundry/bin:/usr/local/bin:${PATH}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libssl-dev pkg-config \
@@ -26,6 +28,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /home/shared && chmod 777 /home/shared
 
 RUN curl -L https://foundry.paradigm.xyz | bash && foundryup
 
@@ -53,6 +57,8 @@ RUN solc-select install 0.8.28 && \
     solc-select install 0.7.6  && \
     solc-select install 0.6.12 && \
     solc-select use 0.8.28
+
+RUN chmod -R 777 /home/shared
 
 WORKDIR /app
 COPY . .
