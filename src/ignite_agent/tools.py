@@ -272,6 +272,29 @@ TOOL_SPECS: list[dict] = [
         },
     },
     {
+        "name": "semgrep",
+        "description": (
+            "Run Semgrep pattern-matching analysis with Solidity rule sets. Best used for "
+            "known vulnerability patterns, anti-patterns, and ERC compliance checks that "
+            "slither/aderyn don't cover.\n\n"
+            "Useful rule configs:\n"
+            "  --config r/solidity                        (all community Solidity rules)\n"
+            "  --config r/solidity.security               (security-focused subset)\n"
+            "  --config r/solidity.best-practices         (style + correctness)\n\n"
+            "Combine with jq to filter by severity: semgrep ... --json | jq '.results[] | select(.extra.severity==\"ERROR\")'"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "flags": {
+                    "type": "string",
+                    "description": "Flags + target, e.g. '--config r/solidity ./' or '--config r/solidity.security src/ --json'.",
+                    "default": "--config r/solidity ./",
+                }
+            },
+        },
+    },
+    {
         "name": "forge",
         "description": (
             "Run Foundry's forge. Use 'build' to confirm the project compiles before "
@@ -289,6 +312,34 @@ TOOL_SPECS: list[dict] = [
                     "default": "build",
                 }
             },
+        },
+    },
+    {
+        "name": "cast",
+        "description": (
+            "Foundry's Swiss-army knife for EVM data operations. Use this instead of shell "
+            "for anything involving ABIs, selectors, calldata, or on-chain reads.\n\n"
+            "Most useful operations:\n"
+            "  cast 4byte <selector>                  — reverse-lookup a function selector\n"
+            "  cast sig 'transfer(address,uint256)'   — compute a function selector\n"
+            "  cast abi-decode 'func(uint,addr)' <hex>  — decode calldata or return data\n"
+            "  cast abi-encode 'func(uint,addr)' 1 0x.. — encode a call\n"
+            "  cast disassemble <bytecode-hex>        — disassemble EVM bytecode\n"
+            "  cast storage <addr> <slot> --rpc-url <url>  — read a storage slot on-chain\n"
+            "  cast call <addr> 'balanceOf(address)' <arg> --rpc-url <url>  — call a view fn\n"
+            "  cast keccak 'Transfer(address,address,uint256)'  — compute a topic hash\n\n"
+            "For on-chain reads (storage/call), you need an --rpc-url. "
+            "Use --rpc-url $RPC_URL if the env var is set, or skip if no fork endpoint is available."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "subcommand": {
+                    "type": "string",
+                    "description": "Full cast invocation after 'cast', e.g. '4byte 0xa9059cbb' or 'abi-decode \"transfer(address,uint256)\" <hex>'.",
+                }
+            },
+            "required": ["subcommand"],
         },
     },
     {
@@ -339,11 +390,21 @@ TOOL_SPECS: list[dict] = [
     {
         "name": "shell",
         "description": (
-            "Run an arbitrary shell command for anything the other tools don't cover "
-            "(grep across files, jq-parsing JSON output, inspecting node_modules/lib, etc). "
-            "Prefer the dedicated tools (slither/forge/git/read_file) when they fit — they "
-            "give the harness clearer signal about what you're doing — and reach for shell "
-            "when you genuinely need general-purpose composition."
+            "Run an arbitrary shell command for anything the other tools don't cover. "
+            "Prefer the dedicated tools (slither/aderyn/semgrep/forge/cast/git/read_file) "
+            "when they fit — they give the harness clearer signal about what you're doing — "
+            "and reach for shell when you genuinely need composition.\n\n"
+            "Available utilities beyond the standard toolbox:\n"
+            "  rg <pattern> [path]     — fast ripgrep; use instead of grep for multi-file search\n"
+            "  fd <pattern> [path]     — fast find with cleaner syntax\n"
+            "  jq <filter>             — JSON processing for tool output\n"
+            "  cloc [path]             — count lines of code to scope a codebase\n"
+            "  tree [path]             — directory structure at a glance\n"
+            "  xxd <file>              — hex dump for bytecode inspection\n"
+            "  strings <file>          — extract printable strings from binaries\n"
+            "  solhint [path]          — Solidity linter for style/best-practice issues\n"
+            "  node -e '<js>'          — quick JS evaluation (keccak, ABI, hex conversions)\n"
+            "  solc-select use <ver>   — switch compiler version if the project needs it"
         ),
         "input_schema": {
             "type": "object",
