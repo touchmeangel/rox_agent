@@ -7,7 +7,7 @@ from ignite_agent.steps.static_analysis import StaticAnalysisStep
 PIPELINE: list[BaseStep] = [
     StaticAnalysisStep(
         StepConfig(
-            model_key="default",
+            model_key="reasoning",
             max_iterations=16,
         )
     ),
