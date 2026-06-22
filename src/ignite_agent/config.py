@@ -37,24 +37,6 @@ class ModelConfig:
     api_key_env: str | None = None  # Explicit environment target tracking
 
 
-@dataclass
-class StepConfig:
-    model_key: str
-    max_iterations: int
-    enabled: bool = True
-
-
-STEPS: dict[str, StepConfig] = {
-    "static_analysis": StepConfig(
-        model_key="reasoning",
-        max_iterations=16,
-    ),
-    "final_report": StepConfig(
-        model_key="reasoning",
-        max_iterations=8,
-    ),
-}
-
 _raw = _load_raw()
 _models = _raw.get("models", {})
 _task_routing = _raw.get("task_routing", {})

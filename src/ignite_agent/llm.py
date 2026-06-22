@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import dataclass, field
 
@@ -58,10 +59,9 @@ class LLMClient:
         if window is not None:
             window.start_spinner("Thinking...")
 
-        # 1. Resolve which environment variable key this model profile targets
+        # Resolve environment variable key targets
         api_key_env = getattr(self.cfg, "api_key_env", None)
         if not api_key_env:
-            # Fallback legacy structural assignments
             fallback_map = {
                 "openai": "OPENAI_API_KEY",
                 "google": "GOOGLE_API_KEY",
@@ -127,14 +127,14 @@ class LLMClient:
             raise OSError("Anthropic API identifier key target is empty or unset.")
         client = Anthropic(api_key=api_key)
 
-        kwargs: dict = dict(
-            model=self.cfg.model,
-            max_tokens=self.cfg.max_tokens,
-            temperature=self.cfg.temperature,
-            system=system,
-            messages=_to_anthropic_messages(messages),
-            tools=_to_anthropic_tools(tools),
-        )
+        kwargs: dict = {
+            "model": self.cfg.model,
+            "max_tokens": self.cfg.max_tokens,
+            "temperature": self.cfg.temperature,
+            "system": system,
+            "messages": _to_anthropic_messages(messages),
+            "tools": _to_anthropic_tools(tools),
+        }
         extra_headers: dict = {}
         if self.thinking_budget:
             kwargs["thinking"] = {
@@ -263,6 +263,24 @@ class LLMClient:
             )
 
         text = "".join(text_parts)
+        if not tool_calls and text:
+            parsed = _parse_text_tool_calls(text)
+            if parsed:
+                tool_calls = parsed
+                text = ""
+
+        raw_tool_calls = [
+            {
+                "id": tc.id,
+                "type": "function",
+                "function": {
+                    "name": tc.name,
+                    "arguments": json.dumps(tc.input),
+                },
+            }
+            for tc in tool_calls
+        ]
+
         raw_assistant_message = {
             "role": "assistant",
             "content": text or None,
@@ -380,6 +398,62 @@ def _to_openai_tools(specs: list[dict]) -> list[dict]:
         }
         for s in specs
     ]
+
+
+def _parse_text_tool_calls(text: str) -> list[ToolCall]:
+    tool_calls: list[ToolCall] = []
+
+    for i, match in enumerate(
+        re.finditer(r"<tool_call>\s*(.*?)\s*</tool_call>", text, re.DOTALL)
+    ):
+        try:
+            payload = json.loads(match.group(1))
+            tool_calls.append(
+                ToolCall(
+                    id=f"call_text_{i}_{int(time.time())}",
+                    name=payload.get("name", ""),
+                    input=payload.get("arguments", {}),
+                )
+            )
+        except json.JSONDecodeError:
+            pass
+
+    if tool_calls:
+        return tool_calls
+
+    for i, obj in enumerate(_extract_json_objects(text)):
+        if "name" in obj and "arguments" in obj:
+            tool_calls.append(
+                ToolCall(
+                    id=f"call_text_{i}_{int(time.time())}",
+                    name=obj["name"],
+                    input=obj["arguments"],
+                )
+            )
+
+    return tool_calls
+
+
+def _extract_json_objects(text: str) -> list[dict]:
+    results = []
+    depth = 0
+    start = None
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0 and start is not None:
+                try:
+                    parsed = json.loads(text[start : i + 1])
+                    if isinstance(parsed, dict):
+                        results.append(parsed)
+                except json.JSONDecodeError:
+                    pass
+                start = None
+    return results
 
 
 def _log_repr(turn: AssistantTurn) -> str:

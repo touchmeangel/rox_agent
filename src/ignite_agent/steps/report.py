@@ -77,55 +77,55 @@ Example GOOD uncertainty signals:
 Summarize system-level risk based on confirmed findings only.
 
 ────────────────────────────────────────
-OUTPUT FORMAT (STRICT JSON ONLY)
+FINDINGS SHAPE
 ────────────────────────────────────────
 
+When you're done, call submit_findings with this exact shape as the `findings` argument
+(the wrapping "status" envelope below is NOT part of it — submit_findings IS the completion
+signal, nothing else is needed to mark this step done):
+
 {{
-  "status": "complete",
+  "critical": [],
+  "high": [],
+  "medium": [],
+  "low": [],
+  "informational": [],
 
-  "findings": {{
-    "critical": [],
-    "high": [],
-    "medium": [],
-    "low": [],
-    "informational": [],
+  "exploit_chains": [
+    {{
+      "name": "...",
+      "steps": [
+        "Step referencing original finding A",
+        "Step referencing original finding B"
+      ],
+      "linked_findings": ["static_analysis#5"],
+      "final_impact": "...",
+      "severity": "high"
+    }}
+  ],
 
-    "exploit_chains": [
-      {{
-        "name": "...",
-        "steps": [
-          "Step referencing original finding A",
-          "Step referencing original finding B"
-        ],
-        "linked_findings": ["static_analysis#5"],
-        "final_impact": "...",
-        "severity": "high"
-      }}
-    ],
+  "uncertainty_flags": [
+    {{
+      "area": "specific contract/module/function",
+      "reason": "why the analysis is uncertain",
+      "type": "insufficient_evidence | conflicting_signals | unverified_assumption",
+      "related_findings": ["static_analysis#3"]
+    }}
+  ],
 
-    "uncertainty_flags": [
-      {{
-        "area": "specific contract/module/function",
-        "reason": "why the analysis is uncertain",
-        "type": "insufficient_evidence | conflicting_signals | unverified_assumption",
-        "related_findings": ["static_analysis#3"]
-      }}
-    ],
-
-    "summary_metrics": {{
-      "total_issues": 0,
-      "critical_count": 0,
-      "high_count": 0,
-      "medium_count": 0,
-      "low_count": 0,
-      "false_positive_estimate": "low|medium|high"
-    }},
-
-    "final_risk_rating": "LOW|MEDIUM|HIGH|CRITICAL"
+  "summary_metrics": {{
+    "total_issues": 0,
+    "critical_count": 0,
+    "high_count": 0,
+    "medium_count": 0,
+    "low_count": 0,
+    "false_positive_estimate": "low|medium|high"
   }},
 
-  "summary": "Concise executive summary of validated risks and system-level security posture."
+  "final_risk_rating": "LOW|MEDIUM|HIGH|CRITICAL"
 }}
+
+Pass a concise executive summary of validated risks as the separate `summary` argument.
 
 ────────────────────────────────────────
 STRICT RULES

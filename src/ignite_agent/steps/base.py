@@ -4,12 +4,13 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from ignite_agent.config import PROJECT_PATH, STEPS, StepConfig
+from ignite_agent.config import PROJECT_PATH
 from ignite_agent.debug_logger import default_debug_logger
 from ignite_agent.llm import LLMClient, ToolResultEntry, get_llm
 from ignite_agent.planning import UPDATE_PLAN_SPEC, Plan
 from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.search_state import SearchState
+from ignite_agent.steps.config import StepConfig
 from ignite_agent.tools import TOOL_SPECS, dispatch
 
 
@@ -67,8 +68,7 @@ def _suggest_search_query(stderr: str, max_len: int = 120) -> str | None:
 class BaseStep:
     name: str = "base"
 
-    def __init__(self):
-        cfg: StepConfig = STEPS[self.name]
+    def __init__(self, cfg: StepConfig):
         self.cfg = cfg
         self.llm: LLMClient = get_llm(cfg.model_key)
         self.project_path: str = PROJECT_PATH
@@ -77,13 +77,6 @@ class BaseStep:
         return global_context
 
     def system_prompt(self) -> str:
-        """Right-altitude system prompt: specific enough to steer behavior,
-        without hardcoding brittle response formatting. Tool *descriptions*
-        live in ignite_agent/tools.py's TOOL_SPECS — the provider assembles
-        those into the effective system prompt automatically when `tools=`
-        is passed, so nothing here duplicates that listing.
-        https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents
-        """
         return f"""You are an expert Solidity / EVM security auditor running inside an automated pipeline.
 
 <context>
@@ -232,7 +225,6 @@ not "done."
         consecutive_repeat_blocks = 0
         search_state = SearchState()
 
-        last_no_tool_call_text: str | None = None
         consecutive_no_tool_call_repeats = 0
         NO_TOOL_CALL_REPEAT_LIMIT = 3
 
@@ -272,11 +264,7 @@ not "done."
                         "no_tool_call", step=self.name, iteration=i + 1, text=turn.text
                     )
 
-                    if turn.text and turn.text == last_no_tool_call_text:
-                        consecutive_no_tool_call_repeats += 1
-                    else:
-                        consecutive_no_tool_call_repeats = 1
-                    last_no_tool_call_text = turn.text
+                    consecutive_no_tool_call_repeats += 1
 
                     if consecutive_no_tool_call_repeats >= NO_TOOL_CALL_REPEAT_LIMIT:
                         default_debug_logger.log_event(
@@ -322,7 +310,6 @@ not "done."
                     continue
 
                 consecutive_no_tool_call_repeats = 0
-                last_no_tool_call_text = None
 
                 tool_results: list[ToolResultEntry] = []
                 terminal_result: StepResult | None = None

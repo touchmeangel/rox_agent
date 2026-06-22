@@ -7,7 +7,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html import unescape
 from pathlib import Path
 
@@ -179,7 +179,7 @@ def _web_search_ddgs(query: str, max_results: int = 5) -> ToolResult:
             1,
         )
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     if not results:
         return ToolResult(label, f"(no results — today is {today})", "", 0)
 

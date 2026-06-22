@@ -38,17 +38,13 @@ The slither JSON schema looks like:
     }}
   }}
 
-Complete findings format:
+Complete findings format — pass this shape as the `findings` argument to submit_findings:
   {{
-    "status": "complete",
-    "findings": {{
-      "high":          [{{"id": 1, "check": "...", "description": "...", "location": "...", "confirmed": true, "recommendation": "..."}}],
-      "medium":        [...],
-      "low":           [...],
-      "informational": [...],
-      "false_positives": [{{"check": "...", "reason": "..."}}]
-    }},
-    "summary": "..."
+    "high":          [{{"id": 1, "check": "...", "description": "...", "location": "...", "confirmed": true, "recommendation": "..."}}],
+    "medium":        [...],
+    "low":           [...],
+    "informational": [...],
+    "false_positives": [{{"check": "...", "reason": "..."}}]
   }}
 
 Start by running: slither ./ --json -"""

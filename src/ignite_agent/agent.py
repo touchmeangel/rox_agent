@@ -94,9 +94,7 @@ def run_agent(
     context: dict = {}
     results: dict[str, StepResult] = {}
 
-    for StepClass in PIPELINE:
-        step = StepClass()
-
+    for step in PIPELINE:
         console.print(f"\n[{color}]●[/{color}] [bold white]{step.name}[/bold white]")
 
         filtered_context = step.select_context(context)
