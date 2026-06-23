@@ -220,7 +220,7 @@ You can only exit the execution loop by explicitly invoking one of the following
 
         last_failed_signature: tuple[str, str] | None = None
         consecutive_repeat_blocks = 0
-        search_state = SearchState()
+        search_state = SearchState(max_calls=self.cfg.max_web_calls)
 
         consecutive_no_tool_call_repeats = 0
         NO_TOOL_CALL_REPEAT_LIMIT = 3
