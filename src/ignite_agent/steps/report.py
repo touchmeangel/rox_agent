@@ -13,152 +13,149 @@ class FinalReportStep(BaseStep):
     def select_context(self, global_context: dict) -> dict:
         return global_context
 
-    def initial_prompt(
-        self, context: dict, window: RollingWindow, debug_logger: DebugLogger
-    ) -> str:
-        return f"""
-You are producing the FINAL SECURITY AUDIT REPORT for a Web3 / EVM project.
+    def initial_prompt(self, context: dict, window: RollingWindow, debug_logger: DebugLogger) -> str:
+        return f"""You are producing the final security report for an EVM smart contract audit.
 
-Project path: {self.project_path}
-
-You are given aggregated findings from previous analysis steps.
+Your job is consolidation and triage — not new discovery.
+All findings come from prior pipeline steps; organise them into a report that tells
+a human auditor what to act on immediately and where to focus their manual research.
 
 ────────────────────────────────────────
-HARD CONSTRAINT
-────────────────────────────────────────
-You MUST NOT:
-- introduce new vulnerabilities
-- provide generic audit checklists
-- repeat standard security advice
-- suggest broad “things to review”
-
-You MUST ONLY work with:
-- existing findings
-- uncertainty in those findings
-- contradictions or missing evidence
-
-────────────────────────────────────────
-CORE TASKS
-────────────────────────────────────────
-
-1. CONSOLIDATE FINDINGS
-- Merge duplicates across tools
-- Normalize severity:
-  Critical / High / Medium / Low / Informational
-
-2. PRESERVE TRACEABILITY
-Every issue must remain traceable to original findings.
-Never lose source attribution.
-
-3. EXPLOIT CHAINING (DERIVED ONLY)
-If and only if supported by existing findings:
-- identify exploit chains
-- link back to original issues explicitly
-- DO NOT remove or hide original issues
-
-4. UNCERTAINTY EXTRACTION (IMPORTANT NEW RULE)
-Identify ONLY real ambiguity in reasoning, such as:
-
-- conflicting tool outputs
-- insufficient code visibility
-- unclear exploitability conditions
-- assumptions that were not verified
-- partial evidence (e.g. only static analysis, no runtime confirmation)
-
-DO NOT include:
-- generic audit advice
-- known best practices
-- standard security reminders
-
-Only include uncertainty that emerges from analysis.
-
-Example GOOD uncertainty signals:
-- "Exploitability depends on external contract behavior not observed"
-- "Static analysis flags issue but source context incomplete"
-- "Conflicting severity between detectors"
-
-5. IMPACT SYNTHESIS
-Summarize system-level risk based on confirmed findings only.
-
-────────────────────────────────────────
-FINDINGS SHAPE
-────────────────────────────────────────
-
-When you're done, call submit_findings with this exact shape as the `findings` argument
-(the wrapping "status" envelope below is NOT part of it — submit_findings IS the completion
-signal, nothing else is needed to mark this step done):
-
-{{
-  "critical": [],
-  "high": [],
-  "medium": [],
-  "low": [],
-  "informational": [],
-
-  "exploit_chains": [
-    {{
-      "name": "...",
-      "steps": [
-        "Step referencing original finding A",
-        "Step referencing original finding B"
-      ],
-      "linked_findings": ["static_analysis#5"],
-      "final_impact": "...",
-      "severity": "high"
-    }}
-  ],
-
-  "uncertainty_flags": [
-    {{
-      "area": "specific contract/module/function",
-      "reason": "why the analysis is uncertain",
-      "type": "insufficient_evidence | conflicting_signals | unverified_assumption",
-      "related_findings": ["static_analysis#3"]
-    }}
-  ],
-
-  "summary_metrics": {{
-    "total_issues": 0,
-    "critical_count": 0,
-    "high_count": 0,
-    "medium_count": 0,
-    "low_count": 0,
-    "false_positive_estimate": "low|medium|high"
-  }},
-
-  "final_risk_rating": "LOW|MEDIUM|HIGH|CRITICAL"
-}}
-
-Pass a concise executive summary of validated risks as the separate `summary` argument.
-
-────────────────────────────────────────
-STRICT RULES
-────────────────────────────────────────
-
-- DO NOT generate generic advice (no checklists, no best practices)
-- DO NOT suggest new areas to investigate unless uncertainty is explicitly derived
-- ONLY surface uncertainty when evidence is missing, conflicting, or partial
-- Preserve all original findings even when grouped into chains
-- Chains do NOT replace findings
-- Uncertainty must be grounded in observed limitations of prior analysis
-
-───────────────
 INPUT FROM PRIOR STEPS
-───────────────
+────────────────────────────────────────
 
 {json.dumps(context, indent=2)}
+
+════════════════════════════════════════
+THREE TIERS
+════════════════════════════════════════
+
+CONFIRMED
+  The full exploit path is traceable through code from the prior analysis.
+  A reviewer can reproduce the issue from the evidence alone.
+  This is a high bar. When in doubt, use REVIEW REQUIRED.
+
+REVIEW REQUIRED
+  A suspicious pattern was detected but exploitability cannot be determined
+  from static analysis alone — runtime state, external contract behaviour,
+  business-logic invariants, missing test coverage, etc.
+
+  Each item MUST give the reviewer a specific investigation step, not a
+  generic recommendation. The goal is to hand off a prioritised queue of
+  concrete tasks, not a list of things to "look at".
+
+    Good: "Call withdraw() after pool drain in the same tx to confirm the
+           reentrancy window is reachable — check whether nonReentrant is
+           actually applied to the outer entry point in MockVault.sol:88"
+    Bad:  "Review reentrancy guards"
+
+INFORMATIONAL
+  Gas efficiency, style, non-exploitable observations. No immediate action needed.
+
+════════════════════════════════════════
+CONSOLIDATION RULES
+════════════════════════════════════════
+
+DEDUPLICATION
+  If multiple tools flagged the same location for the same root cause,
+  merge them into one finding and list all source IDs.
+
+SEVERITY CALIBRATION
+  • Escalate only when the context provides concrete additional evidence.
+  • De-escalate freely: if a High finding is unreachable or depends on an
+    unmet condition, drop it to Low or mark it a false positive with one
+    clear reason.
+  • Base confirmed severity on the worst realistic outcome, not theoretical
+    maximum.
+
+RISK RATING
+  Reflects confirmed findings only. Review-required items do not inflate it.
+
+TRACEABILITY
+  Every finding must list its source IDs (e.g. "static_analysis#SA-001").
+  Never discard a finding without an explicit reason.
+
+CODE VERIFICATION
+  You have read_file available. Use it when re-reading a specific code
+  section would materially change a finding's tier or severity — resolving
+  a conflict between tools, confirming a false-positive call, etc.
+  Do not use it for general re-scanning; that already happened upstream.
+
+════════════════════════════════════════
+FINDINGS SCHEMA  (pass to submit_findings)
+════════════════════════════════════════
+
+{{
+  "confirmed": [
+    {{
+      "id": "FR-001",
+      "severity": "critical | high | medium | low",
+      "title": "Short title",
+      "sources": ["static_analysis#SA-001"],
+      "location": {{
+        "file": "src/Vault.sol",
+        "function": "withdraw",
+        "lines": "45-67"
+      }},
+      "description": "What the vulnerability is and how it is triggered",
+      "impact": "What an attacker achieves and the blast radius",
+      "recommendation": "Concrete fix"
+    }}
+  ],
+
+  "review_required": [
+    {{
+      "id": "FR-R01",
+      "estimated_severity": "high | medium | low",
+      "title": "Short title",
+      "sources": ["static_analysis#SA-S01"],
+      "location": {{
+        "file": "src/Oracle.sol",
+        "function": "getPrice"
+      }},
+      "observation": "What was detected and why it looks suspicious",
+      "blocking_question": "The single question whose answer determines exploitability",
+      "how_to_verify": "Specific action: a test to write, a fuzzer property, a line to trace manually"
+    }}
+  ],
+
+  "informational": [
+    {{
+      "id": "FR-N01",
+      "title": "Short title",
+      "sources": ["static_analysis#SA-N01"],
+      "location": "src/Token.sol:23",
+      "note": "One sentence"
+    }}
+  ],
+
+  "metrics": {{
+    "confirmed_critical": 0,
+    "confirmed_high": 0,
+    "confirmed_medium": 0,
+    "confirmed_low": 0,
+    "review_required_count": 0,
+    "false_positive_estimate": "low | medium | high"
+  }},
+
+  "risk_rating": "LOW | MEDIUM | HIGH | CRITICAL"
+}}
+
+Pass a concise executive summary (3–5 sentences, confirmed findings only) as
+the separate `summary` argument.
+
+════════════════════════════════════════
+STRICT RULES
+════════════════════════════════════════
+
+• Do not introduce findings that have no source in the prior steps' output.
+• Do not add generic security advice, checklists, or best-practice reminders.
+• review_required entries without a concrete blocking_question and how_to_verify
+  are not acceptable — if you cannot write a specific verification step,
+  drop the item or fold it into informational.
+• False positives must be dismissed with one factual sentence, not omitted silently.
 """
 
     def validate_complete(self, findings: dict) -> bool:
-        required = {
-            "final_risk_rating",
-            "critical",
-            "high",
-            "medium",
-            "low",
-            "informational",
-            "exploit_chains",
-            "uncertainty_flags",
-        }
-
+        required = {"confirmed", "review_required", "informational", "metrics", "risk_rating"}
         return isinstance(findings, dict) and required.issubset(findings.keys())
