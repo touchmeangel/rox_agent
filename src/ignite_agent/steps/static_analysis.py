@@ -5,8 +5,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ignite_agent.debug_logger import DebugLogger
+from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.steps.base import BaseStep
-from ignite_agent.tools import run_command
+from ignite_agent.tools import dispatch
 
 # Inline content in the initial prompt when the project is small enough.
 _INLINE_LINE_LIMIT: int = 8_000
@@ -43,9 +45,17 @@ def _run_prescan_tool(
     tool_name: str,
     flags: str,
     parse_fn: Callable[[str, str, int], PreScanResult],
-    timeout: int = 300,
+    window: RollingWindow,
+    debug_logger: DebugLogger,
 ) -> PreScanResult:
-    result = run_command(f"{tool_name} {flags}", cwd=project_path, timeout=timeout)
+    result = dispatch(
+        tool_name,
+        {"flags": flags},
+        project_path,
+        window=window,
+        search_state=None,
+        debug_logger=debug_logger,
+    )
 
     if result.returncode == 127 or "command not found" in result.stderr.lower():
         return PreScanResult(
@@ -97,8 +107,19 @@ def _parse_slither(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
         )
 
 
-def _run_slither(project_path: str) -> PreScanResult:
-    return _run_prescan_tool(project_path, "slither", _SLITHER_FLAGS, _parse_slither)
+def _run_slither(
+    project_path: str,
+    window: RollingWindow,
+    debug_logger: DebugLogger,
+) -> PreScanResult:
+    return _run_prescan_tool(
+        project_path,
+        "slither",
+        _SLITHER_FLAGS,
+        _parse_slither,
+        window=window,
+        debug_logger=debug_logger,
+    )
 
 
 def _collect_sol_files(project_path: str) -> tuple[list[dict], int, bool]:
@@ -134,9 +155,11 @@ def _collect_sol_files(project_path: str) -> tuple[list[dict], int, bool]:
     return sol_files, total_lines, inlined
 
 
-def _pre_scan_project(project_path: str) -> dict:
+def _pre_scan_project(
+    project_path: str, window: RollingWindow, debug_logger: DebugLogger
+) -> dict:
     sol_files, total_lines, inlined = _collect_sol_files(project_path)
-    slither = _run_slither(project_path)
+    slither = _run_slither(project_path, window, debug_logger)
     return {
         "sol_files": sol_files,
         "slither": slither,
@@ -250,8 +273,10 @@ class StaticAnalysisStep(BaseStep):
     def select_context(self, global_context: dict) -> dict:
         return {}
 
-    def initial_prompt(self, context: dict) -> str:
-        pre_scan = _pre_scan_project(self.project_path)
+    def initial_prompt(
+        self, context: dict, window: RollingWindow, debug_logger: DebugLogger
+    ) -> str:
+        pre_scan = _pre_scan_project(self.project_path, window, debug_logger)
         sol_files: list[dict] = pre_scan["sol_files"]
         inlined: bool = pre_scan["inlined"]
         total_lines: int = pre_scan["total_lines"]

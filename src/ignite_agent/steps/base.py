@@ -4,7 +4,7 @@ import json
 from dataclasses import dataclass, field
 
 from ignite_agent.config import PROJECT_PATH
-from ignite_agent.debug_logger import default_debug_logger
+from ignite_agent.debug_logger import DebugLogger, default_debug_logger
 from ignite_agent.llm import LLMClient, ToolResultEntry, get_llm
 from ignite_agent.planning import UPDATE_PLAN_SPEC, Plan
 from ignite_agent.rolling_window import RollingWindow
@@ -114,7 +114,9 @@ A step only ends when you call one of these three tools — plain text alone doe
 Don't call submit_findings until you've actually verified what you're reporting.
 </finishing>"""
 
-    def initial_prompt(self, context: dict) -> str:
+    def initial_prompt(
+        self, context: dict, window: RollingWindow, debug_logger: DebugLogger
+    ) -> str:
         raise NotImplementedError(
             f"{self.__class__.__name__} must implement initial_prompt()"
         )
@@ -203,9 +205,16 @@ Don't call submit_findings until you've actually verified what you're reporting.
         system = self.system_prompt()
         tools = TOOL_SPECS + [UPDATE_PLAN_SPEC] + self._terminal_tool_specs()
 
-        messages: list[dict] = [
-            {"role": "user", "content": self.initial_prompt(context)}
-        ]
+        with RollingWindow(max_lines=8) as window:
+            messages: list[dict] = [
+                {
+                    "role": "user",
+                    "content": self.initial_prompt(
+                        context, window, default_debug_logger
+                    ),
+                }
+            ]
+
         thinking_trace: list[str] = []
         blockers: list[dict] = []
         plan = Plan()

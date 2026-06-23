@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from ignite_agent.debug_logger import DebugLogger
+from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.steps.base import BaseStep
 
 
@@ -11,7 +13,9 @@ class FinalReportStep(BaseStep):
     def select_context(self, global_context: dict) -> dict:
         return global_context
 
-    def initial_prompt(self, context: dict) -> str:
+    def initial_prompt(
+        self, context: dict, window: RollingWindow, debug_logger: DebugLogger
+    ) -> str:
         return f"""
 You are producing the FINAL SECURITY AUDIT REPORT for a Web3 / EVM project.
 
