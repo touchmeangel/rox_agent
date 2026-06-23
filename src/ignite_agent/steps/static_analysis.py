@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from ignite_agent.debug_logger import DebugLogger
 from ignite_agent.rolling_window import RollingWindow
@@ -102,6 +101,7 @@ def _run_slither(
         debug_logger=debug_logger,
     )
 
+
 def _pre_scan_project(
     project_path: str, window: RollingWindow, debug_logger: DebugLogger
 ) -> dict:
@@ -185,6 +185,7 @@ def _fmt_detectors(detectors: list[dict]) -> str:
             blocks.append(f"  {desc}")
 
     return "\n".join(blocks)
+
 
 class StaticAnalysisStep(BaseStep):
     name = "static_analysis"
