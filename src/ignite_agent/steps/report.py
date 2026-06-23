@@ -13,7 +13,9 @@ class FinalReportStep(BaseStep):
     def select_context(self, global_context: dict) -> dict:
         return global_context
 
-    def initial_prompt(self, context: dict, window: RollingWindow, debug_logger: DebugLogger) -> str:
+    def initial_prompt(
+        self, context: dict, window: RollingWindow, debug_logger: DebugLogger
+    ) -> str:
         return f"""You are producing the final security report for an EVM smart contract audit.
 
 Your job is consolidation and triage — not new discovery.
@@ -157,5 +159,11 @@ STRICT RULES
 """
 
     def validate_complete(self, findings: dict) -> bool:
-        required = {"confirmed", "review_required", "informational", "metrics", "risk_rating"}
+        required = {
+            "confirmed",
+            "review_required",
+            "informational",
+            "metrics",
+            "risk_rating",
+        }
         return isinstance(findings, dict) and required.issubset(findings.keys())
