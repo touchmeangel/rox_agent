@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from ignite_agent.debug_logger import DebugLogger
 from ignite_agent.rolling_window import RollingWindow
@@ -102,12 +104,90 @@ def _run_slither(
     )
 
 
+_ADERYN_FLAGS = "-o {report_path}"
+
+
+def _run_aderyn(
+    project_path: str,
+    window: RollingWindow,
+    debug_logger: DebugLogger,
+) -> PreScanResult:
+    report_path = Path(project_path) / "aderyn_report.json"
+
+    def parse_aderyn_file(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
+        if not report_path.exists():
+            return PreScanResult(
+                tool_name="aderyn",
+                success=False,
+                error=f"Aderyn finished (exit {exit_code}), but no JSON report was generated.",
+                stderr_tail=stderr[-1_000:].strip() or None,
+                exit_code=exit_code,
+            )
+
+        try:
+            with open(report_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            raw_issues = data.get("issues", []) or []
+            normalized_detectors = []
+
+            for issue in raw_issues:
+                # Normalize Aderyn's severities to match your system strings
+                severity = issue.get("severity", "").capitalize()
+                if severity == "Critical":  # Elevate critical or keep inside High bucket
+                    severity = "High"
+                elif severity not in _IMPACT_ORDER:
+                    severity = "Informational"
+
+                normalized_detectors.append({
+                    "check": issue.get("title", "Unknown Detector"),
+                    "impact": severity,
+                    "confidence": "High",
+                    "description": issue.get("description", ""),
+                    "elements": issue.get("instances", []),
+                })
+
+            return PreScanResult(
+                tool_name="aderyn",
+                success=True,
+                detectors=normalized_detectors,
+                error=None,
+                stderr_tail=stderr[-1_000:].strip() or None,
+                exit_code=exit_code,
+            )
+        except json.JSONDecodeError:
+            return PreScanResult(
+                tool_name="aderyn",
+                success=False,
+                error="Failed to parse the generated aderyn_report.json file.",
+                stderr_tail=stderr[-1_000:].strip() or None,
+                exit_code=exit_code,
+            )
+        finally:
+            if report_path.exists():
+                try:
+                    report_path.unlink()
+                except Exception:
+                    pass
+
+    return _run_prescan_tool(
+        project_path,
+        "aderyn",
+        _ADERYN_FLAGS.format(report_path=str(report_path)),
+        parse_aderyn_file,
+        window=window,
+        debug_logger=debug_logger,
+    )
+
+
 def _pre_scan_project(
     project_path: str, window: RollingWindow, debug_logger: DebugLogger
 ) -> dict:
     slither = _run_slither(project_path, window, debug_logger)
+    aderyn = _run_aderyn(project_path, window, debug_logger)
     return {
         "slither": slither,
+        "aderyn": aderyn,
     }
 
 
@@ -137,6 +217,28 @@ def _fmt_slither(result: PreScanResult) -> str:
     return f"✓  Slither: {len(detectors)} finding(s)\n\n" + _fmt_detectors(detectors)
 
 
+def _fmt_aderyn(result: PreScanResult) -> str:
+    detectors = result.detectors
+
+    if not result.success:
+        lines = [f"⚠  Aderyn exited with an error (exit {result.exit_code or '?'})."]
+        if result.error:
+            lines.append(f"   Error: {result.error}")
+        if result.stderr_tail:
+            lines.append(f"   Stderr:\n{result.stderr_tail}")
+        if detectors:
+            lines.append(f"\n   Showing available data wrapper findings:\n")
+            lines.append(_fmt_detectors(detectors))
+        else:
+            lines.append("   No detector results.")
+        return "\n".join(lines)
+
+    if not detectors:
+        return "✓  Aderyn ran successfully — zero detector findings."
+
+    return f"✓  Aderyn: {len(detectors)} finding(s)\n\n" + _fmt_detectors(detectors)
+
+
 def _fmt_detectors(detectors: list[dict]) -> str:
     by_impact: dict[str, list[dict]] = {}
     for d in detectors:
@@ -149,7 +251,7 @@ def _fmt_detectors(detectors: list[dict]) -> str:
             continue
         blocks.append(f"── {impact.upper()} ({len(group)}) {'─' * (40 - len(impact))}")
         for d in group:
-            check = d.get("check", "?")
+            check = d.get("check", "Unknown Detector")
             confidence = d.get("confidence", "?")
             desc = d.get("description", "").replace("\n", " ").strip()
             if len(desc) > 300:
@@ -157,12 +259,22 @@ def _fmt_detectors(detectors: list[dict]) -> str:
 
             locs: list[str] = []
             seen_locs: set[str] = set()
+            
             for el in d.get("elements", []):
                 sm = el.get("source_mapping", {})
                 fname = sm.get("filename_short", "")
+                raw_lines = sm.get("lines", [])
+
+                if not fname:
+                    fname = el.get("contract_path", "")
+                    if fname:
+                        fname = Path(fname).name
+                    line = el.get("line_num")
+                    raw_lines = [line] if line is not None else []
+
                 if not fname:
                     continue
-                raw_lines = sm.get("lines", [])
+
                 if raw_lines:
                     loc = (
                         f"{fname}:{raw_lines[0]}"
@@ -171,6 +283,7 @@ def _fmt_detectors(detectors: list[dict]) -> str:
                     )
                 else:
                     loc = fname
+
                 if loc not in seen_locs:
                     seen_locs.add(loc)
                     locs.append(loc)
@@ -197,21 +310,25 @@ class StaticAnalysisStep(BaseStep):
         self, context: dict, window: RollingWindow, debug_logger: DebugLogger
     ) -> str:
         pre_scan = _pre_scan_project(self.project_path, window, debug_logger)
+        
         slither_result: PreScanResult = pre_scan["slither"]
+        aderyn_result: PreScanResult = pre_scan["aderyn"]
 
         slither_section = _fmt_slither(slither_result)
+        aderyn_section = _fmt_aderyn(aderyn_result)
 
+        instructions = []
         if slither_result.success:
-            slither_instruction = (
-                "Slither has already been run — its results are above. "
-                "Do NOT re-run slither unless you need a specific flag that wasn't used."
-            )
+            instructions.append("- Slither completed successfully. Do NOT re-run it unless needed.")
         else:
-            slither_instruction = (
-                "Slither did not produce clean output. You may try re-running it with "
-                "specific flags (e.g. '--filter-paths lib' if it failed on dependencies), "
-                "but don't loop on it — if it keeps failing."
-            )
+            instructions.append("- Slither encountered errors; evaluate fallback configurations if critical details are missing.")
+
+        if aderyn_result.success:
+            instructions.append("- Aderyn ran successfully. Combine its structural insights with Slither's findings.")
+        else:
+            instructions.append("- Aderyn context collection failed or was partial.")
+
+        tool_instructions = "\n".join(instructions)
 
         return f"""You are running the static analysis step of a security audit.
 Project: {self.project_path}
@@ -222,7 +339,13 @@ SLITHER OUTPUT (pre-run)
 
 {slither_section}
 
-{slither_instruction}
+════════════════════════════════════════
+ADERYN OUTPUT (pre-run)
+════════════════════════════════════════
+
+{aderyn_section}
+
+{tool_instructions}
 
 ════════════════════════════════════════
 YOUR TASK
@@ -244,7 +367,7 @@ FINDINGS FORMAT  (pass this to submit_findings)
   "confirmed": [
     {{
       "id": "SA-001",
-      "origin": "slither",
+      "origin": "slither | aderyn",
       "check": "reentrancy-eth",
       "severity": "critical | high | medium | low",
       "title": "Short title",
@@ -263,7 +386,7 @@ FINDINGS FORMAT  (pass this to submit_findings)
   "suspected": [
     {{
       "id": "SA-S01",
-      "origin": "slither",
+      "origin": "slither | aderyn",
       "check": "optional",
       "title": "What looks suspicious",
       "location": {{
