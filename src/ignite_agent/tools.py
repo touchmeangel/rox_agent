@@ -112,6 +112,13 @@ def slither(
     return result
 
 
+def aderyn(
+    project_path: str, flags: str = "", window: RollingWindow | None = None
+) -> ToolResult:
+    cmd_str = f"aderyn {flags}".strip() if flags else "aderyn"
+    return run_command(cmd_str, cwd=project_path, timeout=180, window=window)
+
+
 def semgrep(
     project_path: str,
     flags: str = "--config r/solidity ./",
@@ -295,6 +302,27 @@ TOOL_SPECS: list[dict] = [
                     "type": "string",
                     "description": "CLI flags + target, e.g. './ --json -' or './ --exclude-dependencies --detect reentrancy-eth'.",
                     "default": "./",
+                }
+            },
+        },
+    },
+    {
+        "name": "aderyn",
+        "description": (
+            "Run Aderyn Rust-based static analysis against the project root.\n\n"
+            "NOTE: Aderyn outputs its analysis report into locally saved files in your "
+            "current working workspace directory rather than directly returning them via stdout streams.\n"
+            "By default, running it directly produces a 'report.md' file.\n\n"
+            "To generate structural JSON outputs for backend parsing, pass the layout output path flag "
+            "explictly: '-o aderyn_report.json'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "flags": {
+                    "type": "string",
+                    "description": "CLI argument configurations, e.g., '-o aderyn_report.json'.",
+                    "default": "",
                 }
             },
         },
@@ -576,6 +604,10 @@ def dispatch(
             case "slither":
                 result = slither(
                     project_path, tool_input.get("flags") or "./", window=window
+                )
+            case "aderyn":
+                result = aderyn(
+                    project_path, tool_input.get("flags") or "", window=window
                 )
             case "semgrep":
                 result = semgrep(
