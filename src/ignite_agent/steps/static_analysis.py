@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
 
 from ignite_agent.steps.base import BaseStep
 from ignite_agent.tools import run_command
@@ -13,23 +13,25 @@ _INLINE_LINE_LIMIT: int = 8_000
 
 _IMPACT_ORDER = ["High", "Medium", "Low", "Informational", "Optimization"]
 
-_EXCLUDE_DIRS = frozenset({
-    "lib",
-    "test", "tests",
-    "out", "cache", "artifacts", "build",
-})
-
-_FILTER_PATHS_REGEX = (
-    "lib"
-    "|test|tests"
-    "|out|cache|artifacts|build"
+_EXCLUDE_DIRS = frozenset(
+    {
+        "lib",
+        "test",
+        "tests",
+        "out",
+        "cache",
+        "artifacts",
+        "build",
+    }
 )
+
+_FILTER_PATHS_REGEX = "lib|test|tests|out|cache|artifacts|build"
 
 
 @dataclass
 class PreScanResult:
     tool_name: str
-    success: bool       # True when the tool ran and its own JSON reports success
+    success: bool  # True when the tool ran and its own JSON reports success
     detectors: list[dict] = field(default_factory=list)
     error: str | None = None
     stderr_tail: str | None = None
@@ -110,13 +112,17 @@ def _collect_sol_files(project_path: str) -> tuple[list[dict], int, bool]:
         rel = str(f.relative_to(path))
         try:
             content = f.read_text(errors="replace")
-            sol_files.append({
-                "path": rel,
-                "lines": len(content.splitlines()),
-                "content": content,
-            })
+            sol_files.append(
+                {
+                    "path": rel,
+                    "lines": len(content.splitlines()),
+                    "content": content,
+                }
+            )
         except Exception as exc:
-            sol_files.append({"path": rel, "lines": -1, "content": None, "error": str(exc)})
+            sol_files.append(
+                {"path": rel, "lines": -1, "content": None, "error": str(exc)}
+            )
 
     total_lines = sum(f["lines"] for f in sol_files if f.get("lines", -1) >= 0)
     inlined = bool(sol_files) and total_lines <= _INLINE_LINE_LIMIT
@@ -219,7 +225,7 @@ def _fmt_sol_files(sol_files: list[dict], inlined: bool) -> str:
     if not sol_files:
         return (
             "No .sol files were found during pre-scan.\n"
-            'Use list_sol_files or shell(\'find . -name "*.sol"\') to locate them manually.'
+            "Use list_sol_files or shell('find . -name \"*.sol\"') to locate them manually."
         )
 
     if not inlined:
@@ -255,9 +261,7 @@ class StaticAnalysisStep(BaseStep):
         files_section = _fmt_sol_files(sol_files, inlined)
 
         if inlined:
-            files_note = (
-                "All source files are inlined above — no read_file calls needed for the files listed."
-            )
+            files_note = "All source files are inlined above — no read_file calls needed for the files listed."
         else:
             files_note = (
                 f"Source files are listed above ({total_lines:,} lines total). "
