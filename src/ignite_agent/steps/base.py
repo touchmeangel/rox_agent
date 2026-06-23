@@ -22,9 +22,9 @@ class StepResult:
     summary: str
     iterations_used: int
     messages: list[dict] = field(default_factory=list)
-    thinking_trace: list[str] = field(default_factory=list)  # captured model reasoning
-    blockers: list[dict] = field(default_factory=list)  # user-side issues surfaced
-    plan: list[dict] = field(default_factory=list)  # final update_plan checklist state
+    thinking_trace: list[str] = field(default_factory=list)
+    blockers: list[dict] = field(default_factory=list)
+    plan: list[dict] = field(default_factory=list)
 
 
 _INCOMPLETE_FINDINGS_HINT = (
@@ -40,9 +40,7 @@ _REPEAT_CALL_HINT = (
     "  - report_failed if you've exhausted every reasonable option"
 )
 
-_REPEAT_BLOCK_LIMIT = (
-    2  # consecutive client-side blocks of the *same* call before giving up
-)
+_REPEAT_BLOCK_LIMIT = 2  # consecutive blocks of the *same* call before giving up
 
 _NUDGE_FINISH_PROMPT = (
     "That was text only, with no tool call. A step only ends when you call submit_findings, "
@@ -63,6 +61,29 @@ def _suggest_search_query(stderr: str, max_len: int = 120) -> str | None:
             exc_name, msg = m.groups()
             return f"{exc_name} {msg}".strip()[:max_len]
     return lines[-1][:max_len]
+
+
+def _tool_failure_hint(result, iterations_left: int) -> str:
+    parts = [f"TOOL FAILED (exit {result.returncode}). {iterations_left} iterations remain.\n"]
+
+    if result.stdout:
+        parts.append(f"stdout:\n{result.stdout}\n")
+
+    if result.stderr:
+        parts.append(f"stderr:\n{result.stderr}\n")
+
+    hint = "\n".join(parts)
+    hint += (
+        "\nApply observe → diagnose → act: don't immediately retry. "
+        "If this error is unfamiliar, web_search the exact error string or exception name"
+    )
+
+    suggestion = _suggest_search_query(result.stderr)
+    if suggestion:
+        hint += f' — this query is extracted from the error and is a safe start:\n  "{suggestion}"'
+
+    hint += "\n\nThis exact call will be blocked if you repeat it unmodified."
+    return hint
 
 
 class BaseStep:
@@ -88,19 +109,17 @@ You work in a loop: read the last tool result, decide what it tells you, then ac
 calling a tool, or, once you're confident, by finishing the step (see <finishing>).
 
 A few habits that matter:
-  - When a tool call fails, diagnose before retrying. Read the actual error. Never repeat the
-    exact same tool call with the exact same arguments twice in a row — the harness will block
-    it. Change something concrete instead: different flags, a different tool, or web_search the
-    exact error string if it's unfamiliar.
-  - You don't need a rigid checklist before every tool call — a short, concrete reason for the
-    action you're about to take is enough. Spend more words reasoning when it's actually
-    warranted: conflicting signals, an unfamiliar failure, or choosing between two real
-    strategies.
+  - When a tool call fails, diagnose before retrying. Read the actual error — especially
+    check stdout, which may contain useful JSON output even on non-zero exit codes.
+    Never repeat the exact same tool call with the exact same arguments twice in a row —
+    the harness will block it. Change something concrete instead.
+  - You don't need a rigid checklist before every tool call — a short, concrete reason for
+    the action you're about to take is enough. Spend more words reasoning when it's actually
+    warranted: conflicting signals, an unfamiliar failure, or choosing between two real strategies.
   - Use update_plan for any step with three or more distinct pieces of work, so progress stays
-    visible. Skip it for anything you can finish in one or two tool calls — don't maintain a
-    todo list for a single trivial action.
-  - Prefer the most specific tool that fits (slither/forge/git/read_file) over shell — it gives
-    cleaner signal about what you're doing. Reach for shell when you genuinely need
+    visible. Skip it for anything you can finish in one or two tool calls.
+  - Prefer the most specific tool that fits (slither/forge/cast/git/read_file) over shell — it
+    gives cleaner signal about what you're doing. Reach for shell when you genuinely need
     general-purpose composition (grep, jq, etc).
 </working_method>
 
@@ -108,32 +127,21 @@ A few habits that matter:
 A step only ends when you call one of these three tools — plain text alone does not end it:
   - submit_findings — you're done and confident in the result.
   - report_blocker — a genuine environment problem (missing tool, broken install, missing
-    credentials) that you can't resolve yourself. Set fallback_action + can_continue if you have
-    a reasonable workaround; otherwise leave can_continue false.
+    credentials) that you can't resolve yourself. Set fallback_action + can_continue if you
+    have a reasonable workaround; otherwise leave can_continue false.
   - report_failed — you've exhausted every reasonable option and the task cannot complete.
-Don't call submit_findings until you've actually verified what you're reporting. A clean forge
-build is a prerequisite for trusting slither output; partial results or unresolved errors are
-not "done."
+Don't call submit_findings until you've actually verified what you're reporting.
 </finishing>"""
 
     def initial_prompt(self, context: dict) -> str:
-        """First user message. Must be implemented by each step."""
         raise NotImplementedError(
             f"{self.__class__.__name__} must implement initial_prompt()"
         )
 
     def validate_complete(self, findings: dict) -> bool:
-        """
-        Return False to force the model to keep going.
-        Override in steps that have mandatory fields.
-        """
         return True
 
     def findings_schema(self) -> dict:
-        """JSON Schema for the `findings` argument of submit_findings.
-        Override in steps that want the provider itself to enforce
-        required/typed fields, on top of validate_complete()'s runtime check.
-        """
         return {"type": "object"}
 
     def _terminal_tool_specs(self) -> list[dict]:
@@ -281,23 +289,20 @@ not "done."
                                 "error": {
                                     "message": (
                                         "Model repeated the same text-only response "
-                                        f"{consecutive_no_tool_call_repeats} times without ever producing a "
-                                        "real tool call."
+                                        f"{consecutive_no_tool_call_repeats} times without ever "
+                                        "producing a real tool call."
                                     ),
                                     "reason": (
-                                        "No native tool_calls were ever populated for this provider/model, even "
-                                        "though the text looks like it's attempting one. This usually means the "
-                                        "model or provider isn't actually emitting structured tool calls — e.g. "
-                                        "an Ollama model whose chat template doesn't support tool calling, or a "
-                                        "streaming response where tool_calls deltas aren't being surfaced. Check "
-                                        "`ollama show <model> --modelfile` for a `{{ if .Tools }}` block, or try "
-                                        "a model/tag known to support native tool calling."
+                                        "No native tool_calls were ever populated for this "
+                                        "provider/model — this usually means the model or provider "
+                                        "isn't emitting structured tool calls. Check the model's "
+                                        "tool-calling support."
                                     ),
                                 }
                             },
                             summary=(
-                                "Step aborted early — the model never produced a real tool call, it only "
-                                "wrote text that looked like one."
+                                "Step aborted early — the model never produced a real tool call, "
+                                "it only wrote text that looked like one."
                             ),
                             iterations_used=i + 1,
                             messages=messages,
@@ -398,9 +403,7 @@ not "done."
                             findings={
                                 "error": {
                                     "message": call.input.get("error", "unknown error"),
-                                    "reason": call.input.get(
-                                        "reason", "unknown failure"
-                                    ),
+                                    "reason": call.input.get("reason", "unknown failure"),
                                 }
                             },
                             summary=f"[FAILED] {call.input.get('reason', '')}",
@@ -444,10 +447,9 @@ not "done."
                                                 f"{consecutive_repeat_blocks} times in a row."
                                             ),
                                             "reason": (
-                                                "After the first real failure, every retry was the exact same "
-                                                "call with the exact same arguments — each one was blocked "
-                                                "client-side without re-executing, and the model never tried "
-                                                "anything different."
+                                                "After the first real failure, every retry was the exact "
+                                                "same call with the exact same arguments — each one was "
+                                                "blocked client-side without re-executing."
                                             ),
                                         }
                                     },
@@ -488,18 +490,12 @@ not "done."
                             )
                         else:
                             last_failed_signature = signature
-                            hint = (
-                                f"TOOL FAILED (exit {result.returncode}). {iterations_left} iterations remain.\n\n"
-                                f"stderr:\n{result.stderr}\n\n"
-                                "Apply observe -> diagnose -> act: don't immediately retry. If this error is "
-                                "unfamiliar, web_search the exact error string or exception name"
-                            )
-                            suggestion = _suggest_search_query(result.stderr)
-                            if suggestion:
-                                hint += f' — this query is extracted from the error and is a safe start:\n  "{suggestion}"'
-                            hint += "\n\nThis exact call will be blocked if you repeat it unmodified."
                             tool_results.append(
-                                ToolResultEntry(call.id, hint, is_error=True)
+                                ToolResultEntry(
+                                    call.id,
+                                    _tool_failure_hint(result, iterations_left),
+                                    is_error=True,
+                                )
                             )
 
                 if terminal_result is not None:

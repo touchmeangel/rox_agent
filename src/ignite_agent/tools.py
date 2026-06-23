@@ -82,7 +82,7 @@ def run_command(
             stdout, stderr, returncode = _stream_subprocess(args, cwd, timeout, window)
             return ToolResult(command, stdout, stderr, returncode)
 
-        result = subprocess.run(  # noqa: S603 were in controlled docker container
+        result = subprocess.run(  # noqa: S603 isolated docker container
             args,
             shell=False,
             cwd=cwd,
@@ -100,7 +100,26 @@ def run_command(
 def slither(
     project_path: str, args: str = "./", window: RollingWindow | None = None
 ) -> ToolResult:
-    return run_command(f"slither {args}", cwd=project_path, timeout=240, window=window)
+    result = run_command(f"slither {args}", cwd=project_path, timeout=240, window=window)
+
+    if not result.success:
+        data = result.json_data()
+        if isinstance(data, dict) and data.get("success") is True:
+            return ToolResult(result.command, result.stdout, result.stderr, 0)
+
+    return result
+
+
+def semgrep(
+    project_path: str, flags: str = "--config r/solidity ./", window: RollingWindow | None = None
+) -> ToolResult:
+    return run_command(f"semgrep {flags}", cwd=project_path, timeout=180, window=window)
+
+
+def cast(
+    project_path: str, subcommand: str, window: RollingWindow | None = None
+) -> ToolResult:
+    return run_command(f"cast {subcommand}", cwd=project_path, timeout=30, window=window)
 
 
 def forge(
@@ -254,18 +273,21 @@ TOOL_SPECS: list[dict] = [
     {
         "name": "slither",
         "description": (
-            "Run Slither static analysis against the project. Use this early to get a "
-            "broad first pass of automated findings (reentrancy, access control, "
-            "uninitialized state, etc.) before manually reading source. "
-            "Pass '--json -' for machine-readable output if you plan to parse results "
-            "programmatically; otherwise the default text report is usually easier to scan."
+            "Run Slither static analysis against the project.\n\n"
+            "NOTE: Slither exits non-zero (usually 255) when it finds issues — that is "
+            "NOT a failure. The harness normalises this: if the JSON output shows "
+            "'success: true', the call is treated as successful regardless of exit code. "
+            "Always check stdout for JSON even if the tool is reported as failed.\n\n"
+            "Pass '--json -' for machine-readable output you can parse; the default "
+            "text report is easier to scan visually. Use '--exclude-dependencies' to "
+            "skip library code."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "flags": {
                     "type": "string",
-                    "description": "Extra CLI flags/target, e.g. './' or './ --json -' or './ --exclude-dependencies'.",
+                    "description": "CLI flags + target, e.g. './ --json -' or './ --exclude-dependencies --detect reentrancy-eth'.",
                     "default": "./",
                 }
             },
@@ -274,14 +296,14 @@ TOOL_SPECS: list[dict] = [
     {
         "name": "semgrep",
         "description": (
-            "Run Semgrep pattern-matching analysis with Solidity rule sets. Best used for "
+            "Run Semgrep pattern-matching analysis with Solidity rule sets. Best for "
             "known vulnerability patterns, anti-patterns, and ERC compliance checks that "
-            "slither/aderyn don't cover.\n\n"
+            "slither doesn't cover.\n\n"
             "Useful rule configs:\n"
-            "  --config r/solidity                        (all community Solidity rules)\n"
-            "  --config r/solidity.security               (security-focused subset)\n"
-            "  --config r/solidity.best-practices         (style + correctness)\n\n"
-            "Combine with jq to filter by severity: semgrep ... --json | jq '.results[] | select(.extra.severity==\"ERROR\")'"
+            "  --config r/solidity                   (all community Solidity rules)\n"
+            "  --config r/solidity.security          (security-focused subset)\n"
+            "  --config r/solidity.best-practices    (style + correctness)\n\n"
+            "Combine with jq: semgrep ... --json | jq '.results[] | select(.extra.severity==\"ERROR\")'"
         ),
         "input_schema": {
             "type": "object",
@@ -328,15 +350,14 @@ TOOL_SPECS: list[dict] = [
             "  cast storage <addr> <slot> --rpc-url <url>  — read a storage slot on-chain\n"
             "  cast call <addr> 'balanceOf(address)' <arg> --rpc-url <url>  — call a view fn\n"
             "  cast keccak 'Transfer(address,address,uint256)'  — compute a topic hash\n\n"
-            "For on-chain reads (storage/call), you need an --rpc-url. "
-            "Use --rpc-url $RPC_URL if the env var is set, or skip if no fork endpoint is available."
+            "For on-chain reads, you need --rpc-url. Use --rpc-url $RPC_URL if the env var is set."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "subcommand": {
                     "type": "string",
-                    "description": "Full cast invocation after 'cast', e.g. '4byte 0xa9059cbb' or 'abi-decode \"transfer(address,uint256)\" <hex>'.",
+                    "description": "Full cast invocation after 'cast', e.g. '4byte 0xa9059cbb' or 'sig \"transfer(address,uint256)\"'.",
                 }
             },
             "required": ["subcommand"],
@@ -391,9 +412,8 @@ TOOL_SPECS: list[dict] = [
         "name": "shell",
         "description": (
             "Run an arbitrary shell command for anything the other tools don't cover. "
-            "Prefer the dedicated tools (slither/aderyn/semgrep/forge/cast/git/read_file) "
-            "when they fit — they give the harness clearer signal about what you're doing — "
-            "and reach for shell when you genuinely need composition.\n\n"
+            "Prefer the dedicated tools (slither/semgrep/forge/cast/git/read_file) "
+            "when they fit — reach for shell when you genuinely need composition.\n\n"
             "Available utilities beyond the standard toolbox:\n"
             "  rg <pattern> [path]     — fast ripgrep; use instead of grep for multi-file search\n"
             "  fd <pattern> [path]     — fast find with cleaner syntax\n"
@@ -446,15 +466,14 @@ TOOL_SPECS: list[dict] = [
             "'\"first deposit\" inflation attack'\n"
             "  -term        — exclude noisy results, e.g. 'proxy storage collision -transparent'\n\n"
             "PREFERRED SOURCES:\n"
-            "  Audit reports:     solodit.xyz, code4rena.com, audits.sherlock.xyz, "
-            "github.com/trailofbits/publications\n"
+            "  Audit reports:     solodit.xyz, code4rena.com, audits.sherlock.xyz\n"
             "  Vulnerability DBs: swcregistry.io, github.com/crytic/not-so-smart-contracts\n"
             "  Exploit analysis:  rekt.news, medium.com/immunefi, blog.openzeppelin.com\n"
             "  Protocol specs:    eips.ethereum.org, docs.openzeppelin.com, ethereum.org/developers\n"
             "  Tool docs:         book.getfoundry.sh, github.com/crytic/slither, "
             "docs.soliditylang.org\n\n"
-            "BUDGET: limited searches per step. A single error lookup or pattern check takes "
-            "1-2 calls. Save 3+ for genuinely ambiguous patterns or researching an unfamiliar "
+            "BUDGET: limited searches per step. Save searches for genuinely ambiguous patterns "
+            "or unfamiliar protocols."
             "protocol from scratch."
         ),
         "input_schema": {
@@ -478,10 +497,9 @@ TOOL_SPECS: list[dict] = [
     {
         "name": "web_fetch",
         "description": (
-            "Fetch the full text of one specific URL — use this after web_search when a "
-            "result's snippet isn't enough to act on (a GitHub issue thread, a full docs "
-            "page, a changelog). Pass the exact URL from a web_search result, not a guessed "
-            "or constructed one. Counts against the same per-step search budget as web_search."
+            "Fetch the full text of one specific URL — use after web_search when a result's "
+            "snippet isn't enough. Pass the exact URL from a web_search result. "
+            "Counts against the same per-step search budget as web_search."
         ),
         "input_schema": {
             "type": "object",
@@ -553,9 +571,22 @@ def dispatch(
                 result = slither(
                     project_path, tool_input.get("flags") or "./", window=window
                 )
+            case "semgrep":
+                result = semgrep(
+                    project_path,
+                    tool_input.get("flags") or "--config r/solidity ./",
+                    window=window,
+                )
             case "forge":
                 result = forge(
                     project_path, tool_input.get("subcommand") or "build", window=window
+                )
+            case "cast":
+                subcommand = tool_input.get("subcommand", "")
+                result = (
+                    cast(project_path, subcommand, window=window)
+                    if subcommand
+                    else ToolResult("cast", "", "Missing required 'subcommand'.", 1)
                 )
             case "git":
                 result = git(
