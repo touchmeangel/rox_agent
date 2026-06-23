@@ -10,22 +10,7 @@ from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.steps.base import BaseStep
 from ignite_agent.tools import dispatch
 
-# Inline content in the initial prompt when the project is small enough.
-_INLINE_LINE_LIMIT: int = 8_000
-
 _IMPACT_ORDER = ["High", "Medium", "Low", "Informational", "Optimization"]
-
-_EXCLUDE_DIRS = frozenset(
-    {
-        "lib",
-        "test",
-        "tests",
-        "out",
-        "cache",
-        "artifacts",
-        "build",
-    }
-)
 
 
 @dataclass
@@ -117,50 +102,12 @@ def _run_slither(
         debug_logger=debug_logger,
     )
 
-
-def _collect_sol_files(project_path: str) -> tuple[list[dict], int, bool]:
-    path = Path(project_path)
-    sol_files: list[dict] = []
-
-    for f in sorted(path.rglob("*.sol")):
-        # Drop any file whose path passes through an excluded directory.
-        if _EXCLUDE_DIRS.intersection(f.relative_to(path).parts[:-1]):
-            continue
-        rel = str(f.relative_to(path))
-        try:
-            content = f.read_text(errors="replace")
-            sol_files.append(
-                {
-                    "path": rel,
-                    "lines": len(content.splitlines()),
-                    "content": content,
-                }
-            )
-        except Exception as exc:
-            sol_files.append(
-                {"path": rel, "lines": -1, "content": None, "error": str(exc)}
-            )
-
-    total_lines = sum(f["lines"] for f in sol_files if f.get("lines", -1) >= 0)
-    inlined = bool(sol_files) and total_lines <= _INLINE_LINE_LIMIT
-
-    if not inlined:
-        for f in sol_files:
-            f.pop("content", None)
-
-    return sol_files, total_lines, inlined
-
-
 def _pre_scan_project(
     project_path: str, window: RollingWindow, debug_logger: DebugLogger
 ) -> dict:
-    sol_files, total_lines, inlined = _collect_sol_files(project_path)
     slither = _run_slither(project_path, window, debug_logger)
     return {
-        "sol_files": sol_files,
         "slither": slither,
-        "total_lines": total_lines,
-        "inlined": inlined,
     }
 
 
@@ -181,7 +128,7 @@ def _fmt_slither(result: PreScanResult) -> str:
             lines.append("")
             lines.append(_fmt_detectors(detectors))
         else:
-            lines.append("   No detector results — proceed with manual scanning.")
+            lines.append("   No detector results.")
         return "\n".join(lines)
 
     if not detectors:
@@ -239,30 +186,6 @@ def _fmt_detectors(detectors: list[dict]) -> str:
 
     return "\n".join(blocks)
 
-
-def _fmt_sol_files(sol_files: list[dict], inlined: bool) -> str:
-    if not sol_files:
-        return (
-            "No .sol files were found during pre-scan.\n"
-            "Use list_sol_files or shell('find . -name \"*.sol\"') to locate them manually."
-        )
-
-    if not inlined:
-        file_list = "\n".join(f"  {f['path']}  ({f['lines']} lines)" for f in sol_files)
-        return (
-            f"{len(sol_files)} Solidity file(s) found — codebase is too large to inline, "
-            f"use read_file to read them:\n\n{file_list}"
-        )
-
-    sep = "─" * 64
-    parts: list[str] = []
-    for f in sol_files:
-        header = f"{sep}\n{f['path']}  ({f['lines']} lines)\n{sep}"
-        body = f.get("content") or "(read error — use read_file to load this file)"
-        parts.append(f"{header}\n{body}")
-    return "\n\n".join(parts)
-
-
 class StaticAnalysisStep(BaseStep):
     name = "static_analysis"
 
@@ -273,21 +196,9 @@ class StaticAnalysisStep(BaseStep):
         self, context: dict, window: RollingWindow, debug_logger: DebugLogger
     ) -> str:
         pre_scan = _pre_scan_project(self.project_path, window, debug_logger)
-        sol_files: list[dict] = pre_scan["sol_files"]
-        inlined: bool = pre_scan["inlined"]
-        total_lines: int = pre_scan["total_lines"]
         slither_result: PreScanResult = pre_scan["slither"]
 
         slither_section = _fmt_slither(slither_result)
-        files_section = _fmt_sol_files(sol_files, inlined)
-
-        if inlined:
-            files_note = "All source files are inlined above — no read_file calls needed for the files listed."
-        else:
-            files_note = (
-                f"Source files are listed above ({total_lines:,} lines total). "
-                "Start with read_file on any file referenced by a High or Medium slither finding."
-            )
 
         if slither_result.success:
             slither_instruction = (
@@ -298,7 +209,7 @@ class StaticAnalysisStep(BaseStep):
             slither_instruction = (
                 "Slither did not produce clean output. You may try re-running it with "
                 "specific flags (e.g. '--filter-paths lib' if it failed on dependencies), "
-                "but don't loop on it — if it keeps failing, pivot to manual scanning."
+                "but don't loop on it — if it keeps failing."
             )
 
         return f"""You are running the static analysis step of a security audit.
@@ -311,14 +222,6 @@ SLITHER OUTPUT (pre-run)
 {slither_section}
 
 {slither_instruction}
-
-════════════════════════════════════════
-SOURCE FILES
-════════════════════════════════════════
-
-{files_section}
-
-{files_note}
 
 ════════════════════════════════════════
 YOUR TASK
@@ -340,7 +243,7 @@ FINDINGS FORMAT  (pass this to submit_findings)
   "confirmed": [
     {{
       "id": "SA-001",
-      "origin": "slither | manual",
+      "origin": "slither",
       "check": "reentrancy-eth",
       "severity": "critical | high | medium | low",
       "title": "Short title",
@@ -359,7 +262,7 @@ FINDINGS FORMAT  (pass this to submit_findings)
   "suspected": [
     {{
       "id": "SA-S01",
-      "origin": "slither | manual",
+      "origin": "slither",
       "check": "optional",
       "title": "What looks suspicious",
       "location": {{
