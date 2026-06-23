@@ -8,13 +8,13 @@ PIPELINE: list[BaseStep] = [
     StaticAnalysisStep(
         StepConfig(
             model_key="reasoning",
-            max_iterations=16,
+            max_iterations=32,
         )
     ),
     FinalReportStep(
         StepConfig(
             model_key="reasoning",
-            max_iterations=8,
+            max_iterations=16,
         )
     ),
 ]

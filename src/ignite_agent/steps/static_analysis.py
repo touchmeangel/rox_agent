@@ -27,8 +27,6 @@ _EXCLUDE_DIRS = frozenset(
     }
 )
 
-_FILTER_PATHS_REGEX = "lib|test|tests|out|cache|artifacts|build"
-
 
 @dataclass
 class PreScanResult:
@@ -69,11 +67,9 @@ def _run_prescan_tool(
 
 
 _SLITHER_FLAGS = (
-    f"./ "
-    f"--json - "
-    f"--exclude-dependencies "
-    f"--filter-paths '{_FILTER_PATHS_REGEX}' "
-    f"--exclude-detectors 'naming-convention,solc-version,low-level-calls,pragma,similar-names'"
+    f". --json - --exclude-dependencies "
+    f"--filter-paths 'test,tests,out,cache,artifacts,build' "
+    f"--exclude naming-convention,solc-version,low-level-calls,pragma,similar-names"
 )
 
 
