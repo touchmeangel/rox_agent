@@ -67,9 +67,9 @@ def _run_prescan_tool(
 
 
 _SLITHER_FLAGS = (
-    f". --json - --exclude-dependencies "
-    f"--filter-paths 'test,tests,out,cache,artifacts,build' "
-    f"--exclude naming-convention,solc-version,low-level-calls,pragma,similar-names"
+    ". --json - --exclude-dependencies "
+    "--filter-paths 'test,tests,out,cache,artifacts,build' "
+    "--exclude naming-convention,solc-version,low-level-calls,pragma,similar-names"
 )
 
 
