@@ -100,7 +100,9 @@ def run_command(
 def slither(
     project_path: str, args: str = "./", window: RollingWindow | None = None
 ) -> ToolResult:
-    result = run_command(f"slither {args}", cwd=project_path, timeout=240, window=window)
+    result = run_command(
+        f"slither {args}", cwd=project_path, timeout=240, window=window
+    )
 
     if not result.success:
         data = result.json_data()
@@ -111,7 +113,9 @@ def slither(
 
 
 def semgrep(
-    project_path: str, flags: str = "--config r/solidity ./", window: RollingWindow | None = None
+    project_path: str,
+    flags: str = "--config r/solidity ./",
+    window: RollingWindow | None = None,
 ) -> ToolResult:
     return run_command(f"semgrep {flags}", cwd=project_path, timeout=180, window=window)
 
@@ -119,7 +123,9 @@ def semgrep(
 def cast(
     project_path: str, subcommand: str, window: RollingWindow | None = None
 ) -> ToolResult:
-    return run_command(f"cast {subcommand}", cwd=project_path, timeout=30, window=window)
+    return run_command(
+        f"cast {subcommand}", cwd=project_path, timeout=30, window=window
+    )
 
 
 def forge(
