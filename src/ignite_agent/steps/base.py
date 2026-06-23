@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 
 from ignite_agent.config import PROJECT_PATH
@@ -48,25 +47,8 @@ _NUDGE_FINISH_PROMPT = (
     "call submit_findings now."
 )
 
-_ERROR_LINE_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):?\s*(.*)$")
-
-
-def _suggest_search_query(stderr: str, max_len: int = 120) -> str | None:
-    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
-    if not lines:
-        return None
-    for line in reversed(lines):
-        m = _ERROR_LINE_RE.match(line)
-        if m:
-            exc_name, msg = m.groups()
-            return f"{exc_name} {msg}".strip()[:max_len]
-    return lines[-1][:max_len]
-
-
 def _tool_failure_hint(result, iterations_left: int) -> str:
-    parts = [
-        f"TOOL FAILED (exit {result.returncode}). {iterations_left} iterations remain.\n"
-    ]
+    parts = [f"TOOL FAILED (exit {result.returncode}). {iterations_left} iterations remain.\n"]
 
     if result.stdout:
         parts.append(f"stdout:\n{result.stdout}\n")
@@ -74,18 +56,12 @@ def _tool_failure_hint(result, iterations_left: int) -> str:
     if result.stderr:
         parts.append(f"stderr:\n{result.stderr}\n")
 
-    hint = "\n".join(parts)
-    hint += (
-        "\nApply observe → diagnose → act: don't immediately retry. "
-        "If this error is unfamiliar, web_search the exact error string or exception name"
+    parts.append(
+        "Diagnose before retrying — read the output above. "
+        "web_search the exact error text if you don't recognise this failure. "
+        "This exact call will be blocked if you repeat it unmodified."
     )
-
-    suggestion = _suggest_search_query(result.stderr)
-    if suggestion:
-        hint += f' — this query is extracted from the error and is a safe start:\n  "{suggestion}"'
-
-    hint += "\n\nThis exact call will be blocked if you repeat it unmodified."
-    return hint
+    return "\n".join(parts)
 
 
 class BaseStep:
@@ -405,9 +381,7 @@ Don't call submit_findings until you've actually verified what you're reporting.
                             findings={
                                 "error": {
                                     "message": call.input.get("error", "unknown error"),
-                                    "reason": call.input.get(
-                                        "reason", "unknown failure"
-                                    ),
+                                    "reason": call.input.get("reason", "unknown failure"),
                                 }
                             },
                             summary=f"[FAILED] {call.input.get('reason', '')}",
