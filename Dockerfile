@@ -33,6 +33,10 @@ RUN mkdir -p /home/shared && chmod 777 /home/shared
 
 RUN curl -L https://foundry.paradigm.xyz | bash && foundryup
 
+RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/cyfrin/aderyn/releases/latest/download/aderyn-installer.sh | bash \
+    && mv /tmp/.cargo/bin/aderyn /usr/local/bin/aderyn \
+    && mv /tmp/.cargo/bin/aderyn-update /usr/local/bin/aderyn-update
+
 RUN pip install --no-cache-dir \
     slither-analyzer \
     solc-select \
