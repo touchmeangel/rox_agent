@@ -47,8 +47,11 @@ _NUDGE_FINISH_PROMPT = (
     "call submit_findings now."
 )
 
+
 def _tool_failure_hint(result, iterations_left: int) -> str:
-    parts = [f"TOOL FAILED (exit {result.returncode}). {iterations_left} iterations remain.\n"]
+    parts = [
+        f"TOOL FAILED (exit {result.returncode}). {iterations_left} iterations remain.\n"
+    ]
 
     if result.stdout:
         parts.append(f"stdout:\n{result.stdout}\n")
@@ -381,7 +384,9 @@ Don't call submit_findings until you've actually verified what you're reporting.
                             findings={
                                 "error": {
                                     "message": call.input.get("error", "unknown error"),
-                                    "reason": call.input.get("reason", "unknown failure"),
+                                    "reason": call.input.get(
+                                        "reason", "unknown failure"
+                                    ),
                                 }
                             },
                             summary=f"[FAILED] {call.input.get('reason', '')}",
