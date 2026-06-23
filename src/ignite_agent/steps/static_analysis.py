@@ -128,24 +128,28 @@ def _run_aderyn(
             with open(report_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            raw_issues = data.get("issues", []) or []
             normalized_detectors = []
+            
+            severity_mappings = {
+                "critical_issues": "High",
+                "high_issues": "High",
+                "medium_issues": "Medium",
+                "low_issues": "Low",
+                "nc_issues": "Informational",
+            }
 
-            for issue in raw_issues:
-                # Normalize Aderyn's severities to match your system strings
-                severity = issue.get("severity", "").capitalize()
-                if severity == "Critical":  # Elevate critical or keep inside High bucket
-                    severity = "High"
-                elif severity not in _IMPACT_ORDER:
-                    severity = "Informational"
-
-                normalized_detectors.append({
-                    "check": issue.get("title", "Unknown Detector"),
-                    "impact": severity,
-                    "confidence": "High",
-                    "description": issue.get("description", ""),
-                    "elements": issue.get("instances", []),
-                })
+            for bucket_key, target_severity in severity_mappings.items():
+                bucket = data.get(bucket_key, {})
+                raw_issues = bucket.get("issues", []) if isinstance(bucket, dict) else []
+                
+                for issue in raw_issues:
+                    normalized_detectors.append({
+                        "check": issue.get("title", "Unknown Detector"),
+                        "impact": target_severity,
+                        "confidence": "High",
+                        "description": issue.get("description", ""),
+                        "elements": issue.get("instances", []),
+                    })
 
             return PreScanResult(
                 tool_name="aderyn",
@@ -269,7 +273,7 @@ def _fmt_detectors(detectors: list[dict]) -> str:
                     fname = el.get("contract_path", "")
                     if fname:
                         fname = Path(fname).name
-                    line = el.get("line_num")
+                    line = el.get("line_no") 
                     raw_lines = [line] if line is not None else []
 
                 if not fname:
