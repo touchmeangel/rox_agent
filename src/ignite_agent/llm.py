@@ -11,6 +11,12 @@ from ignite_agent.rolling_window import RollingWindow
 
 _INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14"
 
+_ANSI_DIM_CYAN = "\033[2;36m"
+_ANSI_RESET = "\033[0m"
+_THINKING_OPEN = f"{_ANSI_DIM_CYAN}\n┌─ Thinking ─────────────────────────\n│ "
+_THINKING_LINE = "│ "
+_THINKING_CLOSE = f"\n└────────────────────────────────────{_ANSI_RESET}\n\n"
+
 
 @dataclass
 class ToolCall:
@@ -30,6 +36,7 @@ class ToolResultEntry:
 class AssistantTurn:
     text: str = ""
     thinking: str | None = None
+    thinking_char_count: int = 0
     tool_calls: list[ToolCall] = field(default_factory=list)
     stop_reason: str = ""
     raw: object = None
@@ -44,6 +51,10 @@ class LLMClient:
         self.cfg = MODELS[model_key]
         self.thinking_budget: int | None = getattr(self.cfg, "thinking_budget", None)
 
+    @property
+    def thinking_enabled(self) -> bool:
+        return bool(self.thinking_budget)
+
     def chat_with_tools(
         self,
         messages: list[dict],
@@ -53,13 +64,14 @@ class LLMClient:
         window: RollingWindow | None = None,
         step_name: str = "",
         debug_logger: DebugLogger | None = None,
+        show_thinking: bool = False,
     ) -> AssistantTurn:
         debug_logger = debug_logger or default_debug_logger
 
         if window is not None:
-            window.start_spinner("Thinking...")
+            spinner_msg = "Extended thinking…" if self.thinking_enabled else "Thinking…"
+            window.start_spinner(spinner_msg)
 
-        # Resolve environment variable key targets
         api_key_env = getattr(self.cfg, "api_key_env", None)
         if not api_key_env:
             fallback_map = {
@@ -82,10 +94,16 @@ class LLMClient:
                         window,
                         base_url=self.cfg.base_url,
                         api_key=api_key,
+                        show_thinking=show_thinking,
                     )
                 case "anthropic":
                     turn = self._anthropic_with_tools(
-                        messages, tools, system, window, api_key=api_key
+                        messages,
+                        tools,
+                        system,
+                        window,
+                        api_key=api_key,
+                        show_thinking=show_thinking,
                     )
                 case _:
                     raise ValueError(f"Unknown provider: {self.cfg.provider}")
@@ -120,6 +138,7 @@ class LLMClient:
         system: str,
         window: RollingWindow | None,
         api_key: str,
+        show_thinking: bool = False,
     ) -> AssistantTurn:
         from anthropic import Anthropic
 
@@ -147,14 +166,29 @@ class LLMClient:
         text_parts: list[str] = []
         thinking_parts: list[str] = []
         spinner_stopped = window is None
+        current_block_type: str | None = None
 
         with client.messages.stream(extra_headers=extra_headers, **kwargs) as stream:
             for event in stream:
                 if not spinner_stopped:
                     window.stop_spinner()
                     spinner_stopped = True
+
+                if event.type == "content_block_start":
+                    current_block_type = getattr(event.content_block, "type", None)
+                    if current_block_type == "thinking" and show_thinking and window is not None:
+                        window.feed(_THINKING_OPEN)
+                    continue
+
+                if event.type == "content_block_stop":
+                    if current_block_type == "thinking" and show_thinking and window is not None:
+                        window.feed(_THINKING_CLOSE)
+                    current_block_type = None
+                    continue
+
                 if event.type != "content_block_delta":
                     continue
+
                 delta = event.delta
                 if delta.type == "text_delta":
                     text_parts.append(delta.text)
@@ -162,10 +196,13 @@ class LLMClient:
                         window.feed(delta.text)
                 elif delta.type == "thinking_delta":
                     thinking_parts.append(delta.thinking)
-                    if window is not None:
-                        window.feed(delta.thinking)
+                    if show_thinking and window is not None:
+                        indented = delta.thinking.replace("\n", f"\n{_THINKING_LINE}")
+                        window.feed(indented)
+
             final = stream.get_final_message()
 
+        thinking_joined = "".join(thinking_parts)
         tool_calls = [
             ToolCall(id=b.id, name=b.name, input=b.input)
             for b in final.content
@@ -173,7 +210,8 @@ class LLMClient:
         ]
         return AssistantTurn(
             text="".join(text_parts),
-            thinking="".join(thinking_parts) or None,
+            thinking=thinking_joined or None,
+            thinking_char_count=len(thinking_joined),
             tool_calls=tool_calls,
             stop_reason=final.stop_reason or "",
             raw=[block.model_dump() for block in final.content],
@@ -188,6 +226,7 @@ class LLMClient:
         *,
         base_url: str | None,
         api_key: str,
+        show_thinking: bool = False,
     ) -> AssistantTurn:
         from openai import OpenAI
 
@@ -207,9 +246,11 @@ class LLMClient:
         )
 
         text_parts: list[str] = []
+        reasoning_parts: list[str] = []
         tool_call_slots: dict[int, dict] = {}
         finish_reason = ""
         spinner_stopped = window is None
+        thinking_box_open = False
 
         for chunk in stream:
             if not spinner_stopped:
@@ -221,10 +262,27 @@ class LLMClient:
             if choice.finish_reason:
                 finish_reason = choice.finish_reason
             delta = choice.delta
+
+            reasoning = getattr(delta, "reasoning_content", None) or getattr(
+                delta, "reasoning", None
+            )
+            if reasoning:
+                reasoning_parts.append(reasoning)
+                if show_thinking and window is not None:
+                    if not thinking_box_open:
+                        window.feed(_THINKING_OPEN)
+                        thinking_box_open = True
+                    indented = reasoning.replace("\n", f"\n{_THINKING_LINE}")
+                    window.feed(indented)
+
             if delta.content:
+                if thinking_box_open and show_thinking and window is not None:
+                    window.feed(_THINKING_CLOSE)
+                    thinking_box_open = False
                 text_parts.append(delta.content)
                 if window is not None:
                     window.feed(delta.content)
+
             if delta.tool_calls:
                 for tc_delta in delta.tool_calls:
                     slot = tool_call_slots.setdefault(
@@ -237,8 +295,10 @@ class LLMClient:
                     if tc_delta.function and tc_delta.function.arguments:
                         slot["arguments"] += tc_delta.function.arguments
 
+        if thinking_box_open and show_thinking and window is not None:
+            window.feed(_THINKING_CLOSE)
+
         tool_calls: list[ToolCall] = []
-        raw_tool_calls: list[dict] = []
         for idx in sorted(tool_call_slots):
             slot = tool_call_slots[idx]
             try:
@@ -250,16 +310,6 @@ class LLMClient:
             call_id = slot["id"] or f"call_{idx}"
             tool_calls.append(
                 ToolCall(id=call_id, name=slot["name"] or "", input=parsed_input)
-            )
-            raw_tool_calls.append(
-                {
-                    "id": call_id,
-                    "type": "function",
-                    "function": {
-                        "name": slot["name"] or "",
-                        "arguments": slot["arguments"],
-                    },
-                }
             )
 
         text = "".join(text_parts)
@@ -287,9 +337,11 @@ class LLMClient:
             "tool_calls": raw_tool_calls or None,
         }
 
+        reasoning_joined = "".join(reasoning_parts)
         return AssistantTurn(
             text=text,
-            thinking=None,
+            thinking=reasoning_joined or None,
+            thinking_char_count=len(reasoning_joined),
             tool_calls=tool_calls,
             stop_reason=finish_reason or "stop",
             raw=raw_assistant_message,
@@ -309,6 +361,8 @@ def _to_anthropic_messages(messages: list[dict]) -> list[dict]:
             )
         elif role == "assistant":
             if entry.get("raw") is not None:
+                # raw already contains thinking blocks; pass through verbatim
+                # so the Anthropic API receives them on multi-turn replays.
                 out.append({"role": "assistant", "content": entry["raw"]})
             else:
                 blocks: list[dict] = []
@@ -457,14 +511,22 @@ def _extract_json_objects(text: str) -> list[dict]:
 
 
 def _log_repr(turn: AssistantTurn) -> str:
+    parts: list[str] = []
+
+    if turn.thinking:
+        snippet = turn.thinking.replace("\n", " ").strip()
+        if len(snippet) > 200:
+            snippet = snippet[:200] + f"… ({turn.thinking_char_count} chars total)"
+        parts.append(f"[thinking]: {snippet}")
+
     if turn.tool_calls:
         calls = ", ".join(f"{c.name}({c.input})" for c in turn.tool_calls)
-        return (
-            f"{turn.text}\n[tool_calls: {calls}]"
-            if turn.text
-            else f"[tool_calls: {calls}]"
-        )
-    return turn.text
+        parts.append(f"[tool_calls: {calls}]")
+
+    if turn.text:
+        parts.append(turn.text)
+
+    return "\n".join(parts) if parts else ""
 
 
 def get_llm(model_key: str) -> LLMClient:
