@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import subprocess
 import threading
@@ -17,43 +19,48 @@ from ignite_agent.debug_logger import DebugLogger, default_debug_logger
 from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.search_state import SearchState
 from ignite_agent.tool_result import ToolResult
-import json
-import hashlib
 
-def _smart_process_output(stdout: str, tool_name: str, project_path: str, limit: int) -> str:
+
+def _smart_process_output(
+    stdout: str, tool_name: str, project_path: str, limit: int
+) -> str:
     if len(stdout) <= limit:
         return stdout
 
-    run_hash = hashlib.md5(stdout.encode()).hexdigest()[:6]
-    
+    run_hash = hashlib.sha256(stdout.encode()).hexdigest()[:6]
+
     try:
         data = json.loads(stdout)
         log_file = f".ignite_{tool_name}_{run_hash}.json"
         log_path = Path(project_path) / log_file
-        
+
         log_path.write_text(stdout, encoding="utf-8")
 
         summary_data = {}
         if isinstance(data, dict):
             for k, v in data.items():
                 if isinstance(v, list) and len(v) > 5:
-                    summary_data[k] = v[:5] + [f"... <{len(v) - 5} more items omitted in {log_file}>"]
+                    summary_data[k] = v[:5] + [
+                        f"... <{len(v) - 5} more items omitted in {log_file}>"
+                    ]
                 else:
                     summary_data[k] = v
         elif isinstance(data, list) and len(data) > 5:
-            summary_data = data[:5] + [f"... <{len(data) - 5} more items omitted in {log_file}>"]
+            summary_data = data[:5] + [
+                f"... <{len(data) - 5} more items omitted in {log_file}>"
+            ]
         else:
             summary_data = data
-            
+
         summary_str = json.dumps(summary_data, indent=2)
-        
+
         prompt_msg = (
             f"[SYSTEM: Massive JSON output intercepted ({len(stdout)} chars).]\n"
             f"[Full raw JSON saved to '{log_file}'. Use `shell` with `jq` to query the full file if needed.]\n"
             f"[Preview below:]\n\n"
             f"{summary_str}"
         )
-        
+
         return _truncate(prompt_msg, limit, "json_summary")
     except json.JSONDecodeError:
         pass
@@ -711,8 +718,10 @@ def dispatch(
                     1,
                 )
 
-        stdout_limit = _STDOUT_LIMITS.get(tool_name, _DEFAULT_STDOUT_LIMIT)        
-        smart_stdout = _smart_process_output(result.stdout, tool_name, project_path, stdout_limit)
+        stdout_limit = _STDOUT_LIMITS.get(tool_name, _DEFAULT_STDOUT_LIMIT)
+        smart_stdout = _smart_process_output(
+            result.stdout, tool_name, project_path, stdout_limit
+        )
         smart_stderr = _truncate(result.stderr, 4_000, "stderr")
 
         result = ToolResult(
@@ -720,7 +729,7 @@ def dispatch(
             smart_stdout,
             smart_stderr,
             result.returncode,
-            is_truncation_system_prompt=True
+            is_truncation_system_prompt=True,
         )
 
         debug_logger.log(tool_name, args_repr, result)

@@ -144,7 +144,7 @@ def _run_prescan_tool(
             error=f"'{tool_name}' binary not found in PATH",
             exit_code=result.returncode,
         )
-        
+
     if result.is_truncation_system_prompt:
         return PreScanResult(
             tool_name=tool_name,

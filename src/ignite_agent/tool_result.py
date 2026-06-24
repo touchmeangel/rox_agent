@@ -4,7 +4,14 @@ import json
 
 
 class ToolResult:
-    def __init__(self, command: str, stdout: str, stderr: str, returncode: int, is_truncation_system_prompt: bool = False):
+    def __init__(
+        self,
+        command: str,
+        stdout: str,
+        stderr: str,
+        returncode: int,
+        is_truncation_system_prompt: bool = False,
+    ):
         self.command = command
         self.stdout = stdout.strip()
         self.stderr = stderr.strip()
