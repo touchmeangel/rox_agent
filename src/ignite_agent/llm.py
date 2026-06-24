@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from ignite_agent.debug_logger import DebugLogger, default_debug_logger
 from ignite_agent.rolling_window import RollingWindow
+from ignite_agent.tool_call_parser import ToolCall, parse_text_tool_calls
 
 _INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14"
 
@@ -16,14 +17,6 @@ _ANSI_RESET = "\033[0m"
 _THINKING_OPEN = f"{_ANSI_DIM_CYAN}\n┌─ Thinking ─────────────────────────\n│ "
 _THINKING_LINE = "│ "
 _THINKING_CLOSE = f"\n└────────────────────────────────────{_ANSI_RESET}\n\n"
-
-
-@dataclass
-class ToolCall:
-    id: str
-    name: str
-    input: dict
-
 
 @dataclass
 class ToolResultEntry:
@@ -314,7 +307,7 @@ class LLMClient:
 
         text = "".join(text_parts)
         if not tool_calls and text:
-            parsed = _parse_text_tool_calls(text)
+            parsed = parse_text_tool_calls(text)
             if parsed:
                 tool_calls = parsed
                 text = ""
@@ -452,63 +445,6 @@ def _to_openai_tools(specs: list[dict]) -> list[dict]:
         }
         for s in specs
     ]
-
-
-def _parse_text_tool_calls(text: str) -> list[ToolCall]:
-    tool_calls: list[ToolCall] = []
-
-    for i, match in enumerate(
-        re.finditer(r"<tool_call>\s*(.*?)\s*</tool_call>", text, re.DOTALL)
-    ):
-        try:
-            payload = json.loads(match.group(1))
-            tool_calls.append(
-                ToolCall(
-                    id=f"call_text_{i}_{int(time.time())}",
-                    name=payload.get("name", ""),
-                    input=payload.get("arguments", {}),
-                )
-            )
-        except json.JSONDecodeError:
-            pass
-
-    if tool_calls:
-        return tool_calls
-
-    for i, obj in enumerate(_extract_json_objects(text)):
-        if "name" in obj and "arguments" in obj:
-            tool_calls.append(
-                ToolCall(
-                    id=f"call_text_{i}_{int(time.time())}",
-                    name=obj["name"],
-                    input=obj["arguments"],
-                )
-            )
-
-    return tool_calls
-
-
-def _extract_json_objects(text: str) -> list[dict]:
-    results = []
-    depth = 0
-    start = None
-    for i, ch in enumerate(text):
-        if ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0 and start is not None:
-                try:
-                    parsed = json.loads(text[start : i + 1])
-                    if isinstance(parsed, dict):
-                        results.append(parsed)
-                except json.JSONDecodeError:
-                    pass
-                start = None
-    return results
-
 
 def _log_repr(turn: AssistantTurn) -> str:
     parts: list[str] = []
