@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -125,11 +124,11 @@ def _run_aderyn(
             )
 
         try:
-            with open(report_path, "r", encoding="utf-8") as f:
+            with open(report_path, encoding="utf-8") as f:
                 data = json.load(f)
 
             normalized_detectors = []
-            
+
             severity_mappings = {
                 "critical_issues": "High",
                 "high_issues": "High",
@@ -140,16 +139,20 @@ def _run_aderyn(
 
             for bucket_key, target_severity in severity_mappings.items():
                 bucket = data.get(bucket_key, {})
-                raw_issues = bucket.get("issues", []) if isinstance(bucket, dict) else []
-                
+                raw_issues = (
+                    bucket.get("issues", []) if isinstance(bucket, dict) else []
+                )
+
                 for issue in raw_issues:
-                    normalized_detectors.append({
-                        "check": issue.get("title", "Unknown Detector"),
-                        "impact": target_severity,
-                        "confidence": "High",
-                        "description": issue.get("description", ""),
-                        "elements": issue.get("instances", []),
-                    })
+                    normalized_detectors.append(
+                        {
+                            "check": issue.get("title", "Unknown Detector"),
+                            "impact": target_severity,
+                            "confidence": "High",
+                            "description": issue.get("description", ""),
+                            "elements": issue.get("instances", []),
+                        }
+                    )
 
             return PreScanResult(
                 tool_name="aderyn",
@@ -231,7 +234,7 @@ def _fmt_aderyn(result: PreScanResult) -> str:
         if result.stderr_tail:
             lines.append(f"   Stderr:\n{result.stderr_tail}")
         if detectors:
-            lines.append(f"\n   Showing available data wrapper findings:\n")
+            lines.append("\n   Showing available data wrapper findings:\n")
             lines.append(_fmt_detectors(detectors))
         else:
             lines.append("   No detector results.")
@@ -263,7 +266,7 @@ def _fmt_detectors(detectors: list[dict]) -> str:
 
             locs: list[str] = []
             seen_locs: set[str] = set()
-            
+
             for el in d.get("elements", []):
                 sm = el.get("source_mapping", {})
                 fname = sm.get("filename_short", "")
@@ -273,7 +276,7 @@ def _fmt_detectors(detectors: list[dict]) -> str:
                     fname = el.get("contract_path", "")
                     if fname:
                         fname = Path(fname).name
-                    line = el.get("line_no") 
+                    line = el.get("line_no")
                     raw_lines = [line] if line is not None else []
 
                 if not fname:
@@ -314,7 +317,7 @@ class StaticAnalysisStep(BaseStep):
         self, context: dict, window: RollingWindow, debug_logger: DebugLogger
     ) -> str:
         pre_scan = _pre_scan_project(self.project_path, window, debug_logger)
-        
+
         slither_result: PreScanResult = pre_scan["slither"]
         aderyn_result: PreScanResult = pre_scan["aderyn"]
 
@@ -323,12 +326,18 @@ class StaticAnalysisStep(BaseStep):
 
         instructions = []
         if slither_result.success:
-            instructions.append("- Slither completed successfully. Do NOT re-run it unless needed.")
+            instructions.append(
+                "- Slither completed successfully. Do NOT re-run it unless needed."
+            )
         else:
-            instructions.append("- Slither encountered errors; evaluate fallback configurations if critical details are missing.")
+            instructions.append(
+                "- Slither encountered errors; evaluate fallback configurations if critical details are missing."
+            )
 
         if aderyn_result.success:
-            instructions.append("- Aderyn ran successfully. Combine its structural insights with Slither's findings.")
+            instructions.append(
+                "- Aderyn ran successfully. Combine its structural insights with Slither's findings."
+            )
         else:
             instructions.append("- Aderyn context collection failed or was partial.")
 
