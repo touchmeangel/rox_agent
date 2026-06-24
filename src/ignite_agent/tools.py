@@ -118,6 +118,18 @@ def aderyn(
     cmd_str = f"aderyn {flags}".strip() if flags else "aderyn"
     return run_command(cmd_str, cwd=project_path, timeout=180, window=window)
 
+def myth(
+    project_path: str, flags: str = "", window: RollingWindow | None = None
+) -> ToolResult:
+    cmd = f"myth {flags}".strip() if flags else "myth analyze ./"
+    return run_command(cmd, cwd=project_path, timeout=300, window=window)
+
+
+def four_naly3er(
+    project_path: str, flags: str = "", window: RollingWindow | None = None
+) -> ToolResult:
+    cmd = f"4naly3er {flags}".strip() if flags else "4naly3er"
+    return run_command(cmd, cwd=project_path, timeout=120, window=window)
 
 def cast(
     project_path: str, subcommand: str, window: RollingWindow | None = None
@@ -319,6 +331,65 @@ TOOL_SPECS: list[dict] = [
             },
         },
     },
+{
+        "name": "myth",
+        "description": (
+            "Run Mythril symbolic execution against specific Solidity files.\n\n"
+            "Unlike Slither/Aderyn, Mythril uses SMT-based symbolic execution so it "
+            "catches vulnerabilities that static pattern matching misses: integer "
+            "overflows/underflows, assertion violations, reachable selfdestruct or "
+            "delegatecall, and some reentrancy classes.\n\n"
+            "Always pass '--output json' for machine-readable results and "
+            "'--execution-timeout <n>' to avoid hanging on complex contracts.\n\n"
+            "Example flags:\n"
+            "  'analyze src/Vault.sol --output json --execution-timeout 60'\n"
+            "  'analyze src/A.sol src/B.sol --output json --execution-timeout 60 --max-depth 12'\n\n"
+            "NOTE: Mythril is slow. Keep the file list short and always set a timeout. "
+            "SWC-107 = reentrancy, SWC-101 = integer overflow, SWC-106 = selfdestruct, "
+            "SWC-112 = delegatecall — see swcregistry.io for the full list."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "flags": {
+                    "type": "string",
+                    "description": (
+                        "Full myth invocation after 'myth', e.g. "
+                        "'analyze src/Vault.sol --output json --execution-timeout 60'."
+                    ),
+                    "default": "",
+                }
+            },
+        },
+    },
+    {
+        "name": "4naly3er",
+        "description": (
+            "Run 4naly3er against a set of Solidity files.\n\n"
+            "4naly3er specialises in Gas optimisations, Low-severity, and Non-critical "
+            "findings. It outputs Markdown (no JSON mode), so its output is parsed by "
+            "the pre-scan harness rather than consumed raw.\n\n"
+            "Requires two arguments: a scope file (one relative .sol path per line) "
+            "and the project base path.\n\n"
+            "Example flags:\n"
+            "  '/project/.4naly3er_scope.txt /project'\n\n"
+            "NOTE: Prefer the pre-scan result already in your context over re-running "
+            "this tool manually. Re-run only if scope or compiler version changed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "flags": {
+                    "type": "string",
+                    "description": (
+                        "Scope file path and base path, e.g. "
+                        "'/project/.4naly3er_scope.txt /project'."
+                    ),
+                    "default": "",
+                }
+            },
+        },
+    },
     {
         "name": "forge",
         "description": (
@@ -415,7 +486,7 @@ TOOL_SPECS: list[dict] = [
         "name": "shell",
         "description": (
             "Run an arbitrary shell command for anything the other tools don't cover. "
-            "Prefer the dedicated tools (slither/aderyn/forge/cast/git/read_file) "
+            "Prefer the dedicated tools (slither/aderyn/mythril/4analy3er/forge/cast/git/read_file) "
             "when they fit — reach for shell when you genuinely need composition.\n\n"
             "Available utilities beyond the standard toolbox:\n"
             "  rg <pattern> [path]     — fast ripgrep; use instead of grep for multi-file search\n"
@@ -576,6 +647,14 @@ def dispatch(
                 )
             case "aderyn":
                 result = aderyn(
+                    project_path, tool_input.get("flags") or "", window=window
+                )
+            case "myth":
+                result = myth(
+                    project_path, tool_input.get("flags") or "", window=window
+                )
+            case "4naly3er":
+                result = four_naly3er(
                     project_path, tool_input.get("flags") or "", window=window
                 )
             case "forge":

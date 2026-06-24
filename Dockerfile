@@ -22,6 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tree \
     bc \
     unzip \
+    cmake \
+    libgmp-dev \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd \
     && rm -rf /var/lib/apt/lists/*
 
@@ -40,11 +42,19 @@ RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/cyfrin/aderyn/relea
 RUN pip install --no-cache-dir \
     slither-analyzer \
     solc-select \
-    semgrep \
     pyevmasm \
     web3 \
     eth-abi \
-    crytic-compile
+    crytic-compile \
+    mythril
+
+RUN git clone https://github.com/Picodes/4naly3er.git /opt/4naly3er \
+    && cd /opt/4naly3er \
+    && npm install \
+    && chmod +x /opt/4naly3er/analyze.js
+
+RUN echo '#!/bin/bash\nnode /opt/4naly3er/analyze.js "$@"' > /usr/local/bin/4naly3er \
+    && chmod +x /usr/local/bin/4naly3er
 
 RUN npm install -g \
     solhint
