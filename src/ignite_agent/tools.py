@@ -118,6 +118,7 @@ def aderyn(
     cmd_str = f"aderyn {flags}".strip() if flags else "aderyn"
     return run_command(cmd_str, cwd=project_path, timeout=180, window=window)
 
+
 def myth(
     project_path: str, flags: str = "", window: RollingWindow | None = None
 ) -> ToolResult:
@@ -130,6 +131,7 @@ def four_naly3er(
 ) -> ToolResult:
     cmd = f"4naly3er {flags}".strip() if flags else "4naly3er"
     return run_command(cmd, cwd=project_path, timeout=120, window=window)
+
 
 def cast(
     project_path: str, subcommand: str, window: RollingWindow | None = None
@@ -331,7 +333,7 @@ TOOL_SPECS: list[dict] = [
             },
         },
     },
-{
+    {
         "name": "myth",
         "description": (
             "Run Mythril symbolic execution against specific Solidity files.\n\n"

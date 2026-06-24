@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import re
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,12 +13,19 @@ from ignite_agent.tools import dispatch
 
 _IMPACT_ORDER = ["High", "Medium", "Low", "Informational", "Optimization"]
 
-_SKIP_DIRS: frozenset[str] = frozenset({
-    "test", "tests",
-    "lib",
-    "mock", "mocks",
-    "out", "cache", "artifacts", "build",
-})
+_SKIP_DIRS: frozenset[str] = frozenset(
+    {
+        "test",
+        "tests",
+        "lib",
+        "mock",
+        "mocks",
+        "out",
+        "cache",
+        "artifacts",
+        "build",
+    }
+)
 
 _SLITHER_FILTER = ",".join(sorted(_SKIP_DIRS))
 
@@ -198,14 +205,37 @@ def _run_aderyn(
 
 
 _SWC_SEVERITY: dict[str, str] = {
-    "100": "High",  "101": "High",  "104": "High",  "105": "High",
-    "106": "High",  "107": "High",  "110": "High",  "112": "High",
-    "113": "High",  "115": "High",  "116": "High",  "124": "High",
-    "103": "Medium","108": "Medium","109": "Medium","111": "Medium",
-    "114": "Medium","120": "Medium","122": "Medium","123": "Medium",
-    "128": "Medium","131": "Medium","132": "Medium",
-    "102": "Low",   "117": "Low",   "118": "Low",   "119": "Low",
-    "121": "Low",   "125": "Low",   "126": "Low",   "129": "Low",
+    "100": "High",
+    "101": "High",
+    "104": "High",
+    "105": "High",
+    "106": "High",
+    "107": "High",
+    "110": "High",
+    "112": "High",
+    "113": "High",
+    "115": "High",
+    "116": "High",
+    "124": "High",
+    "103": "Medium",
+    "108": "Medium",
+    "109": "Medium",
+    "111": "Medium",
+    "114": "Medium",
+    "120": "Medium",
+    "122": "Medium",
+    "123": "Medium",
+    "128": "Medium",
+    "131": "Medium",
+    "132": "Medium",
+    "102": "Low",
+    "117": "Low",
+    "118": "Low",
+    "119": "Low",
+    "121": "Low",
+    "125": "Low",
+    "126": "Low",
+    "129": "Low",
 }
 
 
@@ -229,21 +259,25 @@ def _parse_mythril(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
             lineno = issue.get("lineno")
             elements = []
             if filename:
-                elements.append({
-                    "source_mapping": {
-                        "filename_short": Path(filename).name,
-                        "lines": [lineno] if lineno else [],
+                elements.append(
+                    {
+                        "source_mapping": {
+                            "filename_short": Path(filename).name,
+                            "lines": [lineno] if lineno else [],
+                        }
                     }
-                })
+                )
             title = issue.get("title", "")
             desc = issue.get("description", "")
-            detectors.append({
-                "check": f"SWC-{swc_id}" if swc_id else "mythril-finding",
-                "impact": severity,
-                "confidence": "Medium",  # mythril has its own false positives
-                "description": f"{title}: {desc}".strip(": "),
-                "elements": elements,
-            })
+            detectors.append(
+                {
+                    "check": f"SWC-{swc_id}" if swc_id else "mythril-finding",
+                    "impact": severity,
+                    "confidence": "Medium",  # mythril has its own false positives
+                    "description": f"{title}: {desc}".strip(": "),
+                    "elements": elements,
+                }
+            )
         return PreScanResult(
             tool_name="mythril",
             success=True,
@@ -272,7 +306,8 @@ def _run_mythril(
         src_dir = Path(project_path)
 
     sol_files = [
-        str(p) for p in src_dir.rglob("*.sol")
+        str(p)
+        for p in src_dir.rglob("*.sol")
         if not any(part in _SKIP_DIRS for part in p.parts)
     ]
 
@@ -284,10 +319,7 @@ def _run_mythril(
         )
 
     sol_files = sol_files[:15]
-    flags = (
-        "analyze " + " ".join(sol_files) +
-        " --output json --max-depth 12"
-    )
+    flags = "analyze " + " ".join(sol_files) + " --output json --max-depth 12"
 
     return _run_prescan_tool(
         project_path,
@@ -307,20 +339,23 @@ def _fmt_mythril(result: PreScanResult) -> str:
             lines.append(f"   Error: {result.error}")
         if result.stderr_tail:
             lines.append(f"   Stderr:\n{result.stderr_tail}")
-        lines.append("   No detector results." if not detectors else _fmt_detectors(detectors))
+        lines.append(
+            "   No detector results." if not detectors else _fmt_detectors(detectors)
+        )
         return "\n".join(lines)
     if not detectors:
         return "✓  Mythril ran successfully — zero issues found."
     return f"✓  Mythril: {len(detectors)} finding(s)\n\n" + _fmt_detectors(detectors)
 
+
 _4ANALY3ER_PREFIX_SEVERITY: dict[str, str] = {
     "GAS": "Optimization",
-    "G":   "Optimization",
-    "L":   "Low",
-    "NC":  "Informational",
-    "N":   "Informational",
-    "M":   "Medium",
-    "H":   "High",
+    "G": "Optimization",
+    "L": "Low",
+    "NC": "Informational",
+    "N": "Informational",
+    "M": "Medium",
+    "H": "High",
 }
 
 _4ANALY3ER_HEADING = re.compile(r"^###\s+\[([A-Z]+-\d+)\]\s+(.+)$", re.MULTILINE)
@@ -376,13 +411,15 @@ def _parse_4naly3er(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
             for ref in file_refs[:5]
         ]
 
-        detectors.append({
-            "check": code,
-            "impact": severity,
-            "confidence": "High",
-            "description": description,
-            "elements": elements,
-        })
+        detectors.append(
+            {
+                "check": code,
+                "impact": severity,
+                "confidence": "High",
+                "description": description,
+                "elements": elements,
+            }
+        )
 
     return PreScanResult(
         tool_name="4naly3er",
@@ -450,7 +487,9 @@ def _fmt_4naly3er(result: PreScanResult) -> str:
             lines.append(f"   Error: {result.error}")
         if result.stderr_tail:
             lines.append(f"   Stderr:\n{result.stderr_tail}")
-        lines.append("   No detector results." if not detectors else _fmt_detectors(detectors))
+        lines.append(
+            "   No detector results." if not detectors else _fmt_detectors(detectors)
+        )
         return "\n".join(lines)
     if not detectors:
         return "✓  4naly3er ran successfully — zero findings."
@@ -460,15 +499,15 @@ def _fmt_4naly3er(result: PreScanResult) -> str:
 def _pre_scan_project(
     project_path: str, window: RollingWindow, debug_logger: DebugLogger
 ) -> dict:
-    slither  = _run_slither(project_path, window, debug_logger)
-    aderyn   = _run_aderyn(project_path, window, debug_logger)
-    mythril  = _run_mythril(project_path, window, debug_logger)
-    four     = _run_4naly3er(project_path, window, debug_logger)
+    slither = _run_slither(project_path, window, debug_logger)
+    aderyn = _run_aderyn(project_path, window, debug_logger)
+    mythril = _run_mythril(project_path, window, debug_logger)
+    four = _run_4naly3er(project_path, window, debug_logger)
     return {
-        "slither":   slither,
-        "aderyn":    aderyn,
-        "mythril":   mythril,
-        "4naly3er":  four,
+        "slither": slither,
+        "aderyn": aderyn,
+        "mythril": mythril,
+        "4naly3er": four,
     }
 
 
@@ -592,34 +631,46 @@ class StaticAnalysisStep(BaseStep):
     ) -> str:
         pre_scan = _pre_scan_project(self.project_path, window, debug_logger)
 
-        slither_result:  PreScanResult = pre_scan["slither"]
-        aderyn_result:   PreScanResult = pre_scan["aderyn"]
-        mythril_result:  PreScanResult = pre_scan["mythril"]
-        four_result:     PreScanResult = pre_scan["4naly3er"]
+        slither_result: PreScanResult = pre_scan["slither"]
+        aderyn_result: PreScanResult = pre_scan["aderyn"]
+        mythril_result: PreScanResult = pre_scan["mythril"]
+        four_result: PreScanResult = pre_scan["4naly3er"]
 
-        slither_section  = _fmt_slither(slither_result)
-        aderyn_section   = _fmt_aderyn(aderyn_result)
-        mythril_section  = _fmt_mythril(mythril_result)
-        four_section     = _fmt_4naly3er(four_result)
+        slither_section = _fmt_slither(slither_result)
+        aderyn_section = _fmt_aderyn(aderyn_result)
+        mythril_section = _fmt_mythril(mythril_result)
+        four_section = _fmt_4naly3er(four_result)
 
         instructions = []
         if slither_result.success:
-            instructions.append("- Slither completed successfully. Do NOT re-run it unless needed.")
+            instructions.append(
+                "- Slither completed successfully. Do NOT re-run it unless needed."
+            )
         else:
-            instructions.append("- Slither encountered errors; evaluate fallback configurations if critical details are missing.")
+            instructions.append(
+                "- Slither encountered errors; evaluate fallback configurations if critical details are missing."
+            )
 
         if aderyn_result.success:
-            instructions.append("- Aderyn ran successfully. Combine its structural insights with Slither's findings.")
+            instructions.append(
+                "- Aderyn ran successfully. Combine its structural insights with Slither's findings."
+            )
         else:
             instructions.append("- Aderyn context collection failed or was partial.")
 
         if mythril_result.success:
-            instructions.append("- Mythril completed symbolic execution. Prioritise its High/Medium SWC findings — they are generally lower false-positive rate than static tools.")
+            instructions.append(
+                "- Mythril completed symbolic execution. Prioritise its High/Medium SWC findings — they are generally lower false-positive rate than static tools."
+            )
         else:
-            instructions.append("- Mythril did not complete successfully; treat its absence as a gap in coverage for integer/assertion/delegatecall issues.")
+            instructions.append(
+                "- Mythril did not complete successfully; treat its absence as a gap in coverage for integer/assertion/delegatecall issues."
+            )
 
         if four_result.success:
-            instructions.append("- 4naly3er findings are mostly Gas/NC; escalate only if a Low finding overlaps with a Slither or Mythril finding.")
+            instructions.append(
+                "- 4naly3er findings are mostly Gas/NC; escalate only if a Low finding overlaps with a Slither or Mythril finding."
+            )
         else:
             instructions.append("- 4naly3er did not run or produced no output.")
 
