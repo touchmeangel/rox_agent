@@ -119,14 +119,6 @@ def aderyn(
     return run_command(cmd_str, cwd=project_path, timeout=180, window=window)
 
 
-def semgrep(
-    project_path: str,
-    flags: str = "--config r/solidity ./",
-    window: RollingWindow | None = None,
-) -> ToolResult:
-    return run_command(f"semgrep {flags}", cwd=project_path, timeout=180, window=window)
-
-
 def cast(
     project_path: str, subcommand: str, window: RollingWindow | None = None
 ) -> ToolResult:
@@ -328,29 +320,6 @@ TOOL_SPECS: list[dict] = [
         },
     },
     {
-        "name": "semgrep",
-        "description": (
-            "Run Semgrep pattern-matching analysis with Solidity rule sets. Best for "
-            "known vulnerability patterns, anti-patterns, and ERC compliance checks that "
-            "slither doesn't cover.\n\n"
-            "Useful rule configs:\n"
-            "  --config r/solidity                   (all community Solidity rules)\n"
-            "  --config r/solidity.security          (security-focused subset)\n"
-            "  --config r/solidity.best-practices    (style + correctness)\n\n"
-            "Combine with jq: semgrep ... --json | jq '.results[] | select(.extra.severity==\"ERROR\")'"
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "flags": {
-                    "type": "string",
-                    "description": "Flags + target, e.g. '--config r/solidity ./' or '--config r/solidity.security src/ --json'.",
-                    "default": "--config r/solidity ./",
-                }
-            },
-        },
-    },
-    {
         "name": "forge",
         "description": (
             "Run Foundry's forge. Use 'build' to confirm the project compiles before "
@@ -446,7 +415,7 @@ TOOL_SPECS: list[dict] = [
         "name": "shell",
         "description": (
             "Run an arbitrary shell command for anything the other tools don't cover. "
-            "Prefer the dedicated tools (slither/semgrep/forge/cast/git/read_file) "
+            "Prefer the dedicated tools (slither/aderyn/forge/cast/git/read_file) "
             "when they fit — reach for shell when you genuinely need composition.\n\n"
             "Available utilities beyond the standard toolbox:\n"
             "  rg <pattern> [path]     — fast ripgrep; use instead of grep for multi-file search\n"
@@ -608,12 +577,6 @@ def dispatch(
             case "aderyn":
                 result = aderyn(
                     project_path, tool_input.get("flags") or "", window=window
-                )
-            case "semgrep":
-                result = semgrep(
-                    project_path,
-                    tool_input.get("flags") or "--config r/solidity ./",
-                    window=window,
                 )
             case "forge":
                 result = forge(
