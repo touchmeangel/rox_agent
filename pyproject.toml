@@ -43,7 +43,8 @@ select = [
 ignore = [
     "E501",  # line too long (formatter handles this)
     "S101",  # use of assert (common in tests)
-    "S110" # logging on try pass
+    "S110", # logging on try pass
+    "S112" # logging on try pass
 ]
 
 [tool.ruff.lint.per-file-ignores]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,15 +29,104 @@ _SKIP_DIRS: frozenset[str] = frozenset(
 
 _SLITHER_FILTER = ",".join(sorted(_SKIP_DIRS))
 
+_SWC_SEVERITY: dict[str, str] = {
+    "100": "High",
+    "101": "High",
+    "104": "High",
+    "105": "High",
+    "106": "High",
+    "107": "High",
+    "110": "High",
+    "112": "High",
+    "113": "High",
+    "115": "High",
+    "116": "High",
+    "124": "High",
+    "103": "Medium",
+    "108": "Medium",
+    "109": "Medium",
+    "111": "Medium",
+    "114": "Medium",
+    "120": "Medium",
+    "122": "Medium",
+    "123": "Medium",
+    "128": "Medium",
+    "131": "Medium",
+    "132": "Medium",
+    "102": "Low",
+    "117": "Low",
+    "118": "Low",
+    "119": "Low",
+    "121": "Low",
+    "125": "Low",
+    "126": "Low",
+    "129": "Low",
+}
+
 
 @dataclass
 class PreScanResult:
     tool_name: str
-    success: bool  # True when the tool ran and its own JSON reports success
+    success: bool
     detectors: list[dict] = field(default_factory=list)
     error: str | None = None
     stderr_tail: str | None = None
     exit_code: int | None = None
+
+
+def _extract_json(stdout: str) -> dict | None:
+    stdout = stdout.strip()
+    try:
+        return json.loads(stdout)
+    except Exception:
+        pass
+    matches = re.findall(r"\{.*\}", stdout, re.DOTALL)
+    for match in reversed(matches):
+        try:
+            return json.loads(match)
+        except Exception:
+            continue
+    return None
+
+
+def _is_hex_blob(text: str) -> bool:
+    """Return True if text looks like raw EVM bytecode hex rather than readable output."""
+    sample = text.strip()[:200]
+    hex_chars = sum(1 for c in sample if c in "0123456789abcdefABCDEF")
+    return len(sample) > 20 and hex_chars / max(len(sample), 1) > 0.85
+
+
+def _clean_error(raw: str | None, max_chars: int = 400) -> str | None:
+    """
+    Return a concise, readable version of an error string for the AI prompt.
+
+    - Python tracebacks  -> last exception line only (the useful bit)
+    - Hex blobs          -> human-readable explanation
+    - Long free-form     -> last max_chars characters
+    - None               -> None
+    """
+    if not raw:
+        return None
+
+    text = raw.strip()
+
+    if _is_hex_blob(text):
+        return (
+            "Mythril output raw EVM bytecode instead of JSON. "
+            "This usually means solc failed to compile the target — "
+            "check solc version compatibility (`solc-select use <ver>`) "
+            "or ARM64/Rosetta issues with the solc binary."
+        )
+
+    lines = [line for line in text.splitlines() if line.strip()]
+
+    if lines and "Traceback (most recent call last)" in lines[0]:
+        return lines[-1] if lines else text
+
+    if len(text) > max_chars:
+        return "…" + text[-max_chars:]
+
+    return text
 
 
 def _run_prescan_tool(
@@ -75,39 +165,28 @@ _SLITHER_FLAGS = (
 
 
 def _parse_slither(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
-    raw = stdout.strip()
-    if not raw:
+    data = _extract_json(stdout)
+    if not data:
         return PreScanResult(
             tool_name="slither",
             success=False,
-            error="slither produced no output",
+            error="slither produced no parseable JSON output",
             stderr_tail=stderr[-1_000:].strip() or None,
             exit_code=exit_code,
         )
-    try:
-        data = json.loads(raw)
-        return PreScanResult(
-            tool_name="slither",
-            success=bool(data.get("success")),
-            detectors=data.get("results", {}).get("detectors", []),
-            error=data.get("error"),
-            stderr_tail=stderr[-1_000:].strip() or None,
-            exit_code=exit_code,
-        )
-    except json.JSONDecodeError:
-        return PreScanResult(
-            tool_name="slither",
-            success=False,
-            error=f"JSON parse error — stdout tail: {raw[-600:]}",
-            stderr_tail=stderr[-1_000:].strip() or None,
-            exit_code=exit_code,
-        )
+
+    return PreScanResult(
+        tool_name="slither",
+        success=bool(data.get("success")),
+        detectors=data.get("results", {}).get("detectors", []),
+        error=data.get("error"),
+        stderr_tail=stderr[-1_000:].strip() or None,
+        exit_code=exit_code,
+    )
 
 
 def _run_slither(
-    project_path: str,
-    window: RollingWindow,
-    debug_logger: DebugLogger,
+    project_path: str, window: RollingWindow, debug_logger: DebugLogger
 ) -> PreScanResult:
     return _run_prescan_tool(
         project_path,
@@ -123,9 +202,7 @@ _ADERYN_FLAGS = "-o {report_path}"
 
 
 def _run_aderyn(
-    project_path: str,
-    window: RollingWindow,
-    debug_logger: DebugLogger,
+    project_path: str, window: RollingWindow, debug_logger: DebugLogger
 ) -> PreScanResult:
     report_path = Path(project_path) / "aderyn_report.json"
 
@@ -144,7 +221,6 @@ def _run_aderyn(
                 data = json.load(f)
 
             normalized_detectors = []
-
             severity_mappings = {
                 "critical_issues": "High",
                 "high_issues": "High",
@@ -158,7 +234,6 @@ def _run_aderyn(
                 raw_issues = (
                     bucket.get("issues", []) if isinstance(bucket, dict) else []
                 )
-
                 for issue in raw_issues:
                     normalized_detectors.append(
                         {
@@ -203,109 +278,74 @@ def _run_aderyn(
     )
 
 
-_SWC_SEVERITY: dict[str, str] = {
-    "100": "High",
-    "101": "High",
-    "104": "High",
-    "105": "High",
-    "106": "High",
-    "107": "High",
-    "110": "High",
-    "112": "High",
-    "113": "High",
-    "115": "High",
-    "116": "High",
-    "124": "High",
-    "103": "Medium",
-    "108": "Medium",
-    "109": "Medium",
-    "111": "Medium",
-    "114": "Medium",
-    "120": "Medium",
-    "122": "Medium",
-    "123": "Medium",
-    "128": "Medium",
-    "131": "Medium",
-    "132": "Medium",
-    "102": "Low",
-    "117": "Low",
-    "118": "Low",
-    "119": "Low",
-    "121": "Low",
-    "125": "Low",
-    "126": "Low",
-    "129": "Low",
-}
-
-
 def _parse_mythril(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
-    raw = stdout.strip()
-    if not raw:
+    if _is_hex_blob(stdout):
         return PreScanResult(
             tool_name="mythril",
             success=False,
-            error="mythril produced no output",
+            error=_clean_error(stdout),
             stderr_tail=stderr[-1_000:].strip() or None,
             exit_code=exit_code,
         )
-    try:
-        data = json.loads(raw)
 
-        reported_success = data.get("success")
-        if reported_success is None:
-            success = not bool(data.get("error"))
-        else:
-            success = bool(reported_success)
+    data = _extract_json(stdout)
+    if not data:
+        return PreScanResult(
+            tool_name="mythril",
+            success=False,
+            error="Mythril produced no parseable JSON output.",
+            stderr_tail=stderr[-1_000:].strip() or None,
+            exit_code=exit_code,
+        )
 
-        detectors = []
-        for issue in data.get("issues", []):
-            swc_id = str(issue.get("swc-id", ""))
-            severity = _SWC_SEVERITY.get(swc_id, issue.get("severity", "Medium"))
-            filename = issue.get("filename", "")
-            lineno = issue.get("lineno")
-            elements = []
-            if filename:
-                elements.append(
-                    {
-                        "source_mapping": {
-                            "filename_short": Path(filename).name,
-                            "lines": [lineno] if lineno else [],
-                        }
-                    }
-                )
-            title = issue.get("title", "")
-            desc = issue.get("description", "")
-            detectors.append(
+    if data.get("success") is False:
+        return PreScanResult(
+            tool_name="mythril",
+            success=False,
+            error=_clean_error(data.get("error") or "Mythril reported failure."),
+            stderr_tail=stderr[-1_000:].strip() or None,
+            exit_code=exit_code,
+        )
+
+    detectors = []
+    for issue in data.get("issues", []):
+        swc_id = str(issue.get("swc-id", ""))
+        severity = _SWC_SEVERITY.get(swc_id, issue.get("severity", "Medium"))
+        filename = issue.get("filename", "")
+        lineno = issue.get("lineno")
+        elements = []
+        if filename:
+            elements.append(
                 {
-                    "check": f"SWC-{swc_id}" if swc_id else "mythril-finding",
-                    "impact": severity,
-                    "confidence": "Medium",  # mythril has its own false positives
-                    "description": f"{title}: {desc}".strip(": "),
-                    "elements": elements,
+                    "source_mapping": {
+                        "filename_short": Path(filename).name,
+                        "lines": [lineno] if lineno else [],
+                    }
                 }
             )
-        return PreScanResult(
-            tool_name="mythril",
-            success=success,
-            detectors=detectors,
-            error=data.get("error"),
-            stderr_tail=stderr[-1_000:].strip() or None,
-            exit_code=exit_code,
+        title = issue.get("title", "")
+        desc = issue.get("description", "")
+        detectors.append(
+            {
+                "check": f"SWC-{swc_id}" if swc_id else "mythril-finding",
+                "impact": severity,
+                "confidence": "Medium",
+                "description": f"{title}: {desc}".strip(": "),
+                "elements": elements,
+            }
         )
-    except json.JSONDecodeError:
-        return PreScanResult(
-            tool_name="mythril",
-            success=False,
-            error=f"JSON parse error — stdout tail: {raw[-600:]}",
-            stderr_tail=stderr[-1_000:].strip() or None,
-            exit_code=exit_code,
-        )
+
+    return PreScanResult(
+        tool_name="mythril",
+        success=True,
+        detectors=detectors,
+        stderr_tail=stderr[-1_000:].strip() or None,
+        exit_code=exit_code,
+    )
 
 
 def _run_mythril(
-    project_path: str,
-    window: RollingWindow,
-    debug_logger: DebugLogger,
+    project_path: str, window: RollingWindow, debug_logger: DebugLogger
 ) -> PreScanResult:
     src_dir = Path(project_path) / "src"
     if not src_dir.exists():
@@ -324,7 +364,6 @@ def _run_mythril(
             error="No Solidity source files found to analyze",
         )
 
-    sol_files = sol_files[:15]
     flags = "analyze " + " ".join(sol_files) + " -o json --max-depth 12"
 
     return _run_prescan_tool(
@@ -337,102 +376,40 @@ def _run_mythril(
     )
 
 
-def _fmt_mythril(result: PreScanResult) -> str:
-    detectors = result.detectors
+def _fmt_result(result: PreScanResult, label: str) -> str:
     if not result.success:
-        lines = [f"⚠  Mythril exited with an error (exit {result.exit_code or '?'})."]
+        lines = [f"⚠  {label} failed (exit {result.exit_code or '?'})."]
         if result.error:
-            # Truncate very long tracebacks so the prompt stays readable.
-            err = result.error
-            if len(err) > 600:
-                err = err[:600] + f"\n   … ({len(result.error) - 600} chars truncated)"
-            lines.append(f"   Error: {err}")
+            lines.append(f"   Error: {result.error}")
         if result.stderr_tail:
             lines.append(f"   Stderr:\n{result.stderr_tail}")
-        if detectors:
+        if result.detectors:
             lines.append(
-                f"\n   Despite the error, {len(detectors)} finding(s) were returned "
-                "and are shown below. They may be partial."
+                f"\n   Despite the error, {len(result.detectors)} finding(s) were "
+                "returned and are shown below. They may be partial."
             )
-            lines.append("")
-            lines.append(_fmt_detectors(detectors))
+            lines.append(_fmt_detectors(result.detectors))
         else:
             lines.append("   No detector results.")
         return "\n".join(lines)
-    if not detectors:
-        return "✓  Mythril ran successfully — zero issues found."
-    return f"✓  Mythril: {len(detectors)} finding(s)\n\n" + _fmt_detectors(detectors)
 
-
-def _pre_scan_project(
-    project_path: str, window: RollingWindow, debug_logger: DebugLogger
-) -> dict:
-    slither = _run_slither(project_path, window, debug_logger)
-    aderyn = _run_aderyn(project_path, window, debug_logger)
-    mythril = _run_mythril(project_path, window, debug_logger)
-    return {
-        "slither": slither,
-        "aderyn": aderyn,
-        "mythril": mythril,
-    }
+    if not result.detectors:
+        return f"✓  {label} — zero findings."
+    return f"✓  {label}: {len(result.detectors)} finding(s)\n\n" + _fmt_detectors(
+        result.detectors
+    )
 
 
 def _fmt_slither(result: PreScanResult) -> str:
-    detectors = result.detectors
-
-    if not result.success:
-        lines = [f"⚠  Slither exited with an error (exit {result.exit_code or '?'})."]
-        if result.error:
-            err = result.error
-            if len(err) > 600:
-                err = err[:600] + f"\n   … ({len(result.error) - 600} chars truncated)"
-            lines.append(f"   Error: {err}")
-        if result.stderr_tail:
-            lines.append(f"   Stderr:\n{result.stderr_tail}")
-        if detectors:
-            lines.append(
-                f"\n   Despite the error, {len(detectors)} detector result(s) were returned "
-                "and are shown below. They may be partial."
-            )
-            lines.append("")
-            lines.append(_fmt_detectors(detectors))
-        else:
-            lines.append("   No detector results.")
-        return "\n".join(lines)
-
-    if not detectors:
-        return "✓  Slither ran successfully — zero detector findings."
-
-    return f"✓  Slither: {len(detectors)} finding(s)\n\n" + _fmt_detectors(detectors)
+    return _fmt_result(result, "Slither")
 
 
 def _fmt_aderyn(result: PreScanResult) -> str:
-    detectors = result.detectors
+    return _fmt_result(result, "Aderyn")
 
-    if not result.success:
-        lines = [f"⚠  Aderyn exited with an error (exit {result.exit_code or '?'})."]
-        if result.error:
-            err = result.error
-            if len(err) > 600:
-                err = err[:600] + f"\n   … ({len(result.error) - 600} chars truncated)"
-            lines.append(f"   Error: {err}")
-        if result.stderr_tail:
-            lines.append(f"   Stderr:\n{result.stderr_tail}")
-        if detectors:
-            lines.append(
-                f"\n   Despite the error, {len(detectors)} finding(s) were returned "
-                "and are shown below. They may be partial."
-            )
-            lines.append("")
-            lines.append(_fmt_detectors(detectors))
-        else:
-            lines.append("   No detector results.")
-        return "\n".join(lines)
 
-    if not detectors:
-        return "✓  Aderyn ran successfully — zero detector findings."
-
-    return f"✓  Aderyn: {len(detectors)} finding(s)\n\n" + _fmt_detectors(detectors)
+def _fmt_mythril(result: PreScanResult) -> str:
+    return _fmt_result(result, "Mythril")
 
 
 def _fmt_detectors(detectors: list[dict]) -> str:
@@ -496,6 +473,16 @@ def _fmt_detectors(detectors: list[dict]) -> str:
     return "\n".join(blocks)
 
 
+def _pre_scan_project(
+    project_path: str, window: RollingWindow, debug_logger: DebugLogger
+) -> dict[str, PreScanResult]:
+    return {
+        "slither": _run_slither(project_path, window, debug_logger),
+        "aderyn": _run_aderyn(project_path, window, debug_logger),
+        "mythril": _run_mythril(project_path, window, debug_logger),
+    }
+
+
 class StaticAnalysisStep(BaseStep):
     name = "static_analysis"
 
@@ -507,9 +494,9 @@ class StaticAnalysisStep(BaseStep):
     ) -> str:
         pre_scan = _pre_scan_project(self.project_path, window, debug_logger)
 
-        slither_result: PreScanResult = pre_scan["slither"]
-        aderyn_result: PreScanResult = pre_scan["aderyn"]
-        mythril_result: PreScanResult = pre_scan["mythril"]
+        slither_result = pre_scan["slither"]
+        aderyn_result = pre_scan["aderyn"]
+        mythril_result = pre_scan["mythril"]
 
         slither_section = _fmt_slither(slither_result)
         aderyn_section = _fmt_aderyn(aderyn_result)
@@ -522,7 +509,7 @@ class StaticAnalysisStep(BaseStep):
             )
         else:
             instructions.append(
-                "- Slither encountered errors; evaluate fallback configurations if critical details are missing."
+                "- Slither encountered errors; evaluate fallback configurations."
             )
 
         if aderyn_result.success:
@@ -534,11 +521,11 @@ class StaticAnalysisStep(BaseStep):
 
         if mythril_result.success:
             instructions.append(
-                "- Mythril completed symbolic execution. Prioritise its High/Medium SWC findings — they are generally lower false-positive rate than static tools."
+                "- Mythril completed symbolic execution. Prioritise its High/Medium SWC findings — generally lower false-positive rate than static tools."
             )
         else:
             instructions.append(
-                "- Mythril did not complete successfully; treat its absence as a gap in coverage for integer/assertion/delegatecall issues."
+                "- Mythril did not complete successfully; treat its absence as a coverage gap for integer/assertion/delegatecall issues."
             )
 
         tool_instructions = "\n".join(instructions)
@@ -586,7 +573,7 @@ FINDINGS FORMAT  (pass this to submit_findings)
   "confirmed": [
     {{
       "id": "SA-001",
-      "origin": "slither | aderyn",
+      "origin": "slither | aderyn | mythril",
       "check": "reentrancy-eth",
       "severity": "critical | high | medium | low",
       "title": "Short title",
@@ -605,7 +592,7 @@ FINDINGS FORMAT  (pass this to submit_findings)
   "suspected": [
     {{
       "id": "SA-S01",
-      "origin": "slither | aderyn",
+      "origin": "slither | aderyn | mythril",
       "check": "optional",
       "title": "What looks suspicious",
       "location": {{

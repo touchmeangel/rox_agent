@@ -334,11 +334,11 @@ TOOL_SPECS: list[dict] = [
             "catches vulnerabilities that static pattern matching misses: integer "
             "overflows/underflows, assertion violations, reachable selfdestruct or "
             "delegatecall, and some reentrancy classes.\n\n"
-            "Always pass '--output json' for machine-readable results and "
+            "Always pass '-o json' for machine-readable results and "
             "'--execution-timeout <n>' to avoid hanging on complex contracts.\n\n"
             "Example flags:\n"
-            "  'analyze src/Vault.sol --output json --execution-timeout 60'\n"
-            "  'analyze src/A.sol src/B.sol --output json --execution-timeout 60 --max-depth 12'\n\n"
+            "  'analyze src/Vault.sol -o json --execution-timeout 60'\n"
+            "  'analyze src/A.sol src/B.sol -o json --execution-timeout 60 --max-depth 12'\n\n"
             "NOTE: Mythril is slow. Keep the file list short and always set a timeout. "
             "SWC-107 = reentrancy, SWC-101 = integer overflow, SWC-106 = selfdestruct, "
             "SWC-112 = delegatecall — see swcregistry.io for the full list."
@@ -350,7 +350,7 @@ TOOL_SPECS: list[dict] = [
                     "type": "string",
                     "description": (
                         "Full myth invocation after 'myth', e.g. "
-                        "'analyze src/Vault.sol --output json --execution-timeout 60'."
+                        "'analyze src/Vault.sol -o json --execution-timeout 60'."
                     ),
                     "default": "",
                 }
@@ -453,7 +453,7 @@ TOOL_SPECS: list[dict] = [
         "name": "shell",
         "description": (
             "Run an arbitrary shell command for anything the other tools don't cover. "
-            "Prefer the dedicated tools (slither/aderyn/mythril/forge/cast/git/read_file) "
+            "Prefer the dedicated tools (slither/aderyn/myth/forge/cast/git/read_file) "
             "when they fit — reach for shell when you genuinely need composition.\n\n"
             "Available utilities beyond the standard toolbox:\n"
             "  rg <pattern> [path]     — fast ripgrep; use instead of grep for multi-file search\n"
@@ -481,48 +481,14 @@ TOOL_SPECS: list[dict] = [
     {
         "name": "web_search",
         "description": (
-            "Search the web for security-relevant information you don't have locally: "
-            "known vulnerability patterns and attack classes, past audit findings for this "
-            "or similar protocols, CVEs and security advisories, EIP/ERC edge cases, "
-            "on-chain exploit post-mortems, protocol documentation, and tool errors.\n\n"
-            "WHAT TO SEARCH FOR:\n"
-            "  - Attack patterns and vulnerability classes: 'ERC4626 inflation attack', "
-            "'cross-chain replay', 'permit front-running ERC20', 'read-only reentrancy'\n"
-            "  - Past findings on this protocol or similar ones: 'Compound governor audit findings', "
-            "'Uniswap v3 C4 report'\n"
-            "  - Exploit post-mortems: 'Euler Finance exploit analysis', 'Nomad bridge hack'\n"
-            "  - EIP/ERC specifications and known edge cases: 'EIP-4337 bundler validation rules', "
-            "'ERC-777 reentrancy hook'\n"
-            "  - Compiler and library advisories: 'solidity ABIEncoderV2 bug', "
-            "'openzeppelin 4.9 security advisory'\n"
-            "  - Tool errors: paste the exact exception or error line verbatim, not a paraphrase\n\n"
-            "QUERY STYLE:\n"
-            "  - 3-6 words, specific technical terms. Exact error text verbatim beats a description.\n"
-            "  - Each query should be meaningfully different from the last — rephrase on a miss, "
-            "don't repeat verbatim.\n\n"
-            "SEARCH OPERATORS (use intentionally, not by default):\n"
-            "  site:domain  — restrict to a source you trust, e.g. "
-            "'reentrancy site:github.com/code-423n4'\n"
-            '  "phrase"     — exact match for a pattern name or error string, e.g. '
-            "'\"first deposit\" inflation attack'\n"
-            "  -term        — exclude noisy results, e.g. 'proxy storage collision -transparent'\n\n"
-            "PREFERRED SOURCES:\n"
-            "  Audit reports:     solodit.xyz, code4rena.com, audits.sherlock.xyz\n"
-            "  Vulnerability DBs: swcregistry.io, github.com/crytic/not-so-smart-contracts\n"
-            "  Exploit analysis:  rekt.news, medium.com/immunefi, blog.openzeppelin.com\n"
-            "  Protocol specs:    eips.ethereum.org, docs.openzeppelin.com, ethereum.org/developers\n"
-            "  Tool docs:         book.getfoundry.sh, github.com/crytic/slither, "
-            "docs.soliditylang.org\n\n"
-            "BUDGET: limited searches per step. Save searches for genuinely ambiguous patterns "
-            "or unfamiliar protocols."
-            "protocol from scratch."
+            "Search the web for security-relevant information you don't have locally."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "3-6 word query. Include exact error/exception text verbatim when searching an error.",
+                    "description": "3-6 word query.",
                 },
                 "max_results": {
                     "type": "integer",
@@ -539,8 +505,7 @@ TOOL_SPECS: list[dict] = [
         "name": "web_fetch",
         "description": (
             "Fetch the full text of one specific URL — use after web_search when a result's "
-            "snippet isn't enough. Pass the exact URL from a web_search result. "
-            "Counts against the same per-step search budget as web_search."
+            "snippet isn't enough."
         ),
         "input_schema": {
             "type": "object",
@@ -566,6 +531,14 @@ def _truncate(text: str, limit: int, what: str) -> str:
         text[:limit] + f"\n\n... [{what} truncated — {omitted} more chars omitted. "
         f"Use a more targeted command (narrower flags, grep, head/tail) to see more.]"
     )
+
+
+_STDOUT_LIMITS: dict[str, int] = {
+    "myth": 500_000,
+    "slither": 200_000,
+    "aderyn": 50_000,
+}
+_DEFAULT_STDOUT_LIMIT = 10_000
 
 
 def _summary(result: ToolResult) -> str:
@@ -680,9 +653,10 @@ def dispatch(
                     1,
                 )
 
+        stdout_limit = _STDOUT_LIMITS.get(tool_name, _DEFAULT_STDOUT_LIMIT)
         result = ToolResult(
             result.command,
-            _truncate(result.stdout, 10_000, "stdout"),
+            _truncate(result.stdout, stdout_limit, "stdout"),
             _truncate(result.stderr, 3_000, "stderr"),
             result.returncode,
         )
