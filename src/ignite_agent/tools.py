@@ -17,6 +17,64 @@ from ignite_agent.debug_logger import DebugLogger, default_debug_logger
 from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.search_state import SearchState
 from ignite_agent.tool_result import ToolResult
+import json
+import hashlib
+
+def _smart_process_output(stdout: str, tool_name: str, project_path: str, limit: int) -> str:
+    if len(stdout) <= limit:
+        return stdout
+
+    run_hash = hashlib.md5(stdout.encode()).hexdigest()[:6]
+    
+    try:
+        data = json.loads(stdout)
+        log_file = f".ignite_{tool_name}_{run_hash}.json"
+        log_path = Path(project_path) / log_file
+        
+        log_path.write_text(stdout, encoding="utf-8")
+
+        summary_data = {}
+        if isinstance(data, dict):
+            for k, v in data.items():
+                if isinstance(v, list) and len(v) > 5:
+                    summary_data[k] = v[:5] + [f"... <{len(v) - 5} more items omitted in {log_file}>"]
+                else:
+                    summary_data[k] = v
+        elif isinstance(data, list) and len(data) > 5:
+            summary_data = data[:5] + [f"... <{len(data) - 5} more items omitted in {log_file}>"]
+        else:
+            summary_data = data
+            
+        summary_str = json.dumps(summary_data, indent=2)
+        
+        prompt_msg = (
+            f"[SYSTEM: Massive JSON output intercepted ({len(stdout)} chars).]\n"
+            f"[Full raw JSON saved to '{log_file}'. Use `shell` with `jq` to query the full file if needed.]\n"
+            f"[Preview below:]\n\n"
+            f"{summary_str}"
+        )
+        
+        return _truncate(prompt_msg, limit, "json_summary")
+    except json.JSONDecodeError:
+        pass
+
+    log_file = f".ignite_{tool_name}_{run_hash}.log"
+    log_path = Path(project_path) / log_file
+    log_path.write_text(stdout, encoding="utf-8")
+
+    preview_size = 3000
+    head = stdout[:preview_size]
+    tail = stdout[-preview_size:] if len(stdout) > (preview_size * 2) else ""
+
+    prompt_msg = (
+        f"[SYSTEM: Output exceeded context limits ({len(stdout)} chars). Full output saved to '{log_file}'.]\n"
+        f"[Do NOT repeat this exact command. Use the `shell` tool with `rg` (ripgrep) to search '{log_file}', or `tail` to view specific errors.]\n\n"
+        f"--- PREVIEW (First {preview_size} chars) ---\n{head}\n"
+    )
+    if tail:
+        prompt_msg += f"\n--- TAIL (Last {preview_size} chars) ---\n{tail}\n"
+
+    return prompt_msg
 
 
 def _stream_subprocess(
@@ -653,11 +711,14 @@ def dispatch(
                     1,
                 )
 
-        stdout_limit = _STDOUT_LIMITS.get(tool_name, _DEFAULT_STDOUT_LIMIT)
+        stdout_limit = _STDOUT_LIMITS.get(tool_name, _DEFAULT_STDOUT_LIMIT)        
+        smart_stdout = _smart_process_output(result.stdout, tool_name, project_path, stdout_limit)
+        smart_stderr = _truncate(result.stderr, 4_000, "stderr")
+
         result = ToolResult(
             result.command,
-            _truncate(result.stdout, stdout_limit, "stdout"),
-            _truncate(result.stderr, 3_000, "stderr"),
+            smart_stdout,
+            smart_stderr,
             result.returncode,
         )
 
