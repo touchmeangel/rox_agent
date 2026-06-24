@@ -242,7 +242,7 @@ You can only exit the execution loop by explicitly invoking one of the following
                     system=system,
                     window=window,
                     step_name=self.name,
-                    show_thinking=True
+                    show_thinking=True,
                 )
                 messages.append(
                     {

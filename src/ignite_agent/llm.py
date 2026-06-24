@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import time
 from dataclasses import dataclass, field
 
@@ -17,6 +16,7 @@ _ANSI_RESET = "\033[0m"
 _THINKING_OPEN = f"{_ANSI_DIM_CYAN}\n┌─ Thinking ─────────────────────────\n│ "
 _THINKING_LINE = "│ "
 _THINKING_CLOSE = f"\n└────────────────────────────────────{_ANSI_RESET}\n\n"
+
 
 @dataclass
 class ToolResultEntry:
@@ -169,12 +169,20 @@ class LLMClient:
 
                 if event.type == "content_block_start":
                     current_block_type = getattr(event.content_block, "type", None)
-                    if current_block_type == "thinking" and show_thinking and window is not None:
+                    if (
+                        current_block_type == "thinking"
+                        and show_thinking
+                        and window is not None
+                    ):
                         window.feed(_THINKING_OPEN)
                     continue
 
                 if event.type == "content_block_stop":
-                    if current_block_type == "thinking" and show_thinking and window is not None:
+                    if (
+                        current_block_type == "thinking"
+                        and show_thinking
+                        and window is not None
+                    ):
                         window.feed(_THINKING_CLOSE)
                     current_block_type = None
                     continue
@@ -445,6 +453,7 @@ def _to_openai_tools(specs: list[dict]) -> list[dict]:
         }
         for s in specs
     ]
+
 
 def _log_repr(turn: AssistantTurn) -> str:
     parts: list[str] = []

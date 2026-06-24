@@ -55,7 +55,9 @@ def _from_payload(payload: dict, index: int) -> ToolCall | None:
 
 def _parse_xml_tags(text: str) -> list[ToolCall]:
     calls: list[ToolCall] = []
-    for i, m in enumerate(re.finditer(r"<tool_call>\s*(.*?)\s*</tool_call>", text, re.DOTALL)):
+    for i, m in enumerate(
+        re.finditer(r"<tool_call>\s*(.*?)\s*</tool_call>", text, re.DOTALL)
+    ):
         try:
             tc = _from_payload(json.loads(m.group(1)), i)
             if tc:
@@ -68,7 +70,9 @@ def _parse_xml_tags(text: str) -> list[ToolCall]:
 def _parse_invoke_xml(text: str) -> list[ToolCall]:
     calls: list[ToolCall] = []
     for i, invoke in enumerate(
-        re.finditer(r'<invoke\s+name=["\']([^"\']+)["\']>(.*?)</invoke>', text, re.DOTALL)
+        re.finditer(
+            r'<invoke\s+name=["\']([^"\']+)["\']>(.*?)</invoke>', text, re.DOTALL
+        )
     ):
         params: dict = {}
         for pm in re.finditer(
