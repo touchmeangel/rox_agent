@@ -251,6 +251,13 @@ def _parse_mythril(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
         )
     try:
         data = json.loads(raw)
+
+        reported_success = data.get("success")
+        if reported_success is None:
+            success = not bool(data.get("error"))
+        else:
+            success = bool(reported_success)
+
         detectors = []
         for issue in data.get("issues", []):
             swc_id = str(issue.get("swc-id", ""))
@@ -280,7 +287,7 @@ def _parse_mythril(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
             )
         return PreScanResult(
             tool_name="mythril",
-            success=True,
+            success=success,
             detectors=detectors,
             error=data.get("error"),
             stderr_tail=stderr[-1_000:].strip() or None,
@@ -319,7 +326,7 @@ def _run_mythril(
         )
 
     sol_files = sol_files[:15]
-    flags = "analyze " + " ".join(sol_files) + " --output json --max-depth 12"
+    flags = "analyze " + " ".join(sol_files) + " -o json --max-depth 12"
 
     return _run_prescan_tool(
         project_path,
@@ -336,164 +343,26 @@ def _fmt_mythril(result: PreScanResult) -> str:
     if not result.success:
         lines = [f"⚠  Mythril exited with an error (exit {result.exit_code or '?'})."]
         if result.error:
-            lines.append(f"   Error: {result.error}")
+            # Truncate very long tracebacks so the prompt stays readable.
+            err = result.error
+            if len(err) > 600:
+                err = err[:600] + f"\n   … ({len(result.error) - 600} chars truncated)"
+            lines.append(f"   Error: {err}")
         if result.stderr_tail:
             lines.append(f"   Stderr:\n{result.stderr_tail}")
-        lines.append(
-            "   No detector results." if not detectors else _fmt_detectors(detectors)
-        )
+        if detectors:
+            lines.append(
+                f"\n   Despite the error, {len(detectors)} finding(s) were returned "
+                "and are shown below. They may be partial."
+            )
+            lines.append("")
+            lines.append(_fmt_detectors(detectors))
+        else:
+            lines.append("   No detector results.")
         return "\n".join(lines)
     if not detectors:
         return "✓  Mythril ran successfully — zero issues found."
     return f"✓  Mythril: {len(detectors)} finding(s)\n\n" + _fmt_detectors(detectors)
-
-
-_4ANALY3ER_PREFIX_SEVERITY: dict[str, str] = {
-    "GAS": "Optimization",
-    "G": "Optimization",
-    "L": "Low",
-    "NC": "Informational",
-    "N": "Informational",
-    "M": "Medium",
-    "H": "High",
-}
-
-_4ANALY3ER_HEADING = re.compile(r"^###\s+\[([A-Z]+-\d+)\]\s+(.+)$", re.MULTILINE)
-
-
-def _parse_4naly3er(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
-    raw = stdout.strip()
-    if not raw:
-        return PreScanResult(
-            tool_name="4naly3er",
-            success=False,
-            error="4naly3er produced no output",
-            stderr_tail=stderr[-1_000:].strip() or None,
-            exit_code=exit_code,
-        )
-
-    matches = list(_4ANALY3ER_HEADING.finditer(raw))
-    if not matches:
-        return PreScanResult(
-            tool_name="4naly3er",
-            success=False,
-            error="Could not parse any findings from 4naly3er Markdown output",
-            stderr_tail=stderr[-1_000:].strip() or None,
-            exit_code=exit_code,
-        )
-
-    detectors = []
-    for i, match in enumerate(matches):
-        code = match.group(1)
-        title = match.group(2).strip()
-
-        prefix_match = re.match(r"([A-Z]+)", code)
-        prefix = prefix_match.group(1) if prefix_match else "NC"
-        severity = _4ANALY3ER_PREFIX_SEVERITY.get(prefix, "Informational")
-
-        body_start = match.end()
-        body_end = matches[i + 1].start() if i + 1 < len(matches) else len(raw)
-        body = raw[body_start:body_end].strip()
-
-        desc_match = re.match(r"^([^\n*<][^\n]*(?:\n(?![*<\n])[^\n]*)*)", body)
-        description = desc_match.group(1).strip() if desc_match else title
-        if len(description) > 300:
-            description = description[:300] + "…"
-
-        file_refs = re.findall(r"File:\s*([^\n]+)", body)
-        elements = [
-            {
-                "source_mapping": {
-                    "filename_short": Path(ref.strip()).name,
-                    "lines": [],
-                }
-            }
-            for ref in file_refs[:5]
-        ]
-
-        detectors.append(
-            {
-                "check": code,
-                "impact": severity,
-                "confidence": "High",
-                "description": description,
-                "elements": elements,
-            }
-        )
-
-    return PreScanResult(
-        tool_name="4naly3er",
-        success=True,
-        detectors=detectors,
-        stderr_tail=stderr[-1_000:].strip() or None,
-        exit_code=exit_code,
-    )
-
-
-def _run_4naly3er(
-    project_path: str,
-    window: RollingWindow,
-    debug_logger: DebugLogger,
-) -> PreScanResult:
-    src_dir = Path(project_path) / "src"
-    if not src_dir.exists():
-        src_dir = Path(project_path)
-
-    sol_files = [
-        str(p.relative_to(project_path))
-        for p in src_dir.rglob("*.sol")
-        if not any(part in _SKIP_DIRS for part in p.parts)
-    ]
-
-    if not sol_files:
-        return PreScanResult(
-            tool_name="4naly3er",
-            success=False,
-            error="No Solidity source files found for 4naly3er",
-        )
-
-    scope_path = Path(project_path) / ".4naly3er_scope.txt"
-    try:
-        scope_path.write_text("\n".join(sol_files))
-    except OSError as e:
-        return PreScanResult(
-            tool_name="4naly3er",
-            success=False,
-            error=f"Could not write scope file: {e}",
-        )
-
-    try:
-        return _run_prescan_tool(
-            project_path,
-            "4naly3er",
-            f"{scope_path} {project_path}",
-            _parse_4naly3er,
-            window=window,
-            debug_logger=debug_logger,
-        )
-    finally:
-        if scope_path.exists():
-            try:
-                scope_path.unlink()
-            except Exception:
-                pass
-
-
-def _fmt_4naly3er(result: PreScanResult) -> str:
-    detectors = result.detectors
-    if not result.success:
-        lines = [f"⚠  4naly3er exited with an error (exit {result.exit_code or '?'})."]
-        if result.error:
-            lines.append(f"   Error: {result.error}")
-        if result.stderr_tail:
-            lines.append(f"   Stderr:\n{result.stderr_tail}")
-        lines.append(
-            "   No detector results." if not detectors else _fmt_detectors(detectors)
-        )
-        return "\n".join(lines)
-    if not detectors:
-        return "✓  4naly3er ran successfully — zero findings."
-    return f"✓  4naly3er: {len(detectors)} finding(s)\n\n" + _fmt_detectors(detectors)
 
 
 def _pre_scan_project(
@@ -502,12 +371,10 @@ def _pre_scan_project(
     slither = _run_slither(project_path, window, debug_logger)
     aderyn = _run_aderyn(project_path, window, debug_logger)
     mythril = _run_mythril(project_path, window, debug_logger)
-    four = _run_4naly3er(project_path, window, debug_logger)
     return {
         "slither": slither,
         "aderyn": aderyn,
         "mythril": mythril,
-        "4naly3er": four,
     }
 
 
@@ -517,7 +384,10 @@ def _fmt_slither(result: PreScanResult) -> str:
     if not result.success:
         lines = [f"⚠  Slither exited with an error (exit {result.exit_code or '?'})."]
         if result.error:
-            lines.append(f"   Error: {result.error}")
+            err = result.error
+            if len(err) > 600:
+                err = err[:600] + f"\n   … ({len(result.error) - 600} chars truncated)"
+            lines.append(f"   Error: {err}")
         if result.stderr_tail:
             lines.append(f"   Stderr:\n{result.stderr_tail}")
         if detectors:
@@ -543,11 +413,18 @@ def _fmt_aderyn(result: PreScanResult) -> str:
     if not result.success:
         lines = [f"⚠  Aderyn exited with an error (exit {result.exit_code or '?'})."]
         if result.error:
-            lines.append(f"   Error: {result.error}")
+            err = result.error
+            if len(err) > 600:
+                err = err[:600] + f"\n   … ({len(result.error) - 600} chars truncated)"
+            lines.append(f"   Error: {err}")
         if result.stderr_tail:
             lines.append(f"   Stderr:\n{result.stderr_tail}")
         if detectors:
-            lines.append("\n   Showing available data wrapper findings:\n")
+            lines.append(
+                f"\n   Despite the error, {len(detectors)} finding(s) were returned "
+                "and are shown below. They may be partial."
+            )
+            lines.append("")
             lines.append(_fmt_detectors(detectors))
         else:
             lines.append("   No detector results.")
@@ -634,12 +511,10 @@ class StaticAnalysisStep(BaseStep):
         slither_result: PreScanResult = pre_scan["slither"]
         aderyn_result: PreScanResult = pre_scan["aderyn"]
         mythril_result: PreScanResult = pre_scan["mythril"]
-        four_result: PreScanResult = pre_scan["4naly3er"]
 
         slither_section = _fmt_slither(slither_result)
         aderyn_section = _fmt_aderyn(aderyn_result)
         mythril_section = _fmt_mythril(mythril_result)
-        four_section = _fmt_4naly3er(four_result)
 
         instructions = []
         if slither_result.success:
@@ -667,13 +542,6 @@ class StaticAnalysisStep(BaseStep):
                 "- Mythril did not complete successfully; treat its absence as a gap in coverage for integer/assertion/delegatecall issues."
             )
 
-        if four_result.success:
-            instructions.append(
-                "- 4naly3er findings are mostly Gas/NC; escalate only if a Low finding overlaps with a Slither or Mythril finding."
-            )
-        else:
-            instructions.append("- 4naly3er did not run or produced no output.")
-
         tool_instructions = "\n".join(instructions)
 
         return f"""You are running the static analysis step of a security audit.
@@ -696,12 +564,6 @@ MYTHRIL OUTPUT (pre-run)
 ════════════════════════════════════════
 
 {mythril_section}
-
-════════════════════════════════════════
-4NALY3ER OUTPUT (pre-run)
-════════════════════════════════════════
-
-{four_section}
 
 {tool_instructions}
 

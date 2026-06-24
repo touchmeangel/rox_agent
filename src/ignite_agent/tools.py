@@ -126,13 +126,6 @@ def myth(
     return run_command(cmd, cwd=project_path, timeout=300, window=window)
 
 
-def four_naly3er(
-    project_path: str, flags: str = "", window: RollingWindow | None = None
-) -> ToolResult:
-    cmd = f"4naly3er {flags}".strip() if flags else "4naly3er"
-    return run_command(cmd, cwd=project_path, timeout=120, window=window)
-
-
 def cast(
     project_path: str, subcommand: str, window: RollingWindow | None = None
 ) -> ToolResult:
@@ -365,34 +358,6 @@ TOOL_SPECS: list[dict] = [
         },
     },
     {
-        "name": "4naly3er",
-        "description": (
-            "Run 4naly3er against a set of Solidity files.\n\n"
-            "4naly3er specialises in Gas optimisations, Low-severity, and Non-critical "
-            "findings. It outputs Markdown (no JSON mode), so its output is parsed by "
-            "the pre-scan harness rather than consumed raw.\n\n"
-            "Requires two arguments: a scope file (one relative .sol path per line) "
-            "and the project base path.\n\n"
-            "Example flags:\n"
-            "  '/project/.4naly3er_scope.txt /project'\n\n"
-            "NOTE: Prefer the pre-scan result already in your context over re-running "
-            "this tool manually. Re-run only if scope or compiler version changed."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "flags": {
-                    "type": "string",
-                    "description": (
-                        "Scope file path and base path, e.g. "
-                        "'/project/.4naly3er_scope.txt /project'."
-                    ),
-                    "default": "",
-                }
-            },
-        },
-    },
-    {
         "name": "forge",
         "description": (
             "Run Foundry's forge. Use 'build' to confirm the project compiles before "
@@ -488,7 +453,7 @@ TOOL_SPECS: list[dict] = [
         "name": "shell",
         "description": (
             "Run an arbitrary shell command for anything the other tools don't cover. "
-            "Prefer the dedicated tools (slither/aderyn/mythril/4analy3er/forge/cast/git/read_file) "
+            "Prefer the dedicated tools (slither/aderyn/mythril/forge/cast/git/read_file) "
             "when they fit — reach for shell when you genuinely need composition.\n\n"
             "Available utilities beyond the standard toolbox:\n"
             "  rg <pattern> [path]     — fast ripgrep; use instead of grep for multi-file search\n"
@@ -653,10 +618,6 @@ def dispatch(
                 )
             case "myth":
                 result = myth(
-                    project_path, tool_input.get("flags") or "", window=window
-                )
-            case "4naly3er":
-                result = four_naly3er(
                     project_path, tool_input.get("flags") or "", window=window
                 )
             case "forge":

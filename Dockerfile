@@ -49,14 +49,6 @@ RUN pip install --no-cache-dir \
 
 RUN pip install --no-cache-dir "mythril>=0.23.25"
 
-RUN git clone https://github.com/Picodes/4naly3er.git /opt/4naly3er \
-    && cd /opt/4naly3er \
-    && npm install \
-    && chmod +x /opt/4naly3er/analyze.js
-
-RUN echo '#!/bin/bash\nnode /opt/4naly3er/analyze.js "$@"' > /usr/local/bin/4naly3er \
-    && chmod +x /usr/local/bin/4naly3er
-
 RUN npm install -g \
     solhint
 
