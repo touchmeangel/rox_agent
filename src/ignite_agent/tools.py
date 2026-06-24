@@ -592,9 +592,9 @@ def _truncate(text: str, limit: int, what: str) -> str:
 
 
 _STDOUT_LIMITS: dict[str, int] = {
-    "myth": 500_000,
+    "myth": 200_000,
     "slither": 200_000,
-    "aderyn": 50_000,
+    "aderyn": 200_000,
 }
 _DEFAULT_STDOUT_LIMIT = 10_000
 
@@ -720,6 +720,7 @@ def dispatch(
             smart_stdout,
             smart_stderr,
             result.returncode,
+            is_truncation_system_prompt=True
         )
 
         debug_logger.log(tool_name, args_repr, result)

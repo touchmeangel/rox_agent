@@ -4,10 +4,11 @@ import json
 
 
 class ToolResult:
-    def __init__(self, command: str, stdout: str, stderr: str, returncode: int):
+    def __init__(self, command: str, stdout: str, stderr: str, returncode: int, is_truncation_system_prompt: bool = False):
         self.command = command
         self.stdout = stdout.strip()
         self.stderr = stderr.strip()
+        self.is_truncation_system_prompt = is_truncation_system_prompt
         self.returncode = returncode
         self.success = returncode == 0
 
@@ -30,14 +31,3 @@ class ToolResult:
         if not self.stdout and not self.stderr:
             parts.append("(no output)")
         return "\n".join(parts)
-
-    def truncated(self, max_chars: int = 12_000) -> str:
-        full = str(self)
-        if len(full) <= max_chars:
-            return full
-        half = max_chars // 2
-        return (
-            full[:half]
-            + f"\n\n... [truncated — {len(full) - max_chars} chars omitted] ...\n\n"
-            + full[-half:]
-        )

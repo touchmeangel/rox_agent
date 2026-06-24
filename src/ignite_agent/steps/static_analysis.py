@@ -90,21 +90,12 @@ def _extract_json(stdout: str) -> dict | None:
 
 
 def _is_hex_blob(text: str) -> bool:
-    """Return True if text looks like raw EVM bytecode hex rather than readable output."""
     sample = text.strip()[:200]
     hex_chars = sum(1 for c in sample if c in "0123456789abcdefABCDEF")
     return len(sample) > 20 and hex_chars / max(len(sample), 1) > 0.85
 
 
 def _clean_error(raw: str | None, max_chars: int = 400) -> str | None:
-    """
-    Return a concise, readable version of an error string for the AI prompt.
-
-    - Python tracebacks  -> last exception line only (the useful bit)
-    - Hex blobs          -> human-readable explanation
-    - Long free-form     -> last max_chars characters
-    - None               -> None
-    """
     if not raw:
         return None
 
@@ -151,6 +142,14 @@ def _run_prescan_tool(
             tool_name=tool_name,
             success=False,
             error=f"'{tool_name}' binary not found in PATH",
+            exit_code=result.returncode,
+        )
+        
+    if result.is_truncation_system_prompt:
+        return PreScanResult(
+            tool_name=tool_name,
+            success=False,
+            error=result.stdout,
             exit_code=result.returncode,
         )
 
