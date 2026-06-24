@@ -8,7 +8,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     SOLC_SELECT_PATH=/home/shared/.solc-select \
     FOUNDRY_DIR=/home/shared/.foundry \
     HOME=/tmp \
-    PATH="/home/shared/.foundry/bin:/usr/local/bin:${PATH}"
+    PATH="/home/shared/.foundry/bin:/usr/local/bin:${PATH}" \
+    MPLCONFIGDIR=/tmp/matplotlib_cache
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libssl-dev pkg-config \
@@ -27,9 +28,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd \
     && rm -rf /var/lib/apt/lists/*
 
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+        apt-get update && apt-get install -y --no-install-recommends libc6-amd64-cross \
+        && rm -rf /var/lib/apt/lists/* \
+        && ln -s /usr/x86_64-linux-gnu/lib64/ /lib64; \
+    fi
+
+ENV LD_LIBRARY_PATH="/lib64:/usr/x86_64-linux-gnu/lib"
+
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /tmp/matplotlib_cache && chmod -R 777 /tmp/matplotlib_cache
 
 RUN mkdir -p /home/shared && chmod 777 /home/shared
 
