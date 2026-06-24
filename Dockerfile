@@ -45,8 +45,9 @@ RUN pip install --no-cache-dir \
     pyevmasm \
     web3 \
     eth-abi \
-    crytic-compile \
-    mythril
+    crytic-compile
+
+RUN pip install --no-cache-dir "mythril>=0.23.25"
 
 RUN git clone https://github.com/Picodes/4naly3er.git /opt/4naly3er \
     && cd /opt/4naly3er \
