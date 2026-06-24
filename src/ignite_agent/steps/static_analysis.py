@@ -13,6 +13,15 @@ from ignite_agent.tools import dispatch
 
 _IMPACT_ORDER = ["High", "Medium", "Low", "Informational", "Optimization"]
 
+_SKIP_DIRS: frozenset[str] = frozenset({
+    "test", "tests",
+    "lib",
+    "mock", "mocks",
+    "out", "cache", "artifacts", "build",
+})
+
+_SLITHER_FILTER = ",".join(sorted(_SKIP_DIRS))
+
 
 @dataclass
 class PreScanResult:
@@ -54,7 +63,7 @@ def _run_prescan_tool(
 
 _SLITHER_FLAGS = (
     ". --json - --exclude-dependencies "
-    "--filter-paths 'test,tests,out,cache,artifacts,build' "
+    f"--filter-paths '{_SLITHER_FILTER}' "
     "--exclude naming-convention,solc-version,low-level-calls,pragma,similar-names"
 )
 
@@ -252,6 +261,7 @@ def _parse_mythril(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
             exit_code=exit_code,
         )
 
+
 def _run_mythril(
     project_path: str,
     window: RollingWindow,
@@ -263,8 +273,7 @@ def _run_mythril(
 
     sol_files = [
         str(p) for p in src_dir.rglob("*.sol")
-        if not any(part in ("test", "tests", "lib", "mock", "mocks", "out", "cache")
-                   for part in p.parts)
+        if not any(part in _SKIP_DIRS for part in p.parts)
     ]
 
     if not sol_files:
@@ -340,7 +349,7 @@ def _parse_4naly3er(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
 
     detectors = []
     for i, match in enumerate(matches):
-        code = match.group(1)           # e.g. "GAS-1", "L-2", "NC-3"
+        code = match.group(1)
         title = match.group(2).strip()
 
         prefix_match = re.match(r"([A-Z]+)", code)
@@ -396,8 +405,7 @@ def _run_4naly3er(
     sol_files = [
         str(p.relative_to(project_path))
         for p in src_dir.rglob("*.sol")
-        if not any(part in ("test", "tests", "lib", "mock", "mocks", "out", "cache")
-                   for part in p.parts)
+        if not any(part in _SKIP_DIRS for part in p.parts)
     ]
 
     if not sol_files:
@@ -448,6 +456,7 @@ def _fmt_4naly3er(result: PreScanResult) -> str:
         return "✓  4naly3er ran successfully — zero findings."
     return f"✓  4naly3er: {len(detectors)} finding(s)\n\n" + _fmt_detectors(detectors)
 
+
 def _pre_scan_project(
     project_path: str, window: RollingWindow, debug_logger: DebugLogger
 ) -> dict:
@@ -461,6 +470,7 @@ def _pre_scan_project(
         "mythril":   mythril,
         "4naly3er":  four,
     }
+
 
 def _fmt_slither(result: PreScanResult) -> str:
     detectors = result.detectors
