@@ -13,6 +13,109 @@ class FinalReportStep(BaseStep):
     def select_context(self, global_context: dict) -> dict:
         return global_context
 
+    def findings_schema(self) -> dict:
+        """Defines the strict JSON Schema for consolidating and triaging findings into the final report."""
+        return {
+            "type": "object",
+            "properties": {
+                "confirmed": {
+                    "type": "array",
+                    "description": "Deduplicated findings where the full exploit path is traceable through code.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string", "description": "e.g., FR-001"},
+                            "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+                            "title": {"type": "string"},
+                            "sources": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Upstream source finding IDs, e.g., ['static_analysis#SA-001']."
+                            },
+                            "location": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {"type": "string"},
+                                    "function": {"type": "string"},
+                                    "lines": {"type": "string"}
+                                },
+                                "required": ["file", "function"]
+                            },
+                            "description": {"type": "string"},
+                            "impact": {"type": "string"},
+                            "recommendation": {"type": "string"}
+                        },
+                        "required": ["id", "severity", "title", "sources", "location", "description", "impact", "recommendation"]
+                    }
+                },
+                "review_required": {
+                    "type": "array",
+                    "description": "Suspicious patterns requiring dynamic or manual tracking with a concrete blocking question.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string", "description": "e.g., FR-R01"},
+                            "estimated_severity": {"type": "string", "enum": ["high", "medium", "low"]},
+                            "title": {"type": "string"},
+                            "sources": {"type": "array", "items": {"type": "string"}},
+                            "location": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {"type": "string"},
+                                    "function": {"type": "string"}
+                                },
+                                "required": ["file", "function"]
+                            },
+                            "observation": {"type": "string"},
+                            "blocking_question": {"type": "string", "description": "The single question whose answer determines exploitability."},
+                            "how_to_verify": {"type": "string", "description": "Specific manual tracing, fuzzing property, or test execution directive."}
+                        },
+                        "required": ["id", "estimated_severity", "title", "sources", "location", "observation", "blocking_question", "how_to_verify"]
+                    }
+                },
+                "informational": {
+                    "type": "array",
+                    "description": "Gas optimization flags, architectural notes, and non-exploitable code quality flags.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string", "description": "e.g., FR-N01"},
+                            "title": {"type": "string"},
+                            "sources": {"type": "array", "items": {"type": "string"}},
+                            "location": {"type": "string", "description": "File location string mapping, e.g., src/Token.sol:23"},
+                            "note": {"type": "string"}
+                        },
+                        "required": ["id", "title", "sources", "location", "note"]
+                    }
+                },
+                "metrics": {
+                    "type": "object",
+                    "properties": {
+                        "confirmed_critical": {"type": "integer", "minimum": 0},
+                        "confirmed_high": {"type": "integer", "minimum": 0},
+                        "confirmed_medium": {"type": "integer", "minimum": 0},
+                        "confirmed_low": {"type": "integer", "minimum": 0},
+                        "review_required_count": {"type": "integer", "minimum": 0},
+                        "false_positive_estimate": {"type": "string", "enum": ["low", "medium", "high"]}
+                    },
+                    "required": [
+                        "confirmed_critical",
+                        "confirmed_high",
+                        "confirmed_medium",
+                        "confirmed_low",
+                        "review_required_count",
+                        "false_positive_estimate"
+                    ]
+                },
+                "risk_rating": {
+                    "type": "string",
+                    "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+                    "description": "Overall deployment risk tier calculated strictly from confirmed findings."
+                }
+            },
+            "required": ["confirmed", "review_required", "informational", "metrics", "risk_rating"]
+        }
+
     def initial_prompt(
         self, context: dict, window: RollingWindow, debug_logger: DebugLogger
     ) -> str:
