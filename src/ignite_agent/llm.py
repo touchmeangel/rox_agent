@@ -236,15 +236,22 @@ class LLMClient:
             kwargs["base_url"] = base_url
         client = OpenAI(**kwargs)
 
-        stream = client.chat.completions.create(
-            model=self.cfg.model,
-            messages=_to_openai_messages(messages, system),
-            tools=_to_openai_tools(tools),
-            tool_choice="auto",
-            temperature=self.cfg.temperature,
-            max_tokens=self.cfg.max_tokens,
-            stream=True,
-        )
+        kwargs: dict = {
+            "model": self.cfg.model,
+            "messages": _to_openai_messages(messages, system),
+            "tools": _to_openai_tools(tools),
+            "tool_choice": "auto",
+            "max_tokens": self.cfg.max_tokens,
+            "stream": True,
+        }
+
+        if self.cfg.temperature: 
+            kwargs["temperatue"] = self.cfg.temperature
+
+        if self.cfg.reasoning_effort:
+            kwargs["reasoning_effort"] = self.cfg.reasoning_effort
+            
+        stream = client.chat.completions.create(**kwargs)
 
         text_parts: list[str] = []
         reasoning_parts: list[str] = []

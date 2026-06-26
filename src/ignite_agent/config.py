@@ -31,8 +31,9 @@ def _load_raw() -> dict:
 class ModelConfig:
     provider: str
     model: str
-    temperature: float
     max_tokens: int
+    temperature: float | None = None
+    reasoning_effort: str | None = None
     base_url: str | None = None
     api_key_env: str | None = None  # Explicit environment target tracking
 
