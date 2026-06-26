@@ -245,12 +245,12 @@ class LLMClient:
             "stream": True,
         }
 
-        if self.cfg.temperature: 
+        if self.cfg.temperature:
             kwargs["temperatue"] = self.cfg.temperature
 
         if self.cfg.reasoning_effort:
             kwargs["reasoning_effort"] = self.cfg.reasoning_effort
-            
+
         stream = client.chat.completions.create(**kwargs)
 
         text_parts: list[str] = []
