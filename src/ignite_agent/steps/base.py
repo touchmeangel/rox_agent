@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from ignite_agent.config import PROJECT_PATH
 from ignite_agent.debug_logger import DebugLogger, default_debug_logger
 from ignite_agent.llm import LLMClient, ToolResultEntry, get_llm
 from ignite_agent.planning import UPDATE_PLAN_SPEC, Plan
@@ -39,7 +38,7 @@ _REPEAT_CALL_HINT = (
     "  - report_failed if you've exhausted every reasonable option"
 )
 
-_REPEAT_BLOCK_LIMIT = 2  # consecutive blocks of the *same* call before giving up
+_REPEAT_BLOCK_LIMIT = 2
 
 _NUDGE_FINISH_PROMPT = (
     "That was text only, with no tool call. A step only ends when you call submit_findings, "
@@ -73,7 +72,8 @@ class BaseStep:
     def __init__(self, cfg: StepConfig):
         self.cfg = cfg
         self.llm: LLMClient = get_llm(cfg.model_key)
-        self.project_path: str = PROJECT_PATH
+        self.project_path: str = ""
+        self.github_repo_path: str = ""
 
     def select_context(self, global_context: dict) -> dict:
         return global_context

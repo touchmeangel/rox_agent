@@ -486,7 +486,8 @@ class StaticAnalysisStep(BaseStep):
     name = "static_analysis"
 
     def select_context(self, global_context: dict) -> dict:
-        return {}
+        return { "documentation": global_context["documentation"] }
+
 
     def initial_prompt(
         self, context: dict, window: RollingWindow, debug_logger: DebugLogger

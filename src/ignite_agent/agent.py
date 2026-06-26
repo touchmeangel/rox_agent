@@ -4,6 +4,8 @@ import argparse
 import json
 from datetime import datetime
 from pathlib import Path
+import tempfile
+import subprocess
 
 from rich import box
 from rich.console import Console, Group
@@ -66,6 +68,9 @@ def parse_args():
         description="EVM Smart Contract Audit Agent | ignite"
     )
     parser.add_argument(
+        "--github-url", type=str, required=True, help="GitHub repo URL to clone and audit"
+    )
+    parser.add_argument(
         "--project-path", type=str, required=False, default=".", help="Path to project"
     )
     parser.add_argument(
@@ -87,7 +92,7 @@ def parse_args():
 
 
 def run_agent(
-    project_path: str, output_path: str | None = None
+    project_path: str, github_repo_path: str, output_path: str | None = None
 ) -> dict[str, StepResult]:
     default_debug_logger.log_event("agent_run_start", project_path=project_path)
 
@@ -97,6 +102,9 @@ def run_agent(
     for step in PIPELINE:
         console.print(f"\n[{color}]●[/{color}] [bold white]{step.name}[/bold white]")
 
+        step.project_path = project_path
+        step.github_repo_path = github_repo_path
+    
         filtered_context = step.select_context(context)
         result = step.run(filtered_context)
         results[step.name] = result
@@ -167,17 +175,30 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(output, indent=2))
 
+def clone_repo(url: str, dest: str) -> None:
+    result = subprocess.run(
+        ["git", "clone", url, dest],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git clone failed:\n{result.stderr.strip()}")
 
 def main():
     args = parse_args()
-
-    debug_target = args.debug
-    default_debug_logger.configure(debug_target)
-
+    default_debug_logger.configure(args.debug)
     print_welcome_banner()
 
-    run_agent(project_path=args.project_path, output_path=args.output)
+    with tempfile.TemporaryDirectory(prefix="ignite_") as tmp:
+        console.print(f"\n[{color}]●[/{color}] [bold white]Cloning repo[/bold white]")
+        try:
+            clone_repo(args.github_url, tmp)
+            console.print(f"  [dim]⎿[/dim]  [green]✓[/green]  [dim]cloned to {tmp}[/dim]")
+        except RuntimeError as e:
+            console.print(f"  [dim]⎿[/dim]  [red]✗[/red]  [dim]{e}[/dim]")
+            raise SystemExit(1)
 
+        run_agent(project_path=args.project_path, github_repo_path=tmp, output_path=args.output,)
 
 if __name__ == "__main__":
     main()

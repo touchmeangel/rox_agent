@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     cmake \
     libgmp-dev \
+    graphviz \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd \
     && rm -rf /var/lib/apt/lists/*
 
@@ -61,7 +62,8 @@ RUN pip install --no-cache-dir \
 RUN pip install --no-cache-dir "mythril>=0.23.25"
 
 RUN npm install -g \
-    solhint
+    solhint \
+    surya 
 
 RUN solc-select install 0.8.28 && \
     solc-select install 0.8.26 && \
@@ -83,7 +85,6 @@ COPY . .
 RUN pip install --no-cache-dir .
 
 VOLUME ["/project"]
-ENV PROJECT_PATH=/project
 ENV PYTHONPATH=/app/src
 
 ENTRYPOINT ["python", "-m", "ignite_agent.agent"]

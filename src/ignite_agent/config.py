@@ -49,5 +49,3 @@ for key, val in _task_routing.items():
     raw_model_dict = _models.get(val, {})
     filtered_dict = {k: v for k, v in raw_model_dict.items() if k in valid_fields}
     MODELS[key] = ModelConfig(**filtered_dict)
-
-PROJECT_PATH: str = os.environ.get("PROJECT_PATH", "/project")
