@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,17 +15,25 @@ def _generate_repo_tree(repo_path: str) -> str:
         return f"(Directory {repo_path} does not exist)"
 
     lines = []
-    ignore_sets = {".git", "node_modules", "lib", "artifacts", "cache", "out", "flattened"}
+    ignore_sets = {
+        ".git",
+        "node_modules",
+        "lib",
+        "artifacts",
+        "cache",
+        "out",
+        "flattened",
+    }
 
     try:
         for p in sorted(root.rglob("*")):
             if any(part in ignore_sets for part in p.parts):
                 continue
-            
+
             rel_parts = p.relative_to(root).parts
             depth = len(rel_parts) - 1
             indent = "  " * depth
-            
+
             if p.is_dir():
                 lines.append(f"{indent}📁 {p.name}/")
             else:
@@ -84,11 +90,11 @@ def _slither_print(
 
 
 _SLITHER_PRINTERS: list[tuple[str, str]] = [
-    ("human-summary",    "Human Summary"),
+    ("human-summary", "Human Summary"),
     ("contract-summary", "Contract Summary"),
-    ("inheritance-graph","Inheritance Graph"),
-    ("call-graph",       "Call Graph (external chains)"),
-    ("data-dependency",  "Data Dependency"),
+    ("inheritance-graph", "Inheritance Graph"),
+    ("call-graph", "Call Graph (external chains)"),
+    ("data-dependency", "Data Dependency"),
 ]
 
 
@@ -147,10 +153,13 @@ class DocumentationStep(BaseStep):
                     "items": {
                         "type": "object",
                         "properties": {
-                            "name":         {"type": "string"},
-                            "description":  {"type": "string"},
-                            "powers":       {"type": "array", "items": {"type": "string"}},
-                            "restrictions": {"type": "array", "items": {"type": "string"}},
+                            "name": {"type": "string"},
+                            "description": {"type": "string"},
+                            "powers": {"type": "array", "items": {"type": "string"}},
+                            "restrictions": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
                         },
                         "required": ["name", "description", "powers", "restrictions"],
                     },
@@ -161,7 +170,7 @@ class DocumentationStep(BaseStep):
                     "items": {
                         "type": "object",
                         "properties": {
-                            "name":    {"type": "string"},
+                            "name": {"type": "string"},
                             "purpose": {"type": "string"},
                         },
                         "required": ["name", "purpose"],
@@ -174,8 +183,8 @@ class DocumentationStep(BaseStep):
                         "type": "object",
                         "properties": {
                             "standard": {"type": "string"},
-                            "name":     {"type": "string"},
-                            "notes":    {"type": "string"},
+                            "name": {"type": "string"},
+                            "notes": {"type": "string"},
                         },
                         "required": ["standard", "name"],
                     },
@@ -203,8 +212,12 @@ class DocumentationStep(BaseStep):
         if not isinstance(findings, dict):
             return False
         required = {
-            "protocol_summary", "roles", "external_protocols",
-            "tokens", "solc_version", "architecture_notes",
+            "protocol_summary",
+            "roles",
+            "external_protocols",
+            "tokens",
+            "solc_version",
+            "architecture_notes",
         }
         if not required.issubset(findings.keys()):
             return False
@@ -217,9 +230,9 @@ class DocumentationStep(BaseStep):
     def initial_prompt(
         self, context: dict, window: RollingWindow, debug_logger: DebugLogger
     ) -> str:
-        repo_map      = _generate_repo_tree(self.github_repo_path)
-        graph_msg     = _run_architecture_graph(self.project_path, window, debug_logger)
-        prints        = _run_all_prints(self.project_path, window, debug_logger)
+        repo_map = _generate_repo_tree(self.github_repo_path)
+        graph_msg = _run_architecture_graph(self.project_path, window, debug_logger)
+        prints = _run_all_prints(self.project_path, window, debug_logger)
         prints_section = "\n\n".join(r.render() for r in prints)
 
         return f"""You are running the documentation and architecture step of a security audit.
@@ -246,8 +259,8 @@ SLITHER ARCHITECTURE ANALYSIS  (pre-run)
 YOUR TASK
 ════════════════════════════════════════
 
-You are completely responsible for exploring this repository. Analyze the Repository Map above. 
-Identify relevant documentation files (READMEs, specs, or docs directories), configuration settings (foundry.toml, hardhat.config.js, remappings.txt), and target source folders. 
+You are completely responsible for exploring this repository. Analyze the Repository Map above.
+Identify relevant documentation files (READMEs, specs, or docs directories), configuration settings (foundry.toml, hardhat.config.js, remappings.txt), and target source folders.
 
 Execute `read_file` or relevant `shell` commands sequentially to read files of interest. Do not guess.
 
