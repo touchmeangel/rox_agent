@@ -488,6 +488,95 @@ class StaticAnalysisStep(BaseStep):
     def select_context(self, global_context: dict) -> dict:
         return { "documentation": global_context["documentation"] }
 
+    def findings_schema(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "confirmed": {
+                    "type": "array",
+                    "description": "Vulnerabilities completely verified by tracing the exploit path in source.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string", "description": "e.g., SA-001"},
+                            "origin": {"type": "string", "description": "slither | aderyn | mythril"},
+                            "check": {"type": "string"},
+                            "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+                            "title": {"type": "string"},
+                            "location": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {"type": "string"},
+                                    "function": {"type": "string"},
+                                    "lines": {"type": "string"}
+                                },
+                                "required": ["file", "function", "lines"]
+                            },
+                            "description": {"type": "string"},
+                            "evidence": {"type": "string", "description": "Code snippet or exact analyzer output text."},
+                            "impact": {"type": "string"},
+                            "recommendation": {"type": "string"}
+                        },
+                        "required": ["id", "origin", "check", "severity", "title", "location", "description", "evidence", "impact"]
+                    }
+                },
+                "suspected": {
+                    "type": "array",
+                    "description": "Suspicious patterns or flaws requiring secondary verification or human eyeballs.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string", "description": "e.g., SA-S01"},
+                            "origin": {"type": "string"},
+                            "check": {"type": "string"},
+                            "title": {"type": "string"},
+                            "location": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {"type": "string"},
+                                    "function": {"type": "string"},
+                                    "lines": {"type": "string"}
+                                },
+                                "required": ["file", "function", "lines"]
+                            },
+                            "why_uncertain": {"type": "string"},
+                            "what_to_check": {"type": "string"},
+                            "estimated_severity": {"type": "string", "enum": ["high", "medium", "low"]}
+                        },
+                        "required": ["id", "origin", "title", "location", "why_uncertain", "what_to_check", "estimated_severity"]
+                    }
+                },
+                "false_positives": {
+                    "type": "array",
+                    "description": "Analyzer detections determined to be incorrect or contextual non-issues.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "check": {"type": "string"},
+                            "location": {"type": "string", "description": "File and path references string."},
+                            "reason": {"type": "string"}
+                        },
+                        "required": ["check", "location", "reason"]
+                    }
+                },
+                "informational": {
+                    "type": "array",
+                    "description": "Gas enhancements, style enhancements, and strictly non-exploitable findings.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string", "description": "e.g., SA-N01"},
+                            "check": {"type": "string"},
+                            "title": {"type": "string"},
+                            "location": {"type": "string"},
+                            "description": {"type": "string"}
+                        },
+                        "required": ["id", "check", "title", "location", "description"]
+                    }
+                }
+            },
+            "required": ["confirmed", "suspected", "false_positives", "informational"]
+        }
 
     def initial_prompt(
         self, context: dict, window: RollingWindow, debug_logger: DebugLogger
