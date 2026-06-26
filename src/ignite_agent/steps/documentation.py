@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,77 +10,35 @@ from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.steps.base import BaseStep
 from ignite_agent.tools import dispatch
 
-_DOC_FILENAMES = [
-    "README.md",
-    "README.rst",
-    "README.txt",
-    "readme.md",
-    "WHITEPAPER.md",
-    "whitepaper.md",
-    "ARCHITECTURE.md",
-    "architecture.md",
-    "OVERVIEW.md",
-    "overview.md",
-    "SPECIFICATION.md",
-    "specification.md",
-    "SPEC.md",
-    "spec.md",
-    "PROTOCOL.md",
-    "protocol.md",
-]
 
-_DOC_DIRS = ["docs", "doc", "documentation", "wiki"]
+def _generate_repo_tree(repo_path: str) -> str:
+    root = Path(repo_path)
+    if not root.exists():
+        return f"(Directory {repo_path} does not exist)"
 
-_CONFIG_FILENAMES = [
-    "foundry.toml",
-    "remappings.txt",
-]
+    lines = []
+    ignore_sets = {".git", "node_modules", "lib", "artifacts", "cache", "out", "flattened"}
 
-_MAX_FILE_CHARS = 6_000
-_MAX_DOC_FILES = 10
+    try:
+        for p in sorted(root.rglob("*")):
+            if any(part in ignore_sets for part in p.parts):
+                continue
+            
+            rel_parts = p.relative_to(root).parts
+            depth = len(rel_parts) - 1
+            indent = "  " * depth
+            
+            if p.is_dir():
+                lines.append(f"{indent}📁 {p.name}/")
+            else:
+                lines.append(f"{indent}📄 {p.name}")
+    except Exception as e:
+        return f"(Error generating repository map: {str(e)})"
 
+    if not lines:
+        return "(Repository is empty or all folders were filtered out)"
 
-def _read_project_docs(github_repo_path: str) -> str:
-    root = Path(github_repo_path)
-    collected: list[tuple[str, str]] = []
-
-    for name in _DOC_FILENAMES:
-        p = root / name
-        if p.exists() and p.stat().st_size > 0:
-            text = p.read_text(errors="replace")[:_MAX_FILE_CHARS]
-            collected.append((name, text))
-
-    for dir_name in _DOC_DIRS:
-        d = root / dir_name
-        if not d.is_dir():
-            continue
-        for md in sorted(d.rglob("*.md"))[:_MAX_DOC_FILES]:
-            rel = str(md.relative_to(root))
-            text = md.read_text(errors="replace")[:_MAX_FILE_CHARS]
-            collected.append((rel, text))
-        if len(collected) >= _MAX_DOC_FILES:
-            break
-
-    if not collected:
-        return "(no documentation files found in repository root or docs/ directories)"
-
-    return "\n\n---\n\n".join(f"### {path}\n\n{content}" for path, content in collected)
-
-
-def _read_project_configs(github_repo_path: str) -> str:
-    root = Path(github_repo_path)
-    collected: list[tuple[str, str]] = []
-
-    for name in _CONFIG_FILENAMES:
-        p = root / name
-        if p.exists() and p.stat().st_size > 0:
-            text = p.read_text(errors="replace")[:2_000]
-            collected.append((name, text))
-
-    if not collected:
-        return "(no build-config files found — solc version must be inferred from pragma statements)"
-
-    return "\n\n".join(f"### {path}\n\n{content}" for path, content in collected)
+    return "\n".join(lines)
 
 
 @dataclass
@@ -124,11 +84,11 @@ def _slither_print(
 
 
 _SLITHER_PRINTERS: list[tuple[str, str]] = [
-    ("human-summary", "Human Summary"),
+    ("human-summary",    "Human Summary"),
     ("contract-summary", "Contract Summary"),
-    ("inheritance-graph", "Inheritance Graph"),
-    ("call-graph", "Call Graph (external chains)"),
-    ("data-dependency", "Data Dependency"),
+    ("inheritance-graph","Inheritance Graph"),
+    ("call-graph",       "Call Graph (external chains)"),
+    ("data-dependency",  "Data Dependency"),
 ]
 
 
@@ -187,13 +147,10 @@ class DocumentationStep(BaseStep):
                     "items": {
                         "type": "object",
                         "properties": {
-                            "name": {"type": "string"},
-                            "description": {"type": "string"},
-                            "powers": {"type": "array", "items": {"type": "string"}},
-                            "restrictions": {
-                                "type": "array",
-                                "items": {"type": "string"},
-                            },
+                            "name":         {"type": "string"},
+                            "description":  {"type": "string"},
+                            "powers":       {"type": "array", "items": {"type": "string"}},
+                            "restrictions": {"type": "array", "items": {"type": "string"}},
                         },
                         "required": ["name", "description", "powers", "restrictions"],
                     },
@@ -204,7 +161,7 @@ class DocumentationStep(BaseStep):
                     "items": {
                         "type": "object",
                         "properties": {
-                            "name": {"type": "string"},
+                            "name":    {"type": "string"},
                             "purpose": {"type": "string"},
                         },
                         "required": ["name", "purpose"],
@@ -217,8 +174,8 @@ class DocumentationStep(BaseStep):
                         "type": "object",
                         "properties": {
                             "standard": {"type": "string"},
-                            "name": {"type": "string"},
-                            "notes": {"type": "string"},
+                            "name":     {"type": "string"},
+                            "notes":    {"type": "string"},
                         },
                         "required": ["standard", "name"],
                     },
@@ -246,12 +203,8 @@ class DocumentationStep(BaseStep):
         if not isinstance(findings, dict):
             return False
         required = {
-            "protocol_summary",
-            "roles",
-            "external_protocols",
-            "tokens",
-            "solc_version",
-            "architecture_notes",
+            "protocol_summary", "roles", "external_protocols",
+            "tokens", "solc_version", "architecture_notes",
         }
         if not required.issubset(findings.keys()):
             return False
@@ -264,29 +217,24 @@ class DocumentationStep(BaseStep):
     def initial_prompt(
         self, context: dict, window: RollingWindow, debug_logger: DebugLogger
     ) -> str:
-        docs = _read_project_docs(self.github_repo_path)
-        configs = _read_project_configs(self.github_repo_path)
-        graph_msg = _run_architecture_graph(self.project_path, window, debug_logger)
-        prints = _run_all_prints(self.project_path, window, debug_logger)
+        repo_map      = _generate_repo_tree(self.github_repo_path)
+        graph_msg     = _run_architecture_graph(self.project_path, window, debug_logger)
+        prints        = _run_all_prints(self.project_path, window, debug_logger)
         prints_section = "\n\n".join(r.render() for r in prints)
 
         return f"""You are running the documentation and architecture step of a security audit.
 
-Repository (docs): {self.github_repo_path}
-Project (foundry setup, tooling executes here):   {self.project_path}
-Architecture graph:         {graph_msg}
+Repository Location:                      {self.github_repo_path}
+Project (Tooling setup executes here):    {self.project_path}
+Architecture graph generation status:     {graph_msg}
 
 ════════════════════════════════════════
-PROJECT DOCUMENTATION
+REPOSITORY STRUCTURE MAP
 ════════════════════════════════════════
+Use this map to discover documentation files, build configs, and source directories.
+You must use your tools (`read_file` or `shell`) to read files directly.
 
-{docs}
-
-════════════════════════════════════════
-BUILD CONFIGURATION  (solc version, remappings…)
-════════════════════════════════════════
-
-{configs}
+{repo_map}
 
 ════════════════════════════════════════
 SLITHER ARCHITECTURE ANALYSIS  (pre-run)
@@ -298,43 +246,38 @@ SLITHER ARCHITECTURE ANALYSIS  (pre-run)
 YOUR TASK
 ════════════════════════════════════════
 
-Work through the five steps below in order. Each step has a concrete
-deliverable — do not skip one because the docs look thin; use tools to fill gaps.
+You are completely responsible for exploring this repository. Analyze the Repository Map above. 
+Identify relevant documentation files (READMEs, specs, or docs directories), configuration settings (foundry.toml, hardhat.config.js, remappings.txt), and target source folders. 
+
+Execute `read_file` or relevant `shell` commands sequentially to read files of interest. Do not guess.
+
+Work through the five steps below in order.
 
 STEP 1 — UNDERSTAND THE PROTOCOL
-  Read the documentation above carefully.
-  If it is absent, sparse, or ambiguous:
-    • Use read_file to scan README, natspec comments in key contracts, and
-      any NatSpec @notice / @dev comments on public functions.
-    • Use web_search with the project name or GitHub URL to find the team's
-      docs site, audit scope, or announcement post.
+  Locate and read the documentation files from the directory tree.
+  If documentation is absent, sparse, or ambiguous:
+    • Use `read_file` to scan main entry-points or look for NatSpec @notice / @dev comments.
+    • Use `web_search` with the project name or GitHub URL to find external docs sites, audit scopes, or blog posts.
   Deliverable: a clear 2–4 sentence description of what the protocol does.
 
 STEP 2 — MAP THE ROLES
   Identify every actor in the system from docs AND from access-control patterns
   in the source (modifiers, require(msg.sender == …), role constants, etc.).
-  Common actors: Buyer, Seller, Arbiter, Owner, Admin, Relayer, Keeper, Liquidator…
   For each role document:
     • What they can do  (powers)
     • What they are prevented from doing  (restrictions)
     • Who they are trusted by and to what degree
 
 STEP 3 — EXTERNAL PROTOCOLS
-  List every third-party protocol this codebase calls into:
-    DEXes (Uniswap, Curve, Balancer…)
-    Lending (Morpho, Aave, Compound…)
-    Oracles (Chainlink, Pyth, Tellor…)
-    Bridges, vaults, yield aggregators…
-  For each: which interface is called and what value/data flows across that boundary.
+  List every third-party protocol this codebase calls into (DEXes, Lending pools, Oracles, Bridges).
+  For each: specify which interface is called and what data flows across that boundary.
 
 STEP 4 — TOKENS
-  List every token standard and every named token the protocol handles:
-    Standards: ERC20, ERC721, ERC1155, native ETH / WETH…
-    Named tokens: USDC, WETH, DAI, protocol-specific tokens…
+  List every token standard and every named token the protocol handles (ERC20, ERC721, native ETH).
   Note any token assumptions (decimals, rebase, fee-on-transfer, permit support).
 
 STEP 5 — SOLC VERSION
-  Determine the exact compiler version. Check in this order:
+  Determine the exact compiler version. Use `read_file` to check configuration files:
     1. foundry.toml  →  [profile.default] solc = "…"
     2. hardhat.config  →  solidity: {{ version: "…" }}
     3. pragma statements in the entry-point contracts
@@ -374,17 +317,12 @@ FINDINGS FORMAT  (pass to submit_findings)
       "standard": "ERC20",
       "name": "USDC",
       "notes": "Primary settlement token; 6 decimals assumed; permit not used"
-    }},
-    {{
-      "standard": "native ETH",
-      "name": "ETH",
-      "notes": "Accepted as collateral; wrapped to WETH internally"
     }}
   ],
 
   "solc_version": "0.8.24",
 
-  "architecture_notes": "Describe the contract layout, inheritance hierarchy, and the primary call flows inferred from the slither output above."
+  "architecture_notes": "Describe the contract layout, inheritance hierarchy, and the primary call flows inferred from the slither output above and your source exploration."
 }}
 
 ════════════════════════════════════════
@@ -395,7 +333,6 @@ RULES
 • Read source files before submitting — do not rely solely on docs.
 • Every role needs at least one power.
 • solc_version must be a concrete version string — "unknown" will be rejected.
-• external_protocols and tokens may be empty arrays [] if truly none exist,
-  but you must have checked the source before concluding that.
+• external_protocols and tokens may be empty arrays [] if truly none exist, but you must have checked the source before concluding that.
 • Do not submit until all five steps are complete.
 """
