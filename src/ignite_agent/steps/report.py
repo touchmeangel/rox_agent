@@ -25,28 +25,40 @@ class FinalReportStep(BaseStep):
                         "type": "object",
                         "properties": {
                             "id": {"type": "string", "description": "e.g., FR-001"},
-                            "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+                            "severity": {
+                                "type": "string",
+                                "enum": ["critical", "high", "medium", "low"],
+                            },
                             "title": {"type": "string"},
                             "sources": {
                                 "type": "array",
                                 "items": {"type": "string"},
-                                "description": "Upstream source finding IDs, e.g., ['static_analysis#SA-001']."
+                                "description": "Upstream source finding IDs, e.g., ['static_analysis#SA-001'].",
                             },
                             "location": {
                                 "type": "object",
                                 "properties": {
                                     "file": {"type": "string"},
                                     "function": {"type": "string"},
-                                    "lines": {"type": "string"}
+                                    "lines": {"type": "string"},
                                 },
-                                "required": ["file", "function"]
+                                "required": ["file", "function"],
                             },
                             "description": {"type": "string"},
                             "impact": {"type": "string"},
-                            "recommendation": {"type": "string"}
+                            "recommendation": {"type": "string"},
                         },
-                        "required": ["id", "severity", "title", "sources", "location", "description", "impact", "recommendation"]
-                    }
+                        "required": [
+                            "id",
+                            "severity",
+                            "title",
+                            "sources",
+                            "location",
+                            "description",
+                            "impact",
+                            "recommendation",
+                        ],
+                    },
                 },
                 "review_required": {
                     "type": "array",
@@ -55,23 +67,41 @@ class FinalReportStep(BaseStep):
                         "type": "object",
                         "properties": {
                             "id": {"type": "string", "description": "e.g., FR-R01"},
-                            "estimated_severity": {"type": "string", "enum": ["high", "medium", "low"]},
+                            "estimated_severity": {
+                                "type": "string",
+                                "enum": ["high", "medium", "low"],
+                            },
                             "title": {"type": "string"},
                             "sources": {"type": "array", "items": {"type": "string"}},
                             "location": {
                                 "type": "object",
                                 "properties": {
                                     "file": {"type": "string"},
-                                    "function": {"type": "string"}
+                                    "function": {"type": "string"},
                                 },
-                                "required": ["file", "function"]
+                                "required": ["file", "function"],
                             },
                             "observation": {"type": "string"},
-                            "blocking_question": {"type": "string", "description": "The single question whose answer determines exploitability."},
-                            "how_to_verify": {"type": "string", "description": "Specific manual tracing, fuzzing property, or test execution directive."}
+                            "blocking_question": {
+                                "type": "string",
+                                "description": "The single question whose answer determines exploitability.",
+                            },
+                            "how_to_verify": {
+                                "type": "string",
+                                "description": "Specific manual tracing, fuzzing property, or test execution directive.",
+                            },
                         },
-                        "required": ["id", "estimated_severity", "title", "sources", "location", "observation", "blocking_question", "how_to_verify"]
-                    }
+                        "required": [
+                            "id",
+                            "estimated_severity",
+                            "title",
+                            "sources",
+                            "location",
+                            "observation",
+                            "blocking_question",
+                            "how_to_verify",
+                        ],
+                    },
                 },
                 "informational": {
                     "type": "array",
@@ -82,11 +112,14 @@ class FinalReportStep(BaseStep):
                             "id": {"type": "string", "description": "e.g., FR-N01"},
                             "title": {"type": "string"},
                             "sources": {"type": "array", "items": {"type": "string"}},
-                            "location": {"type": "string", "description": "File location string mapping, e.g., src/Token.sol:23"},
-                            "note": {"type": "string"}
+                            "location": {
+                                "type": "string",
+                                "description": "File location string mapping, e.g., src/Token.sol:23",
+                            },
+                            "note": {"type": "string"},
                         },
-                        "required": ["id", "title", "sources", "location", "note"]
-                    }
+                        "required": ["id", "title", "sources", "location", "note"],
+                    },
                 },
                 "metrics": {
                     "type": "object",
@@ -96,7 +129,10 @@ class FinalReportStep(BaseStep):
                         "confirmed_medium": {"type": "integer", "minimum": 0},
                         "confirmed_low": {"type": "integer", "minimum": 0},
                         "review_required_count": {"type": "integer", "minimum": 0},
-                        "false_positive_estimate": {"type": "string", "enum": ["low", "medium", "high"]}
+                        "false_positive_estimate": {
+                            "type": "string",
+                            "enum": ["low", "medium", "high"],
+                        },
                     },
                     "required": [
                         "confirmed_critical",
@@ -104,16 +140,22 @@ class FinalReportStep(BaseStep):
                         "confirmed_medium",
                         "confirmed_low",
                         "review_required_count",
-                        "false_positive_estimate"
-                    ]
+                        "false_positive_estimate",
+                    ],
                 },
                 "risk_rating": {
                     "type": "string",
                     "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
-                    "description": "Overall deployment risk tier calculated strictly from confirmed findings."
-                }
+                    "description": "Overall deployment risk tier calculated strictly from confirmed findings.",
+                },
             },
-            "required": ["confirmed", "review_required", "informational", "metrics", "risk_rating"]
+            "required": [
+                "confirmed",
+                "review_required",
+                "informational",
+                "metrics",
+                "risk_rating",
+            ],
         }
 
     def initial_prompt(

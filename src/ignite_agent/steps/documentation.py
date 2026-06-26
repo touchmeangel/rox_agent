@@ -8,15 +8,23 @@ from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.steps.base import BaseStep
 from ignite_agent.tools import dispatch
 
-
 _DOC_FILENAMES = [
-    "README.md", "README.rst", "README.txt", "readme.md",
-    "WHITEPAPER.md", "whitepaper.md",
-    "ARCHITECTURE.md", "architecture.md",
-    "OVERVIEW.md", "overview.md",
-    "SPECIFICATION.md", "specification.md",
-    "SPEC.md", "spec.md",
-    "PROTOCOL.md", "protocol.md",
+    "README.md",
+    "README.rst",
+    "README.txt",
+    "readme.md",
+    "WHITEPAPER.md",
+    "whitepaper.md",
+    "ARCHITECTURE.md",
+    "architecture.md",
+    "OVERVIEW.md",
+    "overview.md",
+    "SPECIFICATION.md",
+    "specification.md",
+    "SPEC.md",
+    "spec.md",
+    "PROTOCOL.md",
+    "protocol.md",
 ]
 
 _DOC_DIRS = ["docs", "doc", "documentation", "wiki"]
@@ -27,7 +35,7 @@ _CONFIG_FILENAMES = [
 ]
 
 _MAX_FILE_CHARS = 6_000
-_MAX_DOC_FILES  = 10
+_MAX_DOC_FILES = 10
 
 
 def _read_project_docs(github_repo_path: str) -> str:
@@ -116,11 +124,11 @@ def _slither_print(
 
 
 _SLITHER_PRINTERS: list[tuple[str, str]] = [
-    ("human-summary",    "Human Summary"),
+    ("human-summary", "Human Summary"),
     ("contract-summary", "Contract Summary"),
-    ("inheritance-graph","Inheritance Graph"),
-    ("call-graph",       "Call Graph (external chains)"),
-    ("data-dependency",  "Data Dependency"),
+    ("inheritance-graph", "Inheritance Graph"),
+    ("call-graph", "Call Graph (external chains)"),
+    ("data-dependency", "Data Dependency"),
 ]
 
 
@@ -179,10 +187,13 @@ class DocumentationStep(BaseStep):
                     "items": {
                         "type": "object",
                         "properties": {
-                            "name":         {"type": "string"},
-                            "description":  {"type": "string"},
-                            "powers":       {"type": "array", "items": {"type": "string"}},
-                            "restrictions": {"type": "array", "items": {"type": "string"}},
+                            "name": {"type": "string"},
+                            "description": {"type": "string"},
+                            "powers": {"type": "array", "items": {"type": "string"}},
+                            "restrictions": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
                         },
                         "required": ["name", "description", "powers", "restrictions"],
                     },
@@ -193,7 +204,7 @@ class DocumentationStep(BaseStep):
                     "items": {
                         "type": "object",
                         "properties": {
-                            "name":    {"type": "string"},
+                            "name": {"type": "string"},
                             "purpose": {"type": "string"},
                         },
                         "required": ["name", "purpose"],
@@ -206,8 +217,8 @@ class DocumentationStep(BaseStep):
                         "type": "object",
                         "properties": {
                             "standard": {"type": "string"},
-                            "name":     {"type": "string"},
-                            "notes":    {"type": "string"},
+                            "name": {"type": "string"},
+                            "notes": {"type": "string"},
                         },
                         "required": ["standard", "name"],
                     },
@@ -235,8 +246,12 @@ class DocumentationStep(BaseStep):
         if not isinstance(findings, dict):
             return False
         required = {
-            "protocol_summary", "roles", "external_protocols",
-            "tokens", "solc_version", "architecture_notes",
+            "protocol_summary",
+            "roles",
+            "external_protocols",
+            "tokens",
+            "solc_version",
+            "architecture_notes",
         }
         if not required.issubset(findings.keys()):
             return False
@@ -249,10 +264,10 @@ class DocumentationStep(BaseStep):
     def initial_prompt(
         self, context: dict, window: RollingWindow, debug_logger: DebugLogger
     ) -> str:
-        docs          = _read_project_docs(self.github_repo_path)
-        configs       = _read_project_configs(self.github_repo_path)
-        graph_msg     = _run_architecture_graph(self.project_path, window, debug_logger)
-        prints        = _run_all_prints(self.project_path, window, debug_logger)
+        docs = _read_project_docs(self.github_repo_path)
+        configs = _read_project_configs(self.github_repo_path)
+        graph_msg = _run_architecture_graph(self.project_path, window, debug_logger)
+        prints = _run_all_prints(self.project_path, window, debug_logger)
         prints_section = "\n\n".join(r.render() for r in prints)
 
         return f"""You are running the documentation and architecture step of a security audit.

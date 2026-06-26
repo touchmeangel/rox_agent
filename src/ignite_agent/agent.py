@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
+import subprocess
+import tempfile
 from datetime import datetime
 from pathlib import Path
-import tempfile
-import subprocess
 
 from rich import box
 from rich.console import Console, Group
@@ -68,7 +69,10 @@ def parse_args():
         description="EVM Smart Contract Audit Agent | ignite"
     )
     parser.add_argument(
-        "--github-url", type=str, required=True, help="GitHub repo URL to clone and audit"
+        "--github-url",
+        type=str,
+        required=True,
+        help="GitHub repo URL to clone and audit",
     )
     parser.add_argument(
         "--project-path", type=str, required=False, default=".", help="Path to project"
@@ -104,7 +108,7 @@ def run_agent(
 
         step.project_path = project_path
         step.github_repo_path = github_repo_path
-    
+
         filtered_context = step.select_context(context)
         result = step.run(filtered_context)
         results[step.name] = result
@@ -175,14 +179,20 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(output, indent=2))
 
+
 def clone_repo(url: str, dest: str) -> None:
-    result = subprocess.run(
-        ["git", "clone", url, dest],
+    git_path = shutil.which("git")
+    if not git_path:
+        raise RuntimeError("The 'git' executable was not found in your system PATH.")
+
+    result = subprocess.run(  # noqa: S603
+        [git_path, "clone", url, dest],
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
         raise RuntimeError(f"git clone failed:\n{result.stderr.strip()}")
+
 
 def main():
     args = parse_args()
@@ -190,15 +200,23 @@ def main():
     print_welcome_banner()
 
     with tempfile.TemporaryDirectory(prefix="ignite_") as tmp:
+        color = "blue"
         console.print(f"\n[{color}]●[/{color}] [bold white]Cloning repo[/bold white]")
         try:
             clone_repo(args.github_url, tmp)
-            console.print(f"  [dim]⎿[/dim]  [green]✓[/green]  [dim]cloned to {tmp}[/dim]")
+            console.print(
+                f"  [dim]⎿[/dim]  [green]✓[/green]  [dim]cloned to {tmp}[/dim]"
+            )
         except RuntimeError as e:
             console.print(f"  [dim]⎿[/dim]  [red]✗[/red]  [dim]{e}[/dim]")
-            raise SystemExit(1)
+            raise SystemExit(1) from None
 
-        run_agent(project_path=args.project_path, github_repo_path=tmp, output_path=args.output,)
+        run_agent(
+            project_path=args.project_path,
+            github_repo_path=tmp,
+            output_path=args.output,
+        )
+
 
 if __name__ == "__main__":
     main()

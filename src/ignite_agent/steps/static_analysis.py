@@ -486,7 +486,7 @@ class StaticAnalysisStep(BaseStep):
     name = "static_analysis"
 
     def select_context(self, global_context: dict) -> dict:
-        return { "documentation": global_context["documentation"] }
+        return {"documentation": global_context["documentation"]}
 
     def findings_schema(self) -> dict:
         return {
@@ -499,26 +499,45 @@ class StaticAnalysisStep(BaseStep):
                         "type": "object",
                         "properties": {
                             "id": {"type": "string", "description": "e.g., SA-001"},
-                            "origin": {"type": "string", "description": "slither | aderyn | mythril"},
+                            "origin": {
+                                "type": "string",
+                                "description": "slither | aderyn | mythril",
+                            },
                             "check": {"type": "string"},
-                            "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]},
+                            "severity": {
+                                "type": "string",
+                                "enum": ["critical", "high", "medium", "low"],
+                            },
                             "title": {"type": "string"},
                             "location": {
                                 "type": "object",
                                 "properties": {
                                     "file": {"type": "string"},
                                     "function": {"type": "string"},
-                                    "lines": {"type": "string"}
+                                    "lines": {"type": "string"},
                                 },
-                                "required": ["file", "function", "lines"]
+                                "required": ["file", "function", "lines"],
                             },
                             "description": {"type": "string"},
-                            "evidence": {"type": "string", "description": "Code snippet or exact analyzer output text."},
+                            "evidence": {
+                                "type": "string",
+                                "description": "Code snippet or exact analyzer output text.",
+                            },
                             "impact": {"type": "string"},
-                            "recommendation": {"type": "string"}
+                            "recommendation": {"type": "string"},
                         },
-                        "required": ["id", "origin", "check", "severity", "title", "location", "description", "evidence", "impact"]
-                    }
+                        "required": [
+                            "id",
+                            "origin",
+                            "check",
+                            "severity",
+                            "title",
+                            "location",
+                            "description",
+                            "evidence",
+                            "impact",
+                        ],
+                    },
                 },
                 "suspected": {
                     "type": "array",
@@ -535,16 +554,27 @@ class StaticAnalysisStep(BaseStep):
                                 "properties": {
                                     "file": {"type": "string"},
                                     "function": {"type": "string"},
-                                    "lines": {"type": "string"}
+                                    "lines": {"type": "string"},
                                 },
-                                "required": ["file", "function", "lines"]
+                                "required": ["file", "function", "lines"],
                             },
                             "why_uncertain": {"type": "string"},
                             "what_to_check": {"type": "string"},
-                            "estimated_severity": {"type": "string", "enum": ["high", "medium", "low"]}
+                            "estimated_severity": {
+                                "type": "string",
+                                "enum": ["high", "medium", "low"],
+                            },
                         },
-                        "required": ["id", "origin", "title", "location", "why_uncertain", "what_to_check", "estimated_severity"]
-                    }
+                        "required": [
+                            "id",
+                            "origin",
+                            "title",
+                            "location",
+                            "why_uncertain",
+                            "what_to_check",
+                            "estimated_severity",
+                        ],
+                    },
                 },
                 "false_positives": {
                     "type": "array",
@@ -553,11 +583,14 @@ class StaticAnalysisStep(BaseStep):
                         "type": "object",
                         "properties": {
                             "check": {"type": "string"},
-                            "location": {"type": "string", "description": "File and path references string."},
-                            "reason": {"type": "string"}
+                            "location": {
+                                "type": "string",
+                                "description": "File and path references string.",
+                            },
+                            "reason": {"type": "string"},
                         },
-                        "required": ["check", "location", "reason"]
-                    }
+                        "required": ["check", "location", "reason"],
+                    },
                 },
                 "informational": {
                     "type": "array",
@@ -569,13 +602,13 @@ class StaticAnalysisStep(BaseStep):
                             "check": {"type": "string"},
                             "title": {"type": "string"},
                             "location": {"type": "string"},
-                            "description": {"type": "string"}
+                            "description": {"type": "string"},
                         },
-                        "required": ["id", "check", "title", "location", "description"]
-                    }
-                }
+                        "required": ["id", "check", "title", "location", "description"],
+                    },
+                },
             },
-            "required": ["confirmed", "suspected", "false_positives", "informational"]
+            "required": ["confirmed", "suspected", "false_positives", "informational"],
         }
 
     def initial_prompt(
