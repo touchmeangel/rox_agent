@@ -90,11 +90,10 @@ def _slither_print(
 
 
 _SLITHER_PRINTERS: list[tuple[str, str]] = [
-    ("human-summary", "Human Summary"),
+    ("human-summary",    "Human Summary"),
     ("contract-summary", "Contract Summary"),
-    ("inheritance-graph", "Inheritance Graph"),
-    ("call-graph", "Call Graph (external chains)"),
-    ("data-dependency", "Data Dependency"),
+    ("function-summary", "Function Summary"),
+    ("data-dependency",  "Data Dependency"),
 ]
 
 
@@ -199,6 +198,48 @@ class DocumentationStep(BaseStep):
                     "type": "string",
                     "description": "High-level contract layout, inheritance, and key call flows.",
                 },
+                "contract_risk_matrix": {
+                    "type": "array",
+                    "description": "Per-contract risk triage. One entry per in-scope contract.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "contract": {"type": "string"},
+                            "sloc": {
+                                "type": "integer",
+                                "description": "Source lines of code (excluding blanks and comments).",
+                            },
+                            "external_calls": {
+                                "type": "string",
+                                "description": "Comma-separated list of external protocols called, or 'None'.",
+                            },
+                            "function_count": {"type": "integer"},
+                            "holds_funds": {
+                                "type": "boolean",
+                                "description": "True if the contract holds ETH or ERC20 token balances.",
+                            },
+                            "upgradeable": {"type": "boolean"},
+                            "risk_level": {
+                                "type": "string",
+                                "enum": ["Low", "Medium", "High", "Critical"],
+                            },
+                            "risk_reason": {
+                                "type": "string",
+                                "description": "One sentence explaining the assigned risk level.",
+                            },
+                        },
+                        "required": [
+                            "contract",
+                            "sloc",
+                            "external_calls",
+                            "function_count",
+                            "holds_funds",
+                            "upgradeable",
+                            "risk_level",
+                            "risk_reason",
+                        ],
+                    },
+                },
             },
             "required": [
                 "protocol_summary",
@@ -207,6 +248,7 @@ class DocumentationStep(BaseStep):
                 "tokens",
                 "solc_version",
                 "architecture_notes",
+                "contract_risk_matrix",
             ],
         }
 
@@ -220,12 +262,15 @@ class DocumentationStep(BaseStep):
             "tokens",
             "solc_version",
             "architecture_notes",
+            "contract_risk_matrix",
         }
         if not required.issubset(findings.keys()):
             return False
         if not findings.get("protocol_summary"):
             return False
         if findings.get("solc_version", "unknown").lower() in ("unknown", "", "?"):
+            return False
+        if not isinstance(findings.get("contract_risk_matrix"), list) or not findings["contract_risk_matrix"]:
             return False
         return True
 
@@ -273,7 +318,7 @@ Identify relevant documentation files (READMEs, specs, or docs directories), con
 
 Execute `read_file` or relevant `shell` commands sequentially to read files of interest. Do not guess.
 
-Work through the five steps below in order.
+Work through the six steps below in order.
 
 STEP 1 — UNDERSTAND THE PROTOCOL
   Locate and read the documentation files from the directory tree.
@@ -306,6 +351,18 @@ STEP 5 — SOLC VERSION
     2. hardhat.config  →  solidity: {{ version: "…" }}
     3. pragma statements in the entry-point contracts
   solc_version must be a concrete string like "0.8.24", not "unknown".
+
+STEP 6 — CONTRACT RISK MATRIX
+  For every in-scope contract produce one row. Base it on everything gathered in steps 1–5
+  plus the Slither function-summary and surya table above. For each contract determine:
+    • sloc         — count non-blank, non-comment lines (use `shell` with wc/grep if needed)
+    • external_calls — which protocols it calls into, or "None"
+    • function_count — total number of functions (public + external + internal)
+    • holds_funds  — does it hold ETH or ERC20 balances? (check payable functions, token mappings)
+    • upgradeable  — does it use a proxy pattern or UUPSUpgradeable / TransparentUpgradeableProxy?
+    • risk_level   — Low / Medium / High / Critical
+    • risk_reason  — one sentence. Weight: holds_funds and external_calls push risk up;
+                     pure view/library contracts push risk down.
 
 ════════════════════════════════════════
 FINDINGS FORMAT  (pass to submit_findings)
@@ -346,7 +403,30 @@ FINDINGS FORMAT  (pass to submit_findings)
 
   "solc_version": "0.8.24",
 
-  "architecture_notes": "Describe the contract layout, inheritance hierarchy, and the primary call flows inferred from the slither output above and your source exploration."
+  "architecture_notes": "Describe the contract layout, inheritance hierarchy, and the primary call flows inferred from the slither output above and your source exploration.",
+
+  "contract_risk_matrix": [
+    {{
+      "contract": "Vault.sol",
+      "sloc": 420,
+      "external_calls": "Uniswap V3, Chainlink",
+      "function_count": 12,
+      "holds_funds": true,
+      "upgradeable": false,
+      "risk_level": "High",
+      "risk_reason": "Holds user funds and makes external calls to Uniswap during liquidations, creating reentrancy and price manipulation surface."
+    }},
+    {{
+      "contract": "MathLib.sol",
+      "sloc": 85,
+      "external_calls": "None",
+      "function_count": 6,
+      "holds_funds": false,
+      "upgradeable": false,
+      "risk_level": "Low",
+      "risk_reason": "Pure math library with no state, no external calls, and no fund custody."
+    }}
+  ]
 }}
 
 ════════════════════════════════════════
@@ -358,5 +438,6 @@ RULES
 • Every role needs at least one power.
 • solc_version must be a concrete version string — "unknown" will be rejected.
 • external_protocols and tokens may be empty arrays [] if truly none exist, but you must have checked the source before concluding that.
-• Do not submit until all five steps are complete.
+• contract_risk_matrix must have one entry per in-scope contract — do not skip contracts, even simple ones.
+• Do not submit until all six steps are complete.
 """
