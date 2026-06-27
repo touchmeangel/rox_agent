@@ -90,10 +90,10 @@ def _slither_print(
 
 
 _SLITHER_PRINTERS: list[tuple[str, str]] = [
-    ("human-summary",    "Human Summary"),
+    ("human-summary", "Human Summary"),
     ("contract-summary", "Contract Summary"),
     ("function-summary", "Function Summary"),
-    ("data-dependency",  "Data Dependency"),
+    ("data-dependency", "Data Dependency"),
 ]
 
 
@@ -270,7 +270,10 @@ class DocumentationStep(BaseStep):
             return False
         if findings.get("solc_version", "unknown").lower() in ("unknown", "", "?"):
             return False
-        if not isinstance(findings.get("contract_risk_matrix"), list) or not findings["contract_risk_matrix"]:
+        if (
+            not isinstance(findings.get("contract_risk_matrix"), list)
+            or not findings["contract_risk_matrix"]
+        ):
             return False
         return True
 
