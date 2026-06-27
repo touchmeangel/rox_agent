@@ -181,6 +181,7 @@ class DocumentationStep(BaseStep):
                         "properties": {
                             "name": {"type": "string"},
                             "purpose": {"type": "string"},
+                            "version": {"type": "string"},
                         },
                         "required": ["name", "purpose"],
                     },
@@ -349,8 +350,9 @@ STEP 2 — MAP THE ROLES
     • Who they are trusted by and to what degree
 
 STEP 3 — EXTERNAL PROTOCOLS
-  List every third-party protocol this codebase calls into (DEXes, Lending pools, Oracles, Bridges).
-  For each: specify which interface is called and what data flows across that boundary.
+  For each protocol: specify which interface is called, what data flows
+  across that boundary, AND the version in use (check import paths,
+  git modules in ./lib or foundry.toml dependencies for pinned versions).
 
 STEP 4 — TOKENS
   List every token standard and every named token the protocol handles (ERC20, ERC721, native ETH).
@@ -399,7 +401,8 @@ FINDINGS FORMAT  (pass to submit_findings)
 
   "external_protocols": [
     {{
-      "name": "Uniswap V3",
+      "name": "Uniswap",
+      "version": "v3", 
       "purpose": "Used to swap collateral token for USDC during liquidations via ISwapRouter"
     }}
   ],
