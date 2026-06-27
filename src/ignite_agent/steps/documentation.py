@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 
 from ignite_agent.debug_logger import DebugLogger
 from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.steps.base import BaseStep
 from ignite_agent.tools import dispatch
-
 
 def _generate_repo_tree(repo_path: str) -> str:
     root = Path(repo_path)
@@ -108,6 +108,9 @@ def _run_all_prints(
     ]
 
 
+def _strip_ansi(text: str) -> str:
+    return re.sub(r'\x1b\[[0-9;]*m', '', text)
+
 def _run_surya_describe(
     project_path: str,
     window: RollingWindow,
@@ -119,7 +122,7 @@ def _run_surya_describe(
         {
             "command": (
                 f"cd '{project_path}' && "
-                "surya describe ./src/**/*.sol 2>/dev/null "
+                "find ./src -name '*.sol' | xargs surya describe 2>/dev/null "
                 "|| echo 'surya unavailable or no .sol files under src/'"
             )
         },
@@ -128,7 +131,7 @@ def _run_surya_describe(
         search_state=None,
         debug_logger=debug_logger,
     )
-    output = (result.stdout or "").strip() or "(surya describe produced no output)"
+    output = _strip_ansi((result.stdout or "").strip()) or "(surya describe produced no output)"
     if len(output) > max_chars:
         output = output[:max_chars] + "\n…(truncated)"
     return output

@@ -14,7 +14,6 @@ class FinalReportStep(BaseStep):
         return global_context
 
     def findings_schema(self) -> dict:
-        """Defines the strict JSON Schema for consolidating and triaging findings into the final report."""
         return {
             "type": "object",
             "properties": {
