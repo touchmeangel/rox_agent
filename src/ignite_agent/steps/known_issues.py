@@ -68,7 +68,7 @@ class KnownIssuesStep(BaseStep):
     def select_context(self, global_context: dict) -> dict:
         return {
             "documentation": global_context.get("documentation", {}),
-            "fork_analysis":  global_context.get("fork_analysis", {}),
+            "fork_analysis": global_context.get("fork_analysis", {}),
         }
 
     def findings_schema(self) -> dict:
@@ -81,26 +81,36 @@ class KnownIssuesStep(BaseStep):
                         "type": "object",
                         "properties": {
                             "protocol": {"type": "string"},
-                            "version":  {"type": "string"},
+                            "version": {"type": "string"},
                             "known_issues": {
                                 "type": "array",
                                 "items": {
                                     "type": "object",
                                     "properties": {
-                                        "id":          {"type": "string"},
-                                        "source":      {"type": "string"},
-                                        "title":       {"type": "string"},
+                                        "id": {"type": "string"},
+                                        "source": {"type": "string"},
+                                        "title": {"type": "string"},
                                         "description": {"type": "string"},
                                         "severity": {
                                             "type": "string",
-                                            "enum": ["critical", "high", "medium", "low", "informational"],
+                                            "enum": [
+                                                "critical",
+                                                "high",
+                                                "medium",
+                                                "low",
+                                                "informational",
+                                            ],
                                         },
-                                        "check":      {"type": "string"},
+                                        "check": {"type": "string"},
                                         "applies_if": {"type": "string"},
                                     },
                                     "required": [
-                                        "id", "source", "title",
-                                        "description", "severity", "check",
+                                        "id",
+                                        "source",
+                                        "title",
+                                        "description",
+                                        "severity",
+                                        "check",
                                     ],
                                 },
                             },
@@ -123,41 +133,47 @@ class KnownIssuesStep(BaseStep):
     def initial_prompt(
         self, context: dict, window: RollingWindow, debug_logger: DebugLogger
     ) -> str:
-        doc_findings  = context.get("documentation", {}).get("findings", {})
-        fork_findings = context.get("fork_analysis",  {}).get("findings", {})
+        doc_findings = context.get("documentation", {}).get("findings", {})
+        fork_findings = context.get("fork_analysis", {}).get("findings", {})
 
-        protocol_summary   = doc_findings.get("protocol_summary", "(none)")
+        protocol_summary = doc_findings.get("protocol_summary", "(none)")
         external_protocols = doc_findings.get("external_protocols", [])
 
         targets: list[ProtocolTarget] = []
 
         if fork_findings.get("is_fork") and fork_findings.get("upstream"):
             upstream = fork_findings["upstream"]
-            targets.append(ProtocolTarget(
-                name=upstream.get("protocol", ""),
-                purpose=f"This codebase is a fork of this protocol (base commit {upstream.get('base_commit', '?')})",
-                version="",
-                is_fork_upstream=True,
-            ))
+            targets.append(
+                ProtocolTarget(
+                    name=upstream.get("protocol", ""),
+                    purpose=f"This codebase is a fork of this protocol (base commit {upstream.get('base_commit', '?')})",
+                    version="",
+                    is_fork_upstream=True,
+                )
+            )
 
         for p in external_protocols:
             name = p.get("name", "").strip()
             if not name:
                 continue
-            targets.append(ProtocolTarget(
-                name=name,
-                purpose=p.get("purpose", ""),
-                version=p.get("version", ""),
-                is_fork_upstream=False,
-            ))
+            targets.append(
+                ProtocolTarget(
+                    name=name,
+                    purpose=p.get("purpose", ""),
+                    version=p.get("version", ""),
+                    is_fork_upstream=False,
+                )
+            )
 
         if not targets:
             targets_section = "(no external protocols identified in documentation step)"
-            prefetch_note   = ""
+            prefetch_note = ""
         else:
             search_state = SearchState(max_calls=len(targets) * 2)
             for t in targets:
-                _prefetch_protocol(t, self.project_path, window, debug_logger, search_state)
+                _prefetch_protocol(
+                    t, self.project_path, window, debug_logger, search_state
+                )
 
             targets_section = "\n\n────────────────────────────────────\n\n".join(
                 _fmt_target(t) for t in targets

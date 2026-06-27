@@ -402,7 +402,7 @@ FINDINGS FORMAT  (pass to submit_findings)
   "external_protocols": [
     {{
       "name": "Uniswap",
-      "version": "v3", 
+      "version": "v3",
       "purpose": "Used to swap collateral token for USDC during liquidations via ISwapRouter"
     }}
   ],
