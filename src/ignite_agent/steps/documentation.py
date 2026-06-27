@@ -109,20 +109,19 @@ def _run_all_prints(
     ]
 
 
-def _run_architecture_graph(
+def _run_surya_describe(
     project_path: str,
     window: RollingWindow,
     debug_logger: DebugLogger,
+    max_chars: int = 4_000,
 ) -> str:
     result = dispatch(
         "shell",
         {
             "command": (
                 f"cd '{project_path}' && "
-                "surya graph ./src/**/*.sol 2>/dev/null "
-                "| dot -Tpng -o architecture_graph.png "
-                "&& echo 'saved: architecture_graph.png' "
-                "|| echo 'surya/graphviz unavailable or no .sol files under src/'"
+                "surya describe ./src/**/*.sol 2>/dev/null "
+                "|| echo 'surya unavailable or no .sol files under src/'"
             )
         },
         project_path,
@@ -130,7 +129,10 @@ def _run_architecture_graph(
         search_state=None,
         debug_logger=debug_logger,
     )
-    return (result.stdout or "").strip() or "(surya graph produced no output)"
+    output = (result.stdout or "").strip() or "(surya describe produced no output)"
+    if len(output) > max_chars:
+        output = output[:max_chars] + "\n…(truncated)"
+    return output
 
 
 class DocumentationStep(BaseStep):
@@ -231,7 +233,7 @@ class DocumentationStep(BaseStep):
         self, context: dict, window: RollingWindow, debug_logger: DebugLogger
     ) -> str:
         repo_map = _generate_repo_tree(self.github_repo_path)
-        graph_msg = _run_architecture_graph(self.project_path, window, debug_logger)
+        surya_table = _run_surya_describe(self.project_path, window, debug_logger)
         prints = _run_all_prints(self.project_path, window, debug_logger)
         prints_section = "\n\n".join(r.render() for r in prints)
 
@@ -239,7 +241,6 @@ class DocumentationStep(BaseStep):
 
 Repository Location:                      {self.github_repo_path}
 Project (Tooling setup executes here):    {self.project_path}
-Architecture graph generation status:     {graph_msg}
 
 ════════════════════════════════════════
 REPOSITORY STRUCTURE MAP
@@ -248,6 +249,14 @@ Use this map to discover documentation files, build configs, and source director
 You must use your tools (`read_file` or `shell`) to read files directly.
 
 {repo_map}
+
+════════════════════════════════════════
+SURYA — FUNCTION VISIBILITY TABLE
+════════════════════════════════════════
+Contract-level breakdown of every function: name, visibility, mutability, and modifiers.
+Use this to quickly identify privileged entry-points and state-mutating functions.
+
+{surya_table}
 
 ════════════════════════════════════════
 SLITHER ARCHITECTURE ANALYSIS  (pre-run)
@@ -276,6 +285,8 @@ STEP 1 — UNDERSTAND THE PROTOCOL
 STEP 2 — MAP THE ROLES
   Identify every actor in the system from docs AND from access-control patterns
   in the source (modifiers, require(msg.sender == …), role constants, etc.).
+  Cross-reference the Surya visibility table above to find privileged functions (onlyOwner,
+  onlyRole, etc.) that confirm or extend what docs describe.
   For each role document:
     • What they can do  (powers)
     • What they are prevented from doing  (restrictions)
