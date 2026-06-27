@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
-import shutil
 
 from rich import box
 from rich.console import Console, Group
@@ -99,8 +99,10 @@ def parse_args():
     )
     return parser.parse_args()
 
+
 def _copy_repo_to_workspace(repo_path: str, work_path: str) -> None:
     shutil.copytree(repo_path, work_path, dirs_exist_ok=True)
+
 
 def run_agent(
     repo_path: str,
@@ -116,10 +118,12 @@ def run_agent(
     console.print(f"\n[{color}]●[/{color}] [bold white]Syncing workspace[/bold white]")
     try:
         _copy_repo_to_workspace(repo_path, work_path)
-        console.print(f"  [dim]⎿[/dim]  [green]✓[/green]  [dim]{repo_path} → {work_path}[/dim]")
+        console.print(
+            f"  [dim]⎿[/dim]  [green]✓[/green]  [dim]{repo_path} → {work_path}[/dim]"
+        )
     except Exception as e:
         console.print(f"  [dim]⎿[/dim]  [red]✗[/red]  [dim]{e}[/dim]")
-        raise SystemExit(1)
+        raise SystemExit(1) from None
 
     context: dict = {}
     results: dict[str, StepResult] = {}
