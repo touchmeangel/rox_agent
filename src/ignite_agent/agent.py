@@ -37,9 +37,10 @@ def print_welcome_banner():
     )
 
     models_table = Table.grid(padding=(0, 2))
-    models_table.add_column()
-    models_table.add_column(style="dim")
-    models_table.add_column(style="dim")
+    
+    models_table.add_column(no_wrap=True)
+    models_table.add_column(style="dim", no_wrap=True)
+    models_table.add_column(style="dim", no_wrap=True)
     
     for key, cfg_list in MODELS.items():
         if not cfg_list:
