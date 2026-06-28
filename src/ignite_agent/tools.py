@@ -31,30 +31,31 @@ _STREAM_SUFFIX = _RST
 def _tool_display(tool_name: str, tool_input: dict) -> str:
     match tool_name:
         case "slither":
-            return f"slither {tool_input.get('flags', './')}"
+            display = f"slither {tool_input.get('flags', './')}"
         case "aderyn":
-            return f"aderyn {tool_input.get('flags', '') or '.'}"
+            display = f"aderyn {tool_input.get('flags', '') or '.'}"
         case "myth":
-            return f"myth {tool_input.get('flags', '') or 'analyze ./'}"
+            display = f"myth {tool_input.get('flags', '') or 'analyze ./'}"
         case "forge":
-            return f"forge {tool_input.get('subcommand', 'build')}"
+            display = f"forge {tool_input.get('subcommand', 'build')}"
         case "cast":
-            return f"cast {tool_input.get('subcommand', '')}"
+            display = f"cast {tool_input.get('subcommand', '')}"
         case "git":
-            return f"git {tool_input.get('args', 'log --oneline -10')}"
+            display = f"git {tool_input.get('args', 'log --oneline -10')}"
         case "read_file":
-            return f"cat {tool_input.get('path', '')}"
+            display = f"cat {tool_input.get('path', '')}"
         case "list_sol_files":
-            return f"find . -name '{tool_input.get('pattern', '**/*.sol')}'"
+            display = f"find . -name '{tool_input.get('pattern', '**/*.sol')}'"
         case "shell":
             cmd = tool_input.get("command", "")
-            return cmd[:120] + ("…" if len(cmd) > 120 else "")
+            display = cmd[:120] + ("…" if len(cmd) > 120 else "")
         case "web_search":
-            return f"web_search  \"{tool_input.get('query', '')}\""
+            display = f"web_search  \"{tool_input.get('query', '')}\""
         case "web_fetch":
-            return f"web_fetch  {tool_input.get('url', '')}"
+            display = f"web_fetch  {tool_input.get('url', '')}"
         case _:
-            return f"{tool_name}  {tool_input}"
+            display = f"{tool_name}  {tool_input}"
+    return display.replace("\r", "").replace("\n", " ")
 
 
 def _elapsed_str(seconds: float) -> str:
@@ -151,7 +152,7 @@ def _stream_subprocess(
             for line in iter(pipe.readline, ""):
                 sink.append(line)
                 with lock:
-                    display = line.rstrip("\n")
+                    display = line.rstrip("\r\n")
                     if display:
                         window.feed(f"{line_prefix}{display}{line_suffix}\n")
         finally:
@@ -646,7 +647,11 @@ def _summary(result: ToolResult, elapsed: float = 0.0) -> str:
         snippet = next(
             (line.strip() for line in raw.splitlines() if line.strip()), ""
         )
-        snippet_str = f"  [dim]·  {snippet[:72]}[/dim]" if snippet and total < 400 else ""
+        if snippet and total < 400:
+            safe_snippet = snippet[:72].replace("[", r"\[")
+            snippet_str = f"  [dim]·  {safe_snippet}[/dim]"
+        else:
+            snippet_str = ""
         return f"[green]✓[/green]  {size}{time_}{snippet_str}"
 
     return f"[red]✗[/red]  exit {result.returncode}  {size}{time_}"
