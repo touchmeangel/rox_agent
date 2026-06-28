@@ -40,10 +40,22 @@ def print_welcome_banner():
     models_table.add_column()
     models_table.add_column(style="dim")
     models_table.add_column(style="dim")
-    for key, cfg in MODELS.items():
+    
+    for key, cfg_list in MODELS.items():
+        if not cfg_list:
+            continue
+            
+        primary = cfg_list[0]
         models_table.add_row(
-            f"[{color}]{key}[/{color}]", cfg.model, f"({cfg.provider})"
+            f"[{color}]{key}[/{color}]", primary.model, f"({primary.provider})"
         )
+        
+        for fallback in cfg_list[1:]:
+            models_table.add_row(
+                "",
+                f"[dim]⎿  {fallback.model}[/dim]", 
+                f"[dim]({fallback.provider})[/dim]"
+            )
 
     footer = Text.from_markup(
         f"\n[dim underline link={REPO_URL}]{REPO_URL.removeprefix('https://')}[/]\n"
