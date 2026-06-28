@@ -347,11 +347,9 @@ class LLMClient:
             for tc in tool_calls
         ]
 
-        raw_assistant_message = {
-            "role": "assistant",
-            "content": text or None,
-            "tool_calls": raw_tool_calls or None,
-        }
+        raw_assistant_message: dict = {"role": "assistant", "content": text or ""}
+        if raw_tool_calls:
+            raw_assistant_message["tool_calls"] = raw_tool_calls
 
         reasoning_joined = "".join(reasoning_parts)
         return AssistantTurn(
@@ -421,7 +419,12 @@ def _to_openai_messages(messages: list[dict], system: str) -> list[dict]:
             out.append({"role": "user", "content": entry["content"]})
         elif role == "assistant":
             if entry.get("raw") is not None:
-                out.append(entry["raw"])
+                raw = dict(entry["raw"])
+                if raw.get("tool_calls") is None:
+                    raw.pop("tool_calls", None)
+                if raw.get("content") is None:
+                    raw["content"] = ""
+                out.append(raw)
             else:
                 tool_calls = [
                     {
