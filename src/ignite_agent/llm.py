@@ -11,11 +11,24 @@ from ignite_agent.tool_call_parser import ToolCall, parse_text_tool_calls
 
 _INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14"
 
-_ANSI_DIM_CYAN = "\033[2;36m"
-_ANSI_RESET = "\033[0m"
-_THINKING_OPEN = f"{_ANSI_DIM_CYAN}\n┌─ Thinking ─────────────────────────\n│ "
-_THINKING_LINE = "│ "
-_THINKING_CLOSE = f"\n└────────────────────────────────────{_ANSI_RESET}\n\n"
+_RST      = "\033[0m"
+_DIM      = "\033[2m"
+_DIM_CYAN = "\033[2;36m"
+_BOX_W    = 52
+
+_THINKING_LINE = f"{_DIM_CYAN}│{_RST}{_DIM} "
+
+_THINKING_OPEN = (
+    f"\n{_DIM_CYAN}"
+    f"╭─ thinking {'─' * (_BOX_W - 13)}╮\n"
+) + _THINKING_LINE
+
+def _thinking_close(char_count: int = 0) -> str:
+    if char_count > 0:
+        tag = f" {char_count:,} chars "
+        dashes = max(2, _BOX_W - 2 - len(tag))
+        return f"{_RST}\n{_DIM_CYAN}╰{'─' * dashes}{tag}╯{_RST}\n\n"
+    return f"{_RST}\n{_DIM_CYAN}╰{'─' * (_BOX_W - 2)}╯{_RST}\n\n"
 
 
 @dataclass
@@ -169,21 +182,14 @@ class LLMClient:
 
                 if event.type == "content_block_start":
                     current_block_type = getattr(event.content_block, "type", None)
-                    if (
-                        current_block_type == "thinking"
-                        and show_thinking
-                        and window is not None
-                    ):
+                    if current_block_type == "thinking" and show_thinking and window is not None:
                         window.feed(_THINKING_OPEN)
                     continue
 
                 if event.type == "content_block_stop":
-                    if (
-                        current_block_type == "thinking"
-                        and show_thinking
-                        and window is not None
-                    ):
-                        window.feed(_THINKING_CLOSE)
+                    if current_block_type == "thinking" and show_thinking and window is not None:
+                        char_count = sum(len(p) for p in thinking_parts)
+                        window.feed(_thinking_close(char_count))
                     current_block_type = None
                     continue
 
@@ -236,7 +242,7 @@ class LLMClient:
             kwargs["base_url"] = base_url
         client = OpenAI(**kwargs)
 
-        kwargs: dict = {
+        call_kwargs: dict = {
             "model": self.cfg.model,
             "messages": _to_openai_messages(messages, system),
             "tools": _to_openai_tools(tools),
@@ -246,12 +252,12 @@ class LLMClient:
         }
 
         if self.cfg.temperature:
-            kwargs["temperatue"] = self.cfg.temperature
+            call_kwargs["temperature"] = self.cfg.temperature
 
         if self.cfg.reasoning_effort:
-            kwargs["reasoning_effort"] = self.cfg.reasoning_effort
+            call_kwargs["reasoning_effort"] = self.cfg.reasoning_effort
 
-        stream = client.chat.completions.create(**kwargs)
+        stream = client.chat.completions.create(**call_kwargs)
 
         text_parts: list[str] = []
         reasoning_parts: list[str] = []
@@ -285,7 +291,8 @@ class LLMClient:
 
             if delta.content:
                 if thinking_box_open and show_thinking and window is not None:
-                    window.feed(_THINKING_CLOSE)
+                    char_count = sum(len(p) for p in reasoning_parts)
+                    window.feed(_thinking_close(char_count))
                     thinking_box_open = False
                 text_parts.append(delta.content)
                 if window is not None:
@@ -304,7 +311,8 @@ class LLMClient:
                         slot["arguments"] += tc_delta.function.arguments
 
         if thinking_box_open and show_thinking and window is not None:
-            window.feed(_THINKING_CLOSE)
+            char_count = sum(len(p) for p in reasoning_parts)
+            window.feed(_thinking_close(char_count))
 
         tool_calls: list[ToolCall] = []
         for idx in sorted(tool_call_slots):
@@ -369,8 +377,6 @@ def _to_anthropic_messages(messages: list[dict]) -> list[dict]:
             )
         elif role == "assistant":
             if entry.get("raw") is not None:
-                # raw already contains thinking blocks; pass through verbatim
-                # so the Anthropic API receives them on multi-turn replays.
                 out.append({"role": "assistant", "content": entry["raw"]})
             else:
                 blocks: list[dict] = []

@@ -20,6 +20,51 @@ from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.search_state import SearchState
 from ignite_agent.tool_result import ToolResult
 
+_RST      = "\033[0m"
+_DIM      = "\033[2m"
+_DIM_CYAN = "\033[2;36m"
+
+_STREAM_PREFIX = f"  {_DIM}"
+_STREAM_SUFFIX = _RST
+
+
+def _tool_display(tool_name: str, tool_input: dict) -> str:
+    match tool_name:
+        case "slither":
+            return f"slither {tool_input.get('flags', './')}"
+        case "aderyn":
+            return f"aderyn {tool_input.get('flags', '') or '.'}"
+        case "myth":
+            return f"myth {tool_input.get('flags', '') or 'analyze ./'}"
+        case "forge":
+            return f"forge {tool_input.get('subcommand', 'build')}"
+        case "cast":
+            return f"cast {tool_input.get('subcommand', '')}"
+        case "git":
+            return f"git {tool_input.get('args', 'log --oneline -10')}"
+        case "read_file":
+            return f"cat {tool_input.get('path', '')}"
+        case "list_sol_files":
+            return f"find . -name '{tool_input.get('pattern', '**/*.sol')}'"
+        case "shell":
+            cmd = tool_input.get("command", "")
+            return cmd[:120] + ("…" if len(cmd) > 120 else "")
+        case "web_search":
+            return f"web_search  \"{tool_input.get('query', '')}\""
+        case "web_fetch":
+            return f"web_fetch  {tool_input.get('url', '')}"
+        case _:
+            return f"{tool_name}  {tool_input}"
+
+
+def _elapsed_str(seconds: float) -> str:
+    if seconds < 0.1:
+        return ""
+    if seconds < 60:
+        return f"  {_DIM}{seconds:.1f}s{_RST}"
+    m, s = divmod(int(seconds), 60)
+    return f"  {_DIM}{m}m{s:02d}s{_RST}"
+
 
 def _smart_process_output(
     stdout: str, tool_name: str, project_path: str, limit: int
@@ -33,7 +78,6 @@ def _smart_process_output(
         data = json.loads(stdout)
         log_file = f".ignite_{tool_name}_{run_hash}.json"
         log_path = Path(project_path) / log_file
-
         log_path.write_text(stdout, encoding="utf-8")
 
         summary_data = {}
@@ -53,14 +97,11 @@ def _smart_process_output(
             summary_data = data
 
         summary_str = json.dumps(summary_data, indent=2)
-
         prompt_msg = (
             f"[SYSTEM: Massive JSON output intercepted ({len(stdout)} chars).]\n"
             f"[Full raw JSON saved to '{log_file}'. Use `shell` with `jq` to query the full file if needed.]\n"
-            f"[Preview below:]\n\n"
-            f"{summary_str}"
+            f"[Preview below:]\n\n{summary_str}"
         )
-
         return _truncate(prompt_msg, limit, "json_summary")
     except json.JSONDecodeError:
         pass
@@ -75,11 +116,11 @@ def _smart_process_output(
 
     prompt_msg = (
         f"[SYSTEM: Output exceeded context limits ({len(stdout)} chars). Full output saved to '{log_file}'.]\n"
-        f"[Do NOT repeat this exact command. Use the `shell` tool with `rg` (ripgrep) to search '{log_file}', or `tail` to view specific errors.]\n\n"
-        f"--- PREVIEW (First {preview_size} chars) ---\n{head}\n"
+        f"[Do NOT repeat this exact command. Use `shell` with `rg` to search '{log_file}', or `tail` to view specific errors.]\n\n"
+        f"--- PREVIEW (first {preview_size} chars) ---\n{head}\n"
     )
     if tail:
-        prompt_msg += f"\n--- TAIL (Last {preview_size} chars) ---\n{tail}\n"
+        prompt_msg += f"\n--- TAIL (last {preview_size} chars) ---\n{tail}\n"
 
     return prompt_msg
 
@@ -89,8 +130,10 @@ def _stream_subprocess(
     cwd: str,
     timeout: int,
     window: RollingWindow,
+    line_prefix: str = _STREAM_PREFIX,
+    line_suffix: str = _STREAM_SUFFIX,
 ) -> tuple[str, str, int]:
-    proc = subprocess.Popen(  # noqa: S603, isolated docker environment
+    proc = subprocess.Popen(  # noqa: S603 — isolated docker environment
         args,
         cwd=cwd,
         stdout=subprocess.PIPE,
@@ -108,7 +151,9 @@ def _stream_subprocess(
             for line in iter(pipe.readline, ""):
                 sink.append(line)
                 with lock:
-                    window.feed(line)
+                    display = line.rstrip("\n")
+                    if display:
+                        window.feed(f"{line_prefix}{display}{line_suffix}\n")
         finally:
             pipe.close()
 
@@ -147,7 +192,7 @@ def run_command(
             stdout, stderr, returncode = _stream_subprocess(args, cwd, timeout, window)
             return ToolResult(command, stdout, stderr, returncode)
 
-        result = subprocess.run(  # noqa: S603 isolated docker container
+        result = subprocess.run(  # noqa: S603 — isolated docker container
             args,
             shell=False,
             cwd=cwd,
@@ -168,12 +213,10 @@ def slither(
     result = run_command(
         f"slither {args}", cwd=project_path, timeout=240, window=window
     )
-
     if not result.success:
         data = result.json_data()
         if isinstance(data, dict) and data.get("success") is True:
             return ToolResult(result.command, result.stdout, result.stderr, 0)
-
     return result
 
 
@@ -294,7 +337,6 @@ def web_search(query: str, max_results: int = 5) -> ToolResult:
 
 
 def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
-    """Fetch a URL and return its readable text content (tags stripped)."""
     url = url.strip()
     label = f"web_fetch {url}"
 
@@ -308,21 +350,18 @@ def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
             1,
         )
 
-    req = urllib.request.Request(  # noqa: S310 - allowlist above
+    req = urllib.request.Request(  # noqa: S310 — allowlist above
         url, headers={"User-Agent": "Mozilla/5.0 (compatible; ignite-agent/1.0)"}
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310 - allowlist above
+        with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310
             raw = resp.read()
             charset = resp.headers.get_content_charset() or "utf-8"
             html_text = raw.decode(charset, errors="replace")
     except urllib.error.HTTPError as exc:
         return ToolResult(
-            label,
-            "",
-            f"HTTP {exc.code} fetching {url} — try a web_search instead of guessing a different URL.",
-            1,
+            label, "", f"HTTP {exc.code} fetching {url} — try a web_search instead.", 1
         )
     except urllib.error.URLError as exc:
         return ToolResult(label, "", f"Network error: {exc.reason}", 1)
@@ -341,7 +380,7 @@ def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
     note = ""
     if len(text) > max_chars:
         text = text[:max_chars]
-        note = f"\n\n... [truncated to {max_chars} chars — fetch a narrower URL/section if you need more]"
+        note = f"\n\n... [truncated to {max_chars} chars]"
 
     return ToolResult(label, text + note, "", 0)
 
@@ -445,25 +484,21 @@ TOOL_SPECS: list[dict] = [
     {
         "name": "cast",
         "description": (
-            "Foundry's Swiss-army knife for EVM data operations. Use this instead of shell "
-            "for anything involving ABIs, selectors, calldata, or on-chain reads.\n\n"
+            "Foundry's Swiss-army knife for EVM data operations.\n\n"
             "Most useful operations:\n"
             "  cast 4byte <selector>                  — reverse-lookup a function selector\n"
             "  cast sig 'transfer(address,uint256)'   — compute a function selector\n"
-            "  cast abi-decode 'func(uint,addr)' <hex>  — decode calldata or return data\n"
+            "  cast abi-decode 'func(uint,addr)' <hex>  — decode calldata\n"
             "  cast abi-encode 'func(uint,addr)' 1 0x.. — encode a call\n"
             "  cast disassemble <bytecode-hex>        — disassemble EVM bytecode\n"
-            "  cast storage <addr> <slot> --rpc-url <url>  — read a storage slot on-chain\n"
-            "  cast call <addr> 'balanceOf(address)' <arg> --rpc-url <url>  — call a view fn\n"
-            "  cast keccak 'Transfer(address,address,uint256)'  — compute a topic hash\n\n"
-            "For on-chain reads, you need --rpc-url. Use --rpc-url $RPC_URL if the env var is set."
+            "  cast keccak 'Transfer(address,address,uint256)'  — compute a topic hash"
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "subcommand": {
                     "type": "string",
-                    "description": "Full cast invocation after 'cast', e.g. '4byte 0xa9059cbb' or 'sig \"transfer(address,uint256)\"'.",
+                    "description": "Full cast invocation after 'cast', e.g. '4byte 0xa9059cbb'.",
                 }
             },
             "required": ["subcommand"],
@@ -517,20 +552,18 @@ TOOL_SPECS: list[dict] = [
     {
         "name": "shell",
         "description": (
-            "Run an arbitrary shell command for anything the other tools don't cover. "
-            "Prefer the dedicated tools (slither/aderyn/myth/forge/cast/git/read_file) "
-            "when they fit — reach for shell when you genuinely need composition.\n\n"
-            "Available utilities beyond the standard toolbox:\n"
-            "  rg <pattern> [path]     — fast ripgrep; use instead of grep for multi-file search\n"
-            "  fd <pattern> [path]     — fast find with cleaner syntax\n"
-            "  jq <filter>             — JSON processing for tool output\n"
-            "  cloc [path]             — count lines of code to scope a codebase\n"
-            "  tree [path]             — directory structure at a glance\n"
-            "  xxd <file>              — hex dump for bytecode inspection\n"
-            "  strings <file>          — extract printable strings from binaries\n"
-            "  solhint [path]          — Solidity linter for style/best-practice issues\n"
-            "  node -e '<js>'          — quick JS evaluation (keccak, ABI, hex conversions)\n"
-            "  solc-select use <ver>   — switch compiler version if the project needs it"
+            "Run an arbitrary shell command for anything the other tools don't cover.\n\n"
+            "Available utilities:\n"
+            "  rg <pattern> [path]     — fast ripgrep\n"
+            "  fd <pattern> [path]     — fast find\n"
+            "  jq <filter>             — JSON processing\n"
+            "  cloc [path]             — count lines of code\n"
+            "  tree [path]             — directory structure\n"
+            "  xxd <file>              — hex dump\n"
+            "  strings <file>          — extract printable strings\n"
+            "  solhint [path]          — Solidity linter\n"
+            "  node -e '<js>'          — quick JS evaluation\n"
+            "  solc-select use <ver>   — switch compiler version"
         ),
         "input_schema": {
             "type": "object",
@@ -545,16 +578,11 @@ TOOL_SPECS: list[dict] = [
     },
     {
         "name": "web_search",
-        "description": (
-            "Search the web for security-relevant information you don't have locally."
-        ),
+        "description": "Search the web for security-relevant information you don't have locally.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "3-6 word query.",
-                },
+                "query": {"type": "string", "description": "3-6 word query."},
                 "max_results": {
                     "type": "integer",
                     "description": "Number of results to return.",
@@ -606,23 +634,22 @@ _STDOUT_LIMITS: dict[str, int] = {
 _DEFAULT_STDOUT_LIMIT = 10_000
 
 
-def _summary(result: ToolResult) -> str:
+def _summary(result: ToolResult, elapsed: float = 0.0) -> str:
     total = len(result.stdout) + len(result.stderr)
-    size = f"{total / 1024:.1f} KB" if total >= 1024 else f"{total} B"
+    size  = f"{total / 1024:.1f} KB" if total >= 1024 else f"{total} B"
+    time_ = _elapsed_str(elapsed)
 
     if result.success:
         if total == 0:
-            return "[green]✓[/green]  (no output)"
-        if total < 400:
-            raw = result.stdout if result.stdout else result.stderr
-            snippet = next(
-                (line.strip() for line in raw.splitlines() if line.strip()), ""
-            )
-            if snippet:
-                return f"[green]✓[/green]  {size}  [dim]·  {snippet[:72]}[/dim]"
-        return f"[green]✓[/green]  {size}"
+            return f"[green]✓[/green]{time_}"
+        raw = result.stdout if result.stdout else result.stderr
+        snippet = next(
+            (line.strip() for line in raw.splitlines() if line.strip()), ""
+        )
+        snippet_str = f"  [dim]·  {snippet[:72]}[/dim]" if snippet and total < 400 else ""
+        return f"[green]✓[/green]  {size}{time_}{snippet_str}"
 
-    return f"[red]✗[/red]  exit {result.returncode}  {size}"
+    return f"[red]✗[/red]  exit {result.returncode}  {size}{time_}"
 
 
 def dispatch(
@@ -641,9 +668,12 @@ def dispatch(
         window.__enter__()
 
     args_repr = ", ".join(f"{k}={v!r}" for k, v in tool_input.items())
+    cmd_display = _tool_display(tool_name, tool_input)
 
     try:
-        window.feed(f"⎿  {tool_name}  {args_repr}\n")
+        window.feed(f"\n{_DIM_CYAN}$ {_RST}{cmd_display}\n")
+
+        t0 = time.monotonic()
 
         match tool_name:
             case "slither":
@@ -696,6 +726,7 @@ def dispatch(
             case "web_search":
                 query = tool_input.get("query", "")
                 max_results = tool_input.get("max_results", 5)
+                window.start_spinner("Searching…")
                 result = (
                     search_state.consume(
                         "web_search", query, lambda: web_search(query, max_results)
@@ -703,13 +734,16 @@ def dispatch(
                     if search_state is not None
                     else web_search(query, max_results)
                 )
+                window.stop_spinner()
             case "web_fetch":
                 url = tool_input.get("url", "")
+                window.start_spinner("Fetching…")
                 result = (
                     search_state.consume("web_fetch", url, lambda: web_fetch(url))
                     if search_state is not None
                     else web_fetch(url)
                 )
+                window.stop_spinner()
             case _:
                 result = ToolResult(
                     tool_name,
@@ -717,6 +751,8 @@ def dispatch(
                     f"Unknown tool '{tool_name}'. Available: {sorted(DISPATCHABLE_TOOL_NAMES)}",
                     1,
                 )
+
+        elapsed = time.monotonic() - t0
 
         stdout_limit = _STDOUT_LIMITS.get(tool_name, _DEFAULT_STDOUT_LIMIT)
         smart_stdout = _smart_process_output(
@@ -733,7 +769,8 @@ def dispatch(
         )
 
         debug_logger.log(tool_name, args_repr, result)
-        window.feed(f"\n   {_summary(result)}\n")
+        window.feed(f"  {_summary(result, elapsed)}\n")
+
     finally:
         if owns_window:
             window.__exit__(None, None, None)
