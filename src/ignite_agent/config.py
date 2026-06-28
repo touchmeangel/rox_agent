@@ -35,17 +35,20 @@ class ModelConfig:
     temperature: float | None = None
     reasoning_effort: str | None = None
     base_url: str | None = None
-    api_key_env: str | None = None  # Explicit environment target tracking
-
+    api_key_env: str | None = None
 
 _raw = _load_raw()
 _models = _raw.get("models", {})
 _task_routing = _raw.get("task_routing", {})
 
-MODELS: dict[str, ModelConfig] = {}
+MODELS: dict[str, list[ModelConfig]] = {}
 valid_fields = {f.name for f in dataclasses.fields(ModelConfig)}
 
 for key, val in _task_routing.items():
-    raw_model_dict = _models.get(val, {})
-    filtered_dict = {k: v for k, v in raw_model_dict.items() if k in valid_fields}
-    MODELS[key] = ModelConfig(**filtered_dict)
+    model_keys = [val] if isinstance(val, str) else val
+    chain = []
+    for mk in model_keys:
+        raw_model_dict = _models.get(mk, {})
+        filtered_dict = {k: v for k, v in raw_model_dict.items() if k in valid_fields}
+        chain.append(ModelConfig(**filtered_dict))
+    MODELS[key] = chain

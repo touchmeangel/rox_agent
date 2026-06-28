@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from ignite_agent.debug_logger import DebugLogger, default_debug_logger
 from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.tool_call_parser import ToolCall, parse_text_tool_calls
+from ignite_agent.config import ModelConfig
 
 _INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14"
 
@@ -31,6 +32,27 @@ def _thinking_close(char_count: int = 0) -> str:
     return f"{_RST}\n{_DIM_CYAN}╰{'─' * (_BOX_W - 2)}╯{_RST}\n\n"
 
 
+def _is_transient(exc: Exception) -> bool:
+    # import openai as _openai_mod
+    # import anthropic as _anthropic_mod
+    # try:
+    #     if isinstance(exc, _openai_mod.RateLimitError):      return True
+    #     if isinstance(exc, _openai_mod.APIConnectionError):  return True
+    #     if isinstance(exc, _openai_mod.InternalServerError): return True
+    #     if isinstance(exc, _openai_mod.BadRequestError): return True
+    # except Exception:
+    #     pass
+    # try:
+    #     if isinstance(exc, _anthropic_mod.RateLimitError):      return True
+    #     if isinstance(exc, _anthropic_mod.APIConnectionError):  return True
+    #     if isinstance(exc, _anthropic_mod.InternalServerError): return True
+    # except Exception:
+    #     pass
+    # if isinstance(exc, (ConnectionError, TimeoutError, OSError)):
+    #     return True
+    # Each provider handle them differently so it would be a headache
+    return True
+
 @dataclass
 class ToolResultEntry:
     tool_call_id: str
@@ -51,15 +73,18 @@ class AssistantTurn:
 class LLMClient:
     def __init__(self, model_key: str):
         from ignite_agent.config import MODELS
-
         if model_key not in MODELS:
             raise ValueError(f"Unknown model key '{model_key}'.")
-        self.cfg = MODELS[model_key]
-        self.thinking_budget: int | None = getattr(self.cfg, "thinking_budget", None)
+        self.chain: list[ModelConfig] = MODELS[model_key]
+
+    @staticmethod
+    def thinking_budget(cfg: ModelConfig) -> int | None:
+        return getattr(cfg, "thinking_budget", None)
 
     @property
-    def thinking_enabled(self) -> bool:
-        return bool(self.thinking_budget)
+    def cfg(self) -> ModelConfig:
+        return self.chain[0]
+    
 
     def chat_with_tools(
         self,
@@ -73,79 +98,76 @@ class LLMClient:
         show_thinking: bool = False,
     ) -> AssistantTurn:
         debug_logger = debug_logger or default_debug_logger
+        last_exc: Exception | None = None
 
-        if window is not None:
-            spinner_msg = "Extended thinking…" if self.thinking_enabled else "Thinking…"
-            window.start_spinner(spinner_msg)
+        for attempt, cfg in enumerate(self.chain):
+            if attempt > 0:
+                if window is not None:
+                    window.stop_spinner()
+                from rich.console import Console
+                Console().print(
+                    f"  [yellow]⚠[/yellow]  [dim]{self.chain[attempt-1].model} failed "
+                    f"({type(last_exc).__name__}) → trying {cfg.model}[/dim]"
+                )
 
-        api_key_env = getattr(self.cfg, "api_key_env", None)
-        if not api_key_env:
-            fallback_map = {
-                "openai": "OPENAI_API_KEY",
-                "google": "GOOGLE_API_KEY",
-                "anthropic": "ANTHROPIC_API_KEY",
-            }
-            api_key_env = fallback_map.get(self.cfg.provider)
-
-        api_key = os.environ.get(api_key_env, "") if api_key_env else ""
-
-        start = time.time()
-        try:
-            match self.cfg.provider:
-                case "openai":
-                    turn = self._openai_with_tools(
-                        messages,
-                        tools,
-                        system,
-                        window,
-                        base_url=self.cfg.base_url,
-                        api_key=api_key,
-                        show_thinking=show_thinking,
-                    )
-                case "anthropic":
-                    turn = self._anthropic_with_tools(
-                        messages,
-                        tools,
-                        system,
-                        window,
-                        api_key=api_key,
-                        show_thinking=show_thinking,
-                    )
-                case _:
-                    raise ValueError(f"Unknown provider: {self.cfg.provider}")
-        except Exception as exc:
             if window is not None:
-                window.stop_spinner()
-            debug_logger.log_llm_call(
-                step=step_name,
-                provider=self.cfg.provider,
-                model=self.cfg.model,
-                messages=messages,
-                response="",
-                duration_s=time.time() - start,
-                error=str(exc),
-            )
-            raise
+                thinking_enabled = bool(getattr(cfg, "thinking_budget", None))
+                spinner_msg = "Extended thinking…" if thinking_enabled else "Thinking…"
+                window.start_spinner(spinner_msg)
 
-        debug_logger.log_llm_call(
-            step=step_name,
-            provider=self.cfg.provider,
-            model=self.cfg.model,
-            messages=messages,
-            response=_log_repr(turn),
-            duration_s=time.time() - start,
-        )
-        return turn
+            api_key = self._resolve_api_key(cfg)
+            start = time.time()
 
-    def _anthropic_with_tools(
-        self,
-        messages: list[dict],
-        tools: list[dict],
-        system: str,
-        window: RollingWindow | None,
-        api_key: str,
-        show_thinking: bool = False,
-    ) -> AssistantTurn:
+            try:
+                match cfg.provider:
+                    case "openai":
+                        turn = self._openai_with_tools(
+                            cfg, messages, tools, system, window,
+                            base_url=cfg.base_url, api_key=api_key,
+                            show_thinking=show_thinking,
+                        )
+                    case "anthropic":
+                        turn = self._anthropic_with_tools(
+                            cfg, messages, tools, system, window,
+                            api_key=api_key, show_thinking=show_thinking,
+                        )
+                    case _:
+                        raise ValueError(f"Unknown provider: {cfg.provider}")
+
+                debug_logger.log_llm_call(
+                    step=step_name, provider=cfg.provider, model=cfg.model,
+                    messages=messages, response=_log_repr(turn),
+                    duration_s=time.time() - start,
+                )
+                return turn
+
+            except Exception as exc:
+                if window is not None:
+                    window.stop_spinner()
+                debug_logger.log_llm_call(
+                    step=step_name, provider=cfg.provider, model=cfg.model,
+                    messages=messages, response="",
+                    duration_s=time.time() - start, error=str(exc),
+                )
+                last_exc = exc
+                if _is_transient(exc) and attempt < len(self.chain) - 1:
+                    continue
+                raise
+
+        raise RuntimeError("Fallback chain exhausted") from last_exc
+
+    @staticmethod
+    def _resolve_api_key(cfg: ModelConfig) -> str:
+        api_key_env = cfg.api_key_env
+        if not api_key_env:
+            fallback_map = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
+            api_key_env = fallback_map.get(cfg.provider)
+        key = os.environ.get(api_key_env, "") if api_key_env else ""
+        if not key and cfg.base_url:
+            raise RuntimeError(f"no api key for \"{cfg.model}\" model was provided")
+        return key
+
+    def _anthropic_with_tools(self, cfg: ModelConfig, messages, tools, system, window, *, api_key, show_thinking=False) -> AssistantTurn:
         from anthropic import Anthropic
 
         if not api_key:
@@ -153,20 +175,21 @@ class LLMClient:
         client = Anthropic(api_key=api_key)
 
         kwargs: dict = {
-            "model": self.cfg.model,
-            "max_tokens": self.cfg.max_tokens,
-            "temperature": self.cfg.temperature,
+            "model": cfg.model,
+            "max_tokens": cfg.max_tokens,
+            "temperature": cfg.temperature,
             "system": system,
             "messages": _to_anthropic_messages(messages),
             "tools": _to_anthropic_tools(tools),
         }
         extra_headers: dict = {}
-        if self.thinking_budget:
+        thinking_budget = LLMClient.thinking_budget(cfg)
+        if thinking_budget:
             kwargs["thinking"] = {
                 "type": "enabled",
-                "budget_tokens": self.thinking_budget,
+                "budget_tokens": thinking_budget,
             }
-            kwargs["max_tokens"] = max(self.cfg.max_tokens, self.thinking_budget + 2048)
+            kwargs["max_tokens"] = max(cfg.max_tokens, thinking_budget + 2048)
             extra_headers["anthropic-beta"] = _INTERLEAVED_THINKING_BETA
 
         text_parts: list[str] = []
@@ -224,17 +247,7 @@ class LLMClient:
             raw=[block.model_dump() for block in final.content],
         )
 
-    def _openai_with_tools(
-        self,
-        messages: list[dict],
-        tools: list[dict],
-        system: str,
-        window: RollingWindow | None,
-        *,
-        base_url: str | None,
-        api_key: str,
-        show_thinking: bool = False,
-    ) -> AssistantTurn:
+    def _openai_with_tools(self, cfg: ModelConfig, messages, tools, system, window, *, base_url, api_key, show_thinking=False) -> AssistantTurn:
         from openai import OpenAI
 
         kwargs: dict = {"api_key": api_key}
@@ -243,19 +256,19 @@ class LLMClient:
         client = OpenAI(**kwargs)
 
         call_kwargs: dict = {
-            "model": self.cfg.model,
+            "model": cfg.model,
             "messages": _to_openai_messages(messages, system),
             "tools": _to_openai_tools(tools),
             "tool_choice": "auto",
-            "max_tokens": self.cfg.max_tokens,
+            "max_tokens": cfg.max_tokens,
             "stream": True,
         }
 
-        if self.cfg.temperature:
-            call_kwargs["temperature"] = self.cfg.temperature
+        if cfg.temperature:
+            call_kwargs["temperature"] = cfg.temperature
 
-        if self.cfg.reasoning_effort:
-            call_kwargs["reasoning_effort"] = self.cfg.reasoning_effort
+        if cfg.reasoning_effort:
+            call_kwargs["reasoning_effort"] = cfg.reasoning_effort
 
         stream = client.chat.completions.create(**call_kwargs)
 
