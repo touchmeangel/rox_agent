@@ -20,8 +20,8 @@ from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.search_state import SearchState
 from ignite_agent.tool_result import ToolResult
 
-_RST      = "\033[0m"
-_DIM      = "\033[2m"
+_RST = "\033[0m"
+_DIM = "\033[2m"
 _DIM_CYAN = "\033[2;36m"
 
 _STREAM_PREFIX = f"  {_DIM}"
@@ -50,7 +50,7 @@ def _tool_display(tool_name: str, tool_input: dict) -> str:
             cmd = tool_input.get("command", "")
             display = cmd[:120] + ("…" if len(cmd) > 120 else "")
         case "web_search":
-            display = f"web_search  \"{tool_input.get('query', '')}\""
+            display = f'web_search  "{tool_input.get("query", "")}"'
         case "web_fetch":
             display = f"web_fetch  {tool_input.get('url', '')}"
         case _:
@@ -637,16 +637,14 @@ _DEFAULT_STDOUT_LIMIT = 10_000
 
 def _summary(result: ToolResult, elapsed: float = 0.0) -> str:
     total = len(result.stdout) + len(result.stderr)
-    size  = f"{total / 1024:.1f} KB" if total >= 1024 else f"{total} B"
+    size = f"{total / 1024:.1f} KB" if total >= 1024 else f"{total} B"
     time_ = _elapsed_str(elapsed)
 
     if result.success:
         if total == 0:
             return f"[green]✓[/green]{time_}"
         raw = result.stdout if result.stdout else result.stderr
-        snippet = next(
-            (line.strip() for line in raw.splitlines() if line.strip()), ""
-        )
+        snippet = next((line.strip() for line in raw.splitlines() if line.strip()), "")
         if snippet and total < 400:
             safe_snippet = snippet[:72].replace("[", r"\[")
             snippet_str = f"  [dim]·  {safe_snippet}[/dim]"

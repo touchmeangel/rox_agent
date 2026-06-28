@@ -37,6 +37,7 @@ class ModelConfig:
     base_url: str | None = None
     api_key_env: str | None = None
 
+
 _raw = _load_raw()
 _models = _raw.get("models", {})
 _task_routing = _raw.get("task_routing", {})

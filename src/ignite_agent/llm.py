@@ -5,24 +5,22 @@ import os
 import time
 from dataclasses import dataclass, field
 
+from ignite_agent.config import ModelConfig
 from ignite_agent.debug_logger import DebugLogger, default_debug_logger
 from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.tool_call_parser import ToolCall, parse_text_tool_calls
-from ignite_agent.config import ModelConfig
 
 _INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14"
 
-_RST      = "\033[0m"
-_DIM      = "\033[2m"
+_RST = "\033[0m"
+_DIM = "\033[2m"
 _DIM_CYAN = "\033[2;36m"
-_BOX_W    = 52
+_BOX_W = 52
 
 _THINKING_LINE = f"{_DIM_CYAN}│{_RST}{_DIM} "
 
-_THINKING_OPEN = (
-    f"\n{_DIM_CYAN}"
-    f"╭─ thinking {'─' * (_BOX_W - 13)}╮\n"
-) + _THINKING_LINE
+_THINKING_OPEN = (f"\n{_DIM_CYAN}╭─ thinking {'─' * (_BOX_W - 13)}╮\n") + _THINKING_LINE
+
 
 def _thinking_close(char_count: int = 0) -> str:
     if char_count > 0:
@@ -53,6 +51,7 @@ def _is_transient(exc: Exception) -> bool:
     # Each provider handle them differently so it would be a headache
     return True
 
+
 @dataclass
 class ToolResultEntry:
     tool_call_id: str
@@ -73,6 +72,7 @@ class AssistantTurn:
 class LLMClient:
     def __init__(self, model_key: str):
         from ignite_agent.config import MODELS
+
         if model_key not in MODELS:
             raise ValueError(f"Unknown model key '{model_key}'.")
         self.chain: list[ModelConfig] = MODELS[model_key]
@@ -84,7 +84,6 @@ class LLMClient:
     @property
     def cfg(self) -> ModelConfig:
         return self.chain[0]
-    
 
     def chat_with_tools(
         self,
@@ -105,8 +104,9 @@ class LLMClient:
                 if window is not None:
                     window.stop_spinner()
                 from rich.console import Console
+
                 Console().print(
-                    f"  [yellow]⚠[/yellow]  [dim]{self.chain[attempt-1].model} failed "
+                    f"  [yellow]⚠[/yellow]  [dim]{self.chain[attempt - 1].model} failed "
                     f"({type(last_exc).__name__}) → trying {cfg.model}[/dim]"
                 )
 
@@ -122,21 +122,34 @@ class LLMClient:
                 match cfg.provider:
                     case "openai":
                         turn = self._openai_with_tools(
-                            cfg, messages, tools, system, window,
-                            base_url=cfg.base_url, api_key=api_key,
+                            cfg,
+                            messages,
+                            tools,
+                            system,
+                            window,
+                            base_url=cfg.base_url,
+                            api_key=api_key,
                             show_thinking=show_thinking,
                         )
                     case "anthropic":
                         turn = self._anthropic_with_tools(
-                            cfg, messages, tools, system, window,
-                            api_key=api_key, show_thinking=show_thinking,
+                            cfg,
+                            messages,
+                            tools,
+                            system,
+                            window,
+                            api_key=api_key,
+                            show_thinking=show_thinking,
                         )
                     case _:
                         raise ValueError(f"Unknown provider: {cfg.provider}")
 
                 debug_logger.log_llm_call(
-                    step=step_name, provider=cfg.provider, model=cfg.model,
-                    messages=messages, response=_log_repr(turn),
+                    step=step_name,
+                    provider=cfg.provider,
+                    model=cfg.model,
+                    messages=messages,
+                    response=_log_repr(turn),
                     duration_s=time.time() - start,
                 )
                 return turn
@@ -145,9 +158,13 @@ class LLMClient:
                 if window is not None:
                     window.stop_spinner()
                 debug_logger.log_llm_call(
-                    step=step_name, provider=cfg.provider, model=cfg.model,
-                    messages=messages, response="",
-                    duration_s=time.time() - start, error=str(exc),
+                    step=step_name,
+                    provider=cfg.provider,
+                    model=cfg.model,
+                    messages=messages,
+                    response="",
+                    duration_s=time.time() - start,
+                    error=str(exc),
                 )
                 last_exc = exc
                 if _is_transient(exc) and attempt < len(self.chain) - 1:
@@ -160,14 +177,27 @@ class LLMClient:
     def _resolve_api_key(cfg: ModelConfig) -> str:
         api_key_env = cfg.api_key_env
         if not api_key_env:
-            fallback_map = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
+            fallback_map = {
+                "openai": "OPENAI_API_KEY",
+                "anthropic": "ANTHROPIC_API_KEY",
+            }
             api_key_env = fallback_map.get(cfg.provider)
         key = os.environ.get(api_key_env, "") if api_key_env else ""
         if not key and cfg.base_url:
-            raise RuntimeError(f"no api key for \"{cfg.model}\" model was provided")
+            raise RuntimeError(f'no api key for "{cfg.model}" model was provided')
         return key
 
-    def _anthropic_with_tools(self, cfg: ModelConfig, messages, tools, system, window, *, api_key, show_thinking=False) -> AssistantTurn:
+    def _anthropic_with_tools(
+        self,
+        cfg: ModelConfig,
+        messages,
+        tools,
+        system,
+        window,
+        *,
+        api_key,
+        show_thinking=False,
+    ) -> AssistantTurn:
         from anthropic import Anthropic
 
         if not api_key:
@@ -205,12 +235,20 @@ class LLMClient:
 
                 if event.type == "content_block_start":
                     current_block_type = getattr(event.content_block, "type", None)
-                    if current_block_type == "thinking" and show_thinking and window is not None:
+                    if (
+                        current_block_type == "thinking"
+                        and show_thinking
+                        and window is not None
+                    ):
                         window.feed(_THINKING_OPEN)
                     continue
 
                 if event.type == "content_block_stop":
-                    if current_block_type == "thinking" and show_thinking and window is not None:
+                    if (
+                        current_block_type == "thinking"
+                        and show_thinking
+                        and window is not None
+                    ):
                         char_count = sum(len(p) for p in thinking_parts)
                         window.feed(_thinking_close(char_count))
                     current_block_type = None
@@ -247,7 +285,18 @@ class LLMClient:
             raw=[block.model_dump() for block in final.content],
         )
 
-    def _openai_with_tools(self, cfg: ModelConfig, messages, tools, system, window, *, base_url, api_key, show_thinking=False) -> AssistantTurn:
+    def _openai_with_tools(
+        self,
+        cfg: ModelConfig,
+        messages,
+        tools,
+        system,
+        window,
+        *,
+        base_url,
+        api_key,
+        show_thinking=False,
+    ) -> AssistantTurn:
         from openai import OpenAI
 
         kwargs: dict = {"api_key": api_key}

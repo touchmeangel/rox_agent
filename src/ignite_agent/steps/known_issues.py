@@ -19,8 +19,8 @@ class ProtocolTarget:
 
 
 def _build_targets(context: dict) -> list[ProtocolTarget]:
-    doc_findings  = context.get("documentation", {}).get("findings", {})
-    fork_findings = context.get("fork_analysis",  {}).get("findings", {})
+    doc_findings = context.get("documentation", {}).get("findings", {})
+    fork_findings = context.get("fork_analysis", {}).get("findings", {})
 
     targets: list[ProtocolTarget] = []
 
@@ -28,22 +28,26 @@ def _build_targets(context: dict) -> list[ProtocolTarget]:
         upstream = fork_findings["upstream"]
         name = upstream.get("protocol", "").strip()
         if name:
-            targets.append(ProtocolTarget(
-                name=name,
-                purpose=f"Fork upstream (base commit {upstream.get('base_commit', '?')})",
-                version="",
-                is_fork_upstream=True,
-            ))
+            targets.append(
+                ProtocolTarget(
+                    name=name,
+                    purpose=f"Fork upstream (base commit {upstream.get('base_commit', '?')})",
+                    version="",
+                    is_fork_upstream=True,
+                )
+            )
 
     for p in doc_findings.get("external_protocols", []):
         name = p.get("name", "").strip()
         if name:
-            targets.append(ProtocolTarget(
-                name=name,
-                purpose=p.get("purpose", ""),
-                version=p.get("version", ""),
-                is_fork_upstream=False,
-            ))
+            targets.append(
+                ProtocolTarget(
+                    name=name,
+                    purpose=p.get("purpose", ""),
+                    version=p.get("version", ""),
+                    is_fork_upstream=False,
+                )
+            )
 
     return targets
 
@@ -71,7 +75,9 @@ def _prefetch_protocol(
         )
         out = (result.stdout or "").strip()
         if out:
-            target.prefetch_results.append(f"Query: {query}\n{out[:max_chars_per_result]}")
+            target.prefetch_results.append(
+                f"Query: {query}\n{out[:max_chars_per_result]}"
+            )
 
 
 def _fmt_target(target: ProtocolTarget) -> str:
@@ -96,7 +102,7 @@ class KnownIssuesStep(BaseStep):
     def select_context(self, global_context: dict) -> dict:
         return {
             "documentation": global_context.get("documentation", {}),
-            "fork_analysis":  global_context.get("fork_analysis", {}),
+            "fork_analysis": global_context.get("fork_analysis", {}),
         }
 
     def run(self, context: dict) -> StepResult:
@@ -124,24 +130,37 @@ class KnownIssuesStep(BaseStep):
                         "type": "object",
                         "properties": {
                             "protocol": {"type": "string"},
-                            "version":  {"type": "string"},
+                            "version": {"type": "string"},
                             "known_issues": {
                                 "type": "array",
                                 "items": {
                                     "type": "object",
                                     "properties": {
-                                        "id":          {"type": "string"},
-                                        "source":      {"type": "string"},
-                                        "title":       {"type": "string"},
+                                        "id": {"type": "string"},
+                                        "source": {"type": "string"},
+                                        "title": {"type": "string"},
                                         "description": {"type": "string"},
                                         "severity": {
                                             "type": "string",
-                                            "enum": ["critical", "high", "medium", "low", "informational"],
+                                            "enum": [
+                                                "critical",
+                                                "high",
+                                                "medium",
+                                                "low",
+                                                "informational",
+                                            ],
                                         },
-                                        "check":      {"type": "string"},
+                                        "check": {"type": "string"},
                                         "applies_if": {"type": "string"},
                                     },
-                                    "required": ["id", "source", "title", "description", "severity", "check"],
+                                    "required": [
+                                        "id",
+                                        "source",
+                                        "title",
+                                        "description",
+                                        "severity",
+                                        "check",
+                                    ],
                                 },
                             },
                         },
