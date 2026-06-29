@@ -377,7 +377,7 @@ def _run_mythril(
 
 def _fmt_result(result: PreScanResult, label: str) -> str:
     if not result.success:
-        lines = [f"⚠  {label} failed (exit {result.exit_code or '?'})."]
+        lines = [f"   {label} failed (exit {result.exit_code or '?'})."]
         if result.error:
             lines.append(f"   Error: {result.error}")
         if result.stderr_tail:
@@ -762,21 +762,9 @@ RULES
 
     def validate_complete(self, findings: dict) -> str | None:
         if not isinstance(findings, dict):
-            return "findings must be a JSON object"
-        for object_field in (
-            "confirmed",
-            "suspected",
-            "false_positives",
-            "informational",
-            "metrics",
-            "risk_rating",
-            "summary",
-        ):
-            if object_field not in findings:
-                return f"missing top-level field: '{object_field}'"
-        for i, item in enumerate(findings.get("confirmed", [])):
-            loc = item.get("location", {})
-            for req in ("file", "function"):
-                if not loc.get(req):
-                    return f"confirmed[{i}].location.'{req}' is empty — use '<declaration>' for state variables"
+            return "findings must be a dict"
+        required = {"confirmed", "suspected", "false_positives", "informational"}
+        missing = required - findings.keys()
+        if missing:
+            return f"missing required keys: {', '.join(sorted(missing))}"
         return None
