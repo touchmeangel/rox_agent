@@ -516,7 +516,7 @@ class StaticAnalysisStep(BaseStep):
                                     "function": {"type": "string"},
                                     "lines": {"type": "string"},
                                 },
-                                "required": ["file", "function", "lines"],
+                                "required": ["file", "function"],
                             },
                             "description": {"type": "string"},
                             "evidence": {
@@ -556,7 +556,7 @@ class StaticAnalysisStep(BaseStep):
                                     "function": {"type": "string"},
                                     "lines": {"type": "string"},
                                 },
-                                "required": ["file", "function", "lines"],
+                                "required": ["file", "function"],
                             },
                             "why_uncertain": {"type": "string"},
                             "what_to_check": {"type": "string"},
@@ -760,8 +760,15 @@ RULES
 • Do not invent findings without code evidence.
 """
 
-    def validate_complete(self, findings: dict) -> bool:
+    def validate_complete(self, findings: dict) -> str | None:
         if not isinstance(findings, dict):
-            return False
-        required = {"confirmed", "suspected", "false_positives", "informational"}
-        return required.issubset(findings.keys())
+            return "findings must be a JSON object"
+        for field in ("confirmed", "suspected", "false_positives", "informational", "metrics", "risk_rating", "summary"):
+            if field not in findings:
+                return f"missing top-level field: '{field}'"
+        for i, item in enumerate(findings.get("confirmed", [])):
+            loc = item.get("location", {})
+            for req in ("file", "function"):
+                if not loc.get(req):
+                    return f"confirmed[{i}].location.'{req}' is empty — use '<declaration>' for state variables"
+        return None

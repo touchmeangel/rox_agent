@@ -120,8 +120,8 @@ You can only exit the execution loop by explicitly invoking one of the following
             f"{self.__class__.__name__} must implement initial_prompt()"
         )
 
-    def validate_complete(self, findings: dict) -> bool:
-        return True
+    def validate_complete(self, findings: dict) -> str | None:
+        return None
 
     def findings_schema(self) -> dict:
         return {"type": "object"}
@@ -312,7 +312,8 @@ You can only exit the execution loop by explicitly invoking one of the following
                 for call in turn.tool_calls:
                     if call.name == "submit_findings":
                         findings = call.input.get("findings", {})
-                        if self.validate_complete(findings):
+                        validation = self.validate_complete(findings)
+                        if validation is None:
                             default_debug_logger.log_event(
                                 "step_complete",
                                 step=self.name,
@@ -335,13 +336,15 @@ You can only exit the execution loop by explicitly invoking one of the following
                                 "incomplete_findings",
                                 step=self.name,
                                 iteration=i + 1,
+                                validation=validation,
                                 findings=findings,
                             )
-                            tool_results.append(
-                                ToolResultEntry(
-                                    call.id, _INCOMPLETE_FINDINGS_HINT, is_error=True
-                                )
-                            )
+                            reason = validation if isinstance(validation, str) else "required fields are missing or empty"
+                            tool_results.append(ToolResultEntry(
+                                call.id,
+                                f"Findings rejected: {reason}\nFix only this issue and call submit_findings again.",
+                                is_error=True,
+                            ))
 
                     elif call.name == "report_blocker":
                         blocker = {
