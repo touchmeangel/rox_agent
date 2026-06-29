@@ -22,14 +22,14 @@ PIPELINE: list[BaseStep] = [
     StaticAnalysisStep(
         StepConfig(
             model_key="reasoning",
-            max_iterations=32,
+            max_iterations=64,
         )
     ),
     ForkAnalysisStep(
         StepConfig(model_key="reasoning", max_iterations=16, max_web_calls=12)
     ),
     KnownIssuesStep(
-        StepConfig(model_key="reasoning", max_iterations=24, max_web_calls=16)
+        StepConfig(model_key="reasoning", max_iterations=32, max_web_calls=16)
     ),
     AuditDeltaStep(
         StepConfig(model_key="reasoning", max_iterations=32, max_web_calls=16)

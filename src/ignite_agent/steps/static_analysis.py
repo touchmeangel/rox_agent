@@ -751,13 +751,9 @@ FINDINGS FORMAT  (pass this to submit_findings)
 RULES
 ════════════════════════════════════════
 
-• CONFIRMED requires reading the code and tracing the exploit path yourself.
-  If you spotted the pattern but haven't verified it is actually exploitable, use SUSPECTED.
-• SUSPECTED is not a catch-all for uncertainty — use it only when you have a
-  concrete reason to think an issue exists but lack the evidence to be certain.
-• FALSE_POSITIVE needs one clear, factual sentence explaining the dismissal.
-• Every confirmed or suspected finding must have a location with file and function.
-• Do not invent findings without code evidence.
+- CONFIRMED means you traced the full exploit path through source code. Do NOT write PoC exploits or simulate attacker behaviour — that is a separate downstream step.
+- For SUSPECTED findings only: you may write a minimal Foundry test to check whether the code path is reachable. Limit it to calling the relevant function(s) and asserting on state/reverts — no attack logic (no computing predictable values, no re-entry callbacks, no adversarial chain state manipulation).
+- Never build a working exploit in this step.
 """
 
     def validate_complete(self, findings: dict) -> str | None:

@@ -78,7 +78,7 @@ def _smart_process_output(
     try:
         data = json.loads(stdout)
         log_file = f".ignite_{tool_name}_{run_hash}.json"
-        log_path = Path(project_path) / log_file
+        log_path = Path("/tmp") / log_file
         log_path.write_text(stdout, encoding="utf-8")
 
         summary_data = {}
@@ -100,7 +100,7 @@ def _smart_process_output(
         summary_str = json.dumps(summary_data, indent=2)
         prompt_msg = (
             f"[SYSTEM: Massive JSON output intercepted ({len(stdout)} chars).]\n"
-            f"[Full raw JSON saved to '{log_file}'. Use `shell` with `jq` to query the full file if needed.]\n"
+            f"[Full raw JSON saved to '{log_path}'. Use `shell` with `jq` to query the full file if needed.]\n"
             f"[Preview below:]\n\n{summary_str}"
         )
         return _truncate(prompt_msg, limit, "json_summary")
@@ -117,7 +117,7 @@ def _smart_process_output(
 
     prompt_msg = (
         f"[SYSTEM: Output exceeded context limits ({len(stdout)} chars). Full output saved to '{log_file}'.]\n"
-        f"[Do NOT repeat this exact command. Use `shell` with `rg` to search '{log_file}', or `tail` to view specific errors.]\n\n"
+        f"[Do NOT repeat this exact command. Use `shell` with `rg` to search '{log_path}', or `tail` to view specific errors.]\n\n"
         f"--- PREVIEW (first {preview_size} chars) ---\n{head}\n"
     )
     if tail:

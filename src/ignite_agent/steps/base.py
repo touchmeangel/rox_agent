@@ -140,7 +140,15 @@ You can only exit the execution loop by explicitly invoking one of the following
                 "input_schema": {
                     "type": "object",
                     "properties": {
-                        "findings": self.findings_schema(),
+                        "findings": {
+                            **self.findings_schema(),
+                            "description": (
+                                "The structured findings object. "
+                                "Pass a native JSON object — NOT a serialized JSON string. "
+                                "Do not call json.dumps(), do not wrap in quotes. "
+                                "The value of this field must be an object, not a string."
+                            ),
+                        },
                         "summary": {
                             "type": "string",
                             "description": "Concise paragraph summarizing what you found.",
