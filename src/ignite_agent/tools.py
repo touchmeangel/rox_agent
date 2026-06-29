@@ -108,7 +108,7 @@ def _smart_process_output(
         pass
 
     log_file = f".ignite_{tool_name}_{run_hash}.log"
-    log_path = Path(project_path) / log_file
+    log_path = Path("/tmp") / log_file
     log_path.write_text(stdout, encoding="utf-8")
 
     preview_size = 3000

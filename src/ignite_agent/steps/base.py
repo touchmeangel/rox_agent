@@ -324,6 +324,11 @@ You can only exit the execution loop by explicitly invoking one of the following
                 for call in turn.tool_calls:
                     if call.name == "submit_findings":
                         findings = call.input.get("findings", {})
+                        if isinstance(findings, str):
+                            try:
+                                findings = json.loads(findings)
+                            except json.JSONDecodeError:
+                                pass
                         validation = self.validate_complete(findings)
                         if validation is None:
                             default_debug_logger.log_event(
