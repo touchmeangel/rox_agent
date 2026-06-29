@@ -112,6 +112,7 @@ CRITICAL: Plain text responses DO NOT advance or terminate the step. You must ca
 <TERMINATION_CRITERIA>
 You can only exit the execution loop by explicitly invoking one of the following terminal tools:
 1. `submit_findings`: Call this ONLY when you have concrete, reproducible proof of your assertions. Do not submit based on a hunch; use your sandbox to verify first.
+   CRITICAL: The `findings` argument must be a raw JSON object — never a serialized string. Do not wrap it in quotes or call json.dumps() on it.
 2. `report_blocker`: Use this if an external dependency or setup issue requires human intervention (e.g., missing binaries, unresolvable compilation conflicts). Provide a fallback strategy if you can keep moving.
 3. `report_failed`: Use as an absolute last resort when all engineering pathways, debugging strategies, and alternative tools have been completely exhausted.
 </TERMINATION_CRITERIA>"""

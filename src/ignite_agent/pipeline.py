@@ -11,12 +11,12 @@ from ignite_agent.steps.test_coverage import TestCoverageStep
 # The active pipeline, using direct class references
 PIPELINE: list[BaseStep] = [
     DocumentationStep(
-        StepConfig(model_key="reasoning", max_iterations=24, max_web_calls=12)
+        StepConfig(model_key="reasoning", max_iterations=32, max_web_calls=12)
     ),
     TestCoverageStep(
         StepConfig(
             model_key="reasoning",
-            max_iterations=32,
+            max_iterations=64,
         )
     ),
     StaticAnalysisStep(
