@@ -5,7 +5,7 @@ from typing import Literal
 
 from ignite_agent.debug_logger import DebugLogger
 from ignite_agent.rolling_window import RollingWindow
-from ignite_agent.steps.base import BaseStep
+from ignite_agent.steps.base import BaseStep, StepResult
 from ignite_agent.tools import dispatch
 
 _FORK_README_KEYWORDS = [
@@ -123,6 +123,10 @@ def _fmt_signals(signals: ForkSignals) -> str:
 class ForkAnalysisStep(BaseStep):
     name = "fork_analysis"
 
+    def run(self, context: dict) -> StepResult:
+        self.project_path = self.github_repo_path
+        return super().run(context)
+
     def select_context(self, global_context: dict) -> dict:
         return {"documentation": global_context.get("documentation", {})}
 
@@ -149,17 +153,36 @@ class ForkAnalysisStep(BaseStep):
             "required": ["is_fork", "upstream", "modified_files", "summary"],
         }
 
-    def validate_complete(self, findings: dict) -> bool:
+    def validate_complete(self, findings: dict) -> str | None:
         if not isinstance(findings, dict):
-            return False
-        if "is_fork" not in findings or not findings.get("summary"):
-            return False
+            return "the output should be a json object (python dict)"
+            
+        if "is_fork" not in findings:
+            return "is_fork is not set which is required"
+            
+        if not findings.get("summary"):
+            return "summary is not set or empty, which is required"
+            
         if not findings["is_fork"]:
-            return True
+            return None
+            
         upstream = findings.get("upstream")
-        return bool(
-            upstream and upstream.get("protocol") and upstream.get("base_commit")
-        )
+        
+        if not isinstance(upstream, dict):
+            return "upstream is missing or invalid; must be an object when is_fork is true"
+            
+        if not upstream.get("protocol"):
+            return "upstream.protocol is not set which is required for forks"
+            
+        if not upstream.get("base_commit"):
+            return "upstream.base_commit is not set which is required for forks"
+            
+        return None
+
+    def environment_prompt(self) -> str:
+        return f"""- Repository path (read-only, full git history): {self.github_repo_path}
+- ALL tool calls in this step run against the repository path above.
+  Do NOT reference /work — it is irrelevant to fork detection."""
 
     def initial_prompt(
         self, context: dict, window: RollingWindow, debug_logger: DebugLogger

@@ -302,7 +302,10 @@ STRICT RULES
 • False positives must be dismissed with one factual sentence, not omitted silently.
 """
 
-    def validate_complete(self, findings: dict) -> bool:
+    def validate_complete(self, findings: dict) -> str | None:
+        if not isinstance(findings, dict):
+            return "the output should be json object (python dict)"
+
         required = {
             "confirmed",
             "review_required",
@@ -310,4 +313,23 @@ STRICT RULES
             "metrics",
             "risk_rating",
         }
-        return isinstance(findings, dict) and required.issubset(findings.keys())
+        if not required.issubset(findings.keys()):
+            missing = required - findings.keys()
+            return f"some of the required fields are missing ({', '.join(missing)})"
+
+        if not isinstance(findings.get("confirmed"), list):
+            return "invalid confirmed, must be a defined list"
+
+        if not isinstance(findings.get("review_required"), list):
+            return "invalid review_required, must be a defined list"
+
+        if not isinstance(findings.get("informational"), list):
+            return "invalid informational, must be a defined list"
+
+        if not isinstance(findings.get("metrics"), dict):
+            return "invalid metrics, must be an object (python dict)"
+
+        if not findings.get("risk_rating"):
+            return "risk_rating is not set which is required"
+
+        return None

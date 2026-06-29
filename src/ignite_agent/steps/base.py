@@ -77,6 +77,11 @@ class BaseStep:
 
     def select_context(self, global_context: dict) -> dict:
         return global_context
+    
+    def environment_prompt(self) -> str:
+        return f"""- Target Project Path: {self.project_path}
+- Runtime State: You are executing inside a secure, high-performance, fully trusted isolation sandbox.
+- Permissions: UNRESTRICTED. You have root privileges within this sandbox. You can safely compile code, execute arbitrary scripts, trigger tests, mutate files, and run any tool or shell command required to prove a vulnerability. There are no external guardrails blocking your execution—the sandbox is entirely yours to command."""
 
     def system_prompt(self) -> str:
         return f"""<ROLE>
@@ -84,9 +89,7 @@ You are an elite, completely autonomous Solidity and EVM Security Auditor. Your 
 </ROLE>
 
 <ENVIRONMENT>
-- Target Project Path: {self.project_path}
-- Runtime State: You are executing inside a secure, high-performance, fully trusted isolation sandbox.
-- Permissions: UNRESTRICTED. You have root privileges within this sandbox. You can safely compile code, execute arbitrary scripts, trigger tests, mutate files, and run any tool or shell command required to prove a vulnerability. There are no external guardrails blocking your execution—the sandbox is entirely yours to command.
+{self.environment_prompt()}
 </ENVIRONMENT>
 
 <OPERATIONAL_BUDGET & LOOP>
@@ -99,7 +102,7 @@ CRITICAL: Plain text responses DO NOT advance or terminate the step. You must ca
 </OPERATIONAL_BUDGET & LOOP>
 
 <WORKING_METHODOLOGY>
-- Tool Specificity: Prioritize deep-signal, domain-specific tools (`slither`, `forge`, `cast`, `git`, `read_file`) over raw shell execution. Use `shell` aggressively when you need custom pipeline logic, complex scripting, regex parsing (`grep`, `jq`), or environment setup.
+- Tool Specificity: Prioritize deep-signal, domain-specific tools (`forge`, `cast`, `git`, `read_file`) over raw shell execution. Use `shell` aggressively when you need custom pipeline logic, complex scripting, regex parsing (`grep`, `jq`), or environment setup.
 - Strategic Pivot Rule: If a tool call fails, do not guess. Analyze `stdout` and `stderr` directly—errors often embed the exact JSON fix. If a tool call fails or gets blocked, you MUST radically alter your approach (e.g., pivot from an automated tool to manual file reading, or vice versa). Repeating an identical signature is blocked.
 - Pacing & Planning:
   * Simple Tasks (<3 steps): Skip planning overhead; execute immediately.

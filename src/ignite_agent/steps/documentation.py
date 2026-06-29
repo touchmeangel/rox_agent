@@ -261,9 +261,9 @@ class DocumentationStep(BaseStep):
             ],
         }
 
-    def validate_complete(self, findings: dict) -> bool:
+    def validate_complete(self, findings: dict) -> str | None:
         if not isinstance(findings, dict):
-            return False
+            return "the output should be json object (python dict)"
         required = {
             "protocol_summary",
             "roles",
@@ -274,17 +274,17 @@ class DocumentationStep(BaseStep):
             "contract_risk_matrix",
         }
         if not required.issubset(findings.keys()):
-            return False
+            return f"some of the required fields are missing ({', '.join(required)})"
         if not findings.get("protocol_summary"):
-            return False
+            return "protocol_summary is not set which is required"
         if findings.get("solc_version", "unknown").lower() in ("unknown", "", "?"):
-            return False
+            return "solc_version is not set which is required"
         if (
             not isinstance(findings.get("contract_risk_matrix"), list)
             or not findings["contract_risk_matrix"]
         ):
-            return False
-        return True
+            return "invalid contract_risk_matrix, must be a defined list"
+        return None
 
     def initial_prompt(
         self, context: dict, window: RollingWindow, debug_logger: DebugLogger

@@ -172,12 +172,18 @@ class KnownIssuesStep(BaseStep):
             "required": ["protocol_checklists", "summary"],
         }
 
-    def validate_complete(self, findings: dict) -> bool:
+    def validate_complete(self, findings: dict) -> str | None:
         if not isinstance(findings, dict):
-            return False
+            return "the output should be json object (python dict)"
+            
         if not findings.get("summary"):
-            return False
-        return isinstance(findings.get("protocol_checklists"), list)
+            return "summary is not set which is required"
+            
+        checklists = findings.get("protocol_checklists")
+        if not isinstance(checklists, list):
+            return "invalid protocol_checklists, must be a defined list"
+            
+        return None
 
     def initial_prompt(
         self, context: dict, window: RollingWindow, debug_logger: DebugLogger
@@ -242,7 +248,7 @@ STEP 2 — FILL GAPS WITH ADDITIONAL SEARCHES
   If nothing surfaces after the additional search, record empty known_issues
   and move on — do not keep rephrasing the same query.
 
-STEP 3 — FILTER BY USAGE CONTEXT
+STEP 3 — FILTER BY USAGE CONSECTION
   For each finding ask: does the Usage description create the conditions
   for this vulnerability?
     • "Used for swapping tokens" → share inflation from market creation does NOT apply
