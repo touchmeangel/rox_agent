@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     cmake \
     libgmp-dev \
+    poppler-utils \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd \
     && rm -rf /var/lib/apt/lists/*
 
