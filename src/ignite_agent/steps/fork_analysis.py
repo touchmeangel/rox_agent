@@ -161,7 +161,11 @@ class ForkAnalysisStep(BaseStep):
         if not findings["is_fork"]:
             return None
         upstream = findings.get("upstream")
-        if not upstream or not upstream.get("protocol") or not upstream.get("base_commit"):
+        if (
+            not upstream
+            or not upstream.get("protocol")
+            or not upstream.get("base_commit")
+        ):
             return "upstream must have 'protocol' and 'base_commit'"
         return None
 
