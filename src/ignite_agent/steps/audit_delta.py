@@ -37,7 +37,6 @@ class AuditPrescan:
     tags: str = ""
     git_log: str = ""
     audit_files: str = ""
-    shallow: bool = False
 
 
 def _prescan(
@@ -69,34 +68,17 @@ def _prescan(
         project_path, window, debug_logger,
     )
 
-    shallow_check = _sh(
-        f"test -f '{repo_path}/.git/shallow' && echo 'shallow' || echo 'full'",
-        project_path, window, debug_logger,
-    )
-    shallow = "shallow" in shallow_check
-
     return AuditPrescan(
         remote_url=remote_url,
         tags=tags,
         git_log=git_log,
         audit_files=audit_files,
-        shallow=shallow,
     )
 
 
 def _fmt_prescan(scan: AuditPrescan) -> str:
-    depth_note = (
-        "   Shallow clone detected (.git/shallow exists). "
-        "If you need an older commit, run:\n"
-        "  git fetch --unshallow\n"
-        "or fetch a specific tag:\n"
-        "  git fetch origin <tag> --depth=50"
-        if scan.shallow
-        else "Full clone — complete git history available."
-    )
-
     return "\n".join([
-        f"Clone depth:    {depth_note}",
+        "Clone depth:    Full clone — complete git history available.",
         f"\nRemote URL:     {scan.remote_url}",
         f"\nVersion tags:\n{scan.tags}",
         f"\nRecent git log:\n{scan.git_log}",
@@ -151,7 +133,6 @@ def _fmt_prefetch(results: list[str], protocol_name: str) -> str:
     return f"{header}\n\n{body}"
 
 
-
 class AuditDeltaStep(BaseStep):
     name = "audit_delta"
 
@@ -170,98 +151,35 @@ class AuditDeltaStep(BaseStep):
             f"- Repository (read-only, git history): {self.github_repo_path}\n"
             f"- All tool calls in this step run against the repository path above.\n"
             f"- Do NOT reference the workspace path — it is irrelevant here.\n"
-            f"- The repo may be a shallow clone. Unshallow when necessary:\n"
-            f"    git fetch --unshallow\n"
-            f"    git fetch origin <tag>"
         )
 
     def findings_schema(self) -> dict:
         return {
             "type": "object",
             "properties": {
-                "audit_found": {
-                    "type": "boolean",
-                    "description": "True if at least one public audit was found.",
-                },
+                "audit_found": {"type": "boolean"},
                 "audit": {
                     "type": ["object", "null"],
-                    "description": "Details of the most recent audit. Null if none found.",
                     "properties": {
-                        "firm": {
-                            "type": "string",
-                            "description": "Auditing firm name, e.g. 'Trail of Bits'.",
-                        },
-                        "date": {
-                            "type": "string",
-                            "description": "Audit date or period, e.g. '2024-03'.",
-                        },
-                        "url": {
-                            "type": "string",
-                            "description": "URL to the audit report or announcement.",
-                        },
-                        "audited_commit": {
-                            "type": "string",
-                            "description": "Commit hash or tag the audit was performed on, or 'unknown'.",
-                        },
-                        "audited_version": {
-                            "type": "string",
-                            "description": "Version string, e.g. 'v1.2.0', or 'unknown'.",
-                        },
+                        "firm": {"type": "string"},
+                        "date": {"type": "string"},
+                        "url": {"type": "string"},
+                        "audited_commit": {"type": "string"},
+                        "audited_version": {"type": "string"},
                     },
                     "required": ["firm", "date", "url", "audited_commit", "audited_version"],
                 },
-                "diff_available": {
-                    "type": "boolean",
-                    "description": "True if a git diff against the audited commit was obtained.",
-                },
-                "changed_files": {
-                    "type": "array",
-                    "description": "In-scope source files that changed since the audit.",
-                    "items": {"type": "string"},
-                },
-                "insertions": {
-                    "type": "integer",
-                    "description": "Total lines added since audit. 0 if diff not available.",
-                },
-                "deletions": {
-                    "type": "integer",
-                    "description": "Total lines removed since audit. 0 if diff not available.",
-                },
-                "diff_excerpt": {
-                    "type": "string",
-                    "description": (
-                        "The most security-relevant portion of the diff — focus on logic "
-                        "changes in core contracts. Max ~3000 chars. Empty string if diff "
-                        "not available."
-                    ),
-                },
-                "risk_level": {
-                    "type": "string",
-                    "enum": ["none", "low", "medium", "high", "critical"],
-                    "description": (
-                        "Risk introduced by post-audit changes. "
-                        "none = no audit found or no changes. "
-                        "low = test/comment/config changes only. "
-                        "medium = non-critical logic tweaks. "
-                        "high = core logic or access control changed. "
-                        "critical = major rewrites or security-critical paths changed."
-                    ),
-                },
-                "summary": {
-                    "type": "string",
-                    "description": "2-4 sentence summary of what was found and the risk.",
-                },
+                "diff_available": {"type": "boolean"},
+                "changed_files": {"type": "array", "items": {"type": "string"}},
+                "insertions": {"type": "integer"},
+                "deletions": {"type": "integer"},
+                "diff_excerpt": {"type": "string"},
+                "risk_level": {"type": "string", "enum": ["none", "low", "medium", "high", "critical"]},
+                "summary": {"type": "string"},
             },
             "required": [
-                "audit_found",
-                "audit",
-                "diff_available",
-                "changed_files",
-                "insertions",
-                "deletions",
-                "diff_excerpt",
-                "risk_level",
-                "summary",
+                "audit_found", "audit", "diff_available", "changed_files",
+                "insertions", "deletions", "diff_excerpt", "risk_level", "summary"
             ],
         }
 
@@ -275,8 +193,6 @@ class AuditDeltaStep(BaseStep):
         missing = required - findings.keys()
         if missing:
             return f"missing fields: {', '.join(sorted(missing))}"
-        if not findings.get("summary"):
-            return "summary is empty"
         if findings.get("audit_found") and not findings.get("audit"):
             return "audit_found is true but audit object is null"
         return None
@@ -313,125 +229,61 @@ Repository: {self.github_repo_path}
 ════════════════════════════════════════
 PROTOCOL CONTEXT
 ════════════════════════════════════════
-
-Protocol name (no name if none): {protocol_name or '(unknown)'}
+Protocol name: {protocol_name or '(unknown)'}
 Summary: {protocol_summary}
 Fork status: {fork_context}
 
 ════════════════════════════════════════
 REPOSITORY SIGNALS
 ════════════════════════════════════════
-
 {prescan_section}
 
 ════════════════════════════════════════
 AUDIT PRE-FETCH RESULTS
 ════════════════════════════════════════
-
 {prefetch_section}
 
 ════════════════════════════════════════
-YOUR TASK
+YOUR MANDATORY TASK STRATEGY
 ════════════════════════════════════════
 
-PHASE 1 — FIND THE MOST RECENT AUDIT
-  Search for the latest public security audit of this protocol. Try in this order:
+You MUST execute BOTH tracks of verification to find historical security records. Do not stop at Track 1.
 
-  1. Check repo first (fastest): read any audit files listed in REPOSITORY SIGNALS
-     above, check README for audit links, check docs/ or audits/ directories.
+TRACK 1 — EXAMINE THE REPOSITORY INTERNALS
+  1. Inspect any files matching audit keywords listed in REPOSITORY SIGNALS.
+  2. Use `read_file` on the README.md, documentation directories, or configuration folders to discover mentions of previous audits or fixed commit targets.
 
-  2. Use the pre-fetched results above: call web_fetch on any URL that looks like
-     an audit report, announcement, or finding list to extract the audited
-     commit/version. The pre-fetch already ran:
-       • "{protocol_name or '<protocol name>'} security audit report"
-       • "{protocol_name or '<protocol name>'} audit trail of bits certik code4rena"
-
-  3. If pre-fetched results are insufficient, check known audit aggregators:
-       - github.com/trailofbits/publications
-       - github.com/spearbit/portfolio
-       - audits.sherlock.xyz
-       - code4rena.com (search for protocol name)
-       - github.com/OpenZeppelin/openzeppelin-audits
-
-  Target: firm name, date, URL, and — most importantly — the commit hash or
-  version tag the audit was performed on.
-
-PHASE 2 — DIFF AGAINST THE AUDITED VERSION
-  Once you have the audited commit or tag:
-
-  a. Check if it's in the local history:
-       git log --oneline | grep <commit-prefix>
-       git tag | grep <version>
-
-  b. If not present (shallow clone), fetch it:
-       git fetch origin <tag>
-       OR: git fetch --unshallow   (use this only if no specific tag works)
-
-  c. Compute the diff, scoped to source files:
-       git diff <audited-commit> HEAD -- src/
-       git diff --stat <audited-commit> HEAD -- src/
-
-  d. If the audited commit cannot be determined or fetched:
-     Use the oldest available commit as a fallback:
-       git log --oneline | tail -1
-       git diff <oldest-commit> HEAD -- src/
-     Note this limitation in the summary.
-
-PHASE 3 — ASSESS THE DIFF
-  Focus only on in-scope source files (src/, contracts/ — not tests/, lib/).
-  Extract the most security-relevant diff excerpt:
-  - Access control changes (onlyOwner, roles, modifiers added/removed)
-  - Logic changes in core financial functions (deposit, withdraw, swap, liquidate)
-  - New external calls or integrations
-  - Changes to storage layout or critical state variables
-  Ignore: comment changes, whitespace, test files, dependency updates.
+TRACK 2 — EXAMINE EXTERNAL WEB SOURCES
+  1. Actively parse the pre-fetched search results above. Use `web_fetch` to crawl any links that point to public markdown summaries, GitHub security publications, or audit registries.
+  2. If the pre-fetch data falls short, execute explicit custom `web_search` queries targeting major platforms:
+     - code4rena.com, audits.sherlock.xyz, spearbit.xyz, or github.com/trailofbits/publications
 
 ════════════════════════════════════════
-FINDINGS FORMAT
+DETERMINING THE BASELINE DIFF (CRITICAL)
 ════════════════════════════════════════
 
-Audit found with diff:
-{{
-  "audit_found": true,
-  "audit": {{
-    "firm": "Trail of Bits",
-    "date": "2024-02",
-    "url": "https://github.com/trailofbits/publications/blob/master/...",
-    "audited_commit": "a3f1b2c",
-    "audited_version": "v1.2.0"
-  }},
-  "diff_available": true,
-  "changed_files": ["src/Vault.sol", "src/Oracle.sol"],
-  "insertions": 47,
-  "deletions": 12,
-  "diff_excerpt": "--- a/src/Vault.sol\\n+++ b/src/Vault.sol\\n@@ -142,7 +142,8 @@\\n ...",
-  "risk_level": "high",
-  "summary": "Trail of Bits audited v1.2.0 in Feb 2024. Since then, Vault.sol and Oracle.sol were modified with 47 insertions. The Oracle.sol changes alter the price feed source — this is unaudited and security-critical."
-}}
+Once you discover details of an audit, your primary objective is to build a `git diff` comparing that audited state against the current `HEAD`. Run your analysis based on the quality of data found:
 
-No audit found:
-{{
-  "audit_found": false,
-  "audit": null,
-  "diff_available": false,
-  "changed_files": [],
-  "insertions": 0,
-  "deletions": 0,
-  "diff_excerpt": "",
-  "risk_level": "none",
-  "summary": "No public audit found after searching GitHub, Code4rena, Sherlock, and Trail of Bits publications. The entire codebase is unaudited."
-}}
+SCENARIO A: YOU FOUND THE EXACT COMMIT HASH OR TAG
+  1. Generate the diff restricted strictly to source directories:
+     `git diff <audited-commit> HEAD -- src/`
+
+SCENARIO B: YOU ONLY FOUND AN AUDIT DATE / TIME PERIOD (NO COMMIT HASH)
+  If the audit report only states a completion date (e.g., "Ended March 15, 2024"), calculate the closest historical commit matching that timestamp:
+  1. Find the final commit before or on that date:
+     `git log --before="2024-03-15" -n 1 --format="%H"`
+  2. Use that returned hash as your baseline reference commit for your diff:
+     `git diff <returned-hash> HEAD -- src/`
+  3. Populate the `audited_commit` JSON field with that hash, and explain your date-based derivation in your `summary`.
+
+SCENARIO C: NO AUDIT RECORDS EXIST
+  If absolutely no audit context is uncovered across web queries or repository checks, use the root initialization commit as your fallback baseline:
+  `git log --oneline | tail -1`
 
 ════════════════════════════════════════
 RULES
 ════════════════════════════════════════
-
-• Do NOT assess the diff for specific vulnerabilities — that is the static analysis step's job.
-  Your job is only to find the audit and produce the delta.
-• diff_excerpt must contain actual diff text, not a description of it.
-  If the diff is large, include the most security-relevant hunks only (max ~3000 chars).
-• risk_level is about the QUANTITY and NATURE of unaudited changes, not specific bugs.
-• If you cannot find an audit after checking the pre-fetch results and 2-3 additional
-  searches, submit with audit_found=false.
-• Do not fabricate audit firms or commits — if unknown, use "unknown".
+• `diff_excerpt` must feature raw code diff snippets (max ~3000 characters), not conversational text summaries.
+• Focus entirely on core protocol code inside production directories (e.g., `src/`, `contracts/`). Disregard testing scripts, environment variables, or lockfiles.
+• Do not invent data points. If a parameter cannot be accurately verified or derived via timestamp mapping, mark it as "unknown".
 """
