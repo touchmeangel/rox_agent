@@ -152,6 +152,14 @@ class DocumentationStep(BaseStep):
         return {
             "type": "object",
             "properties": {
+                "protocol_name": {
+                    "type": "string",
+                    "description": (
+                        "The public-facing name of the protocol (e.g. 'Uniswap', 'Aave'). "
+                        "Leave as an empty string if no name can be determined after checking "
+                        "docs, README, package.json, and web search."
+                    ),
+                },
                 "protocol_summary": {
                     "type": "string",
                     "description": "2–4 sentences: what the protocol does and its core purpose.",
@@ -284,6 +292,9 @@ class DocumentationStep(BaseStep):
             or not findings["contract_risk_matrix"]
         ):
             return "invalid contract_risk_matrix, must be a defined list"
+        pname = findings.get("protocol_name")
+        if pname is not None and not isinstance(pname, str):
+            return "protocol_name must be a string (or omitted entirely)"
         return None
 
     def initial_prompt(
@@ -330,7 +341,19 @@ Identify relevant documentation files (READMEs, specs, or docs directories), con
 
 Execute `read_file` or relevant `shell` commands sequentially to read files of interest. Do not guess.
 
-Work through the six steps below in order.
+Work through the seven steps below in order.
+
+STEP 0 — IDENTIFY THE PROTOCOL NAME  (new)
+  Determine the public-facing name of this protocol. Check in this order:
+    1. README.md or docs/ — look for a project title in the first heading or introduction.
+    2. package.json → "name" field (strip scope prefixes like "@scope/").
+    3. foundry.toml → [profile.default] name or the repo root folder name.
+    4. NatSpec @title tags in the entry-point contracts.
+    5. If nothing explicit is found, run `web_search` using the GitHub repo URL or a
+       distinctive contract/token name to locate an official docs site or audit scope page.
+  • If a name is found, set protocol_name to that string (e.g. "Morpho Blue").
+  • If after all checks no name can be determined, set protocol_name to "" (empty string).
+  • Do NOT guess or invent a name.
 
 STEP 1 — UNDERSTAND THE PROTOCOL
   Locate and read the documentation files from the directory tree.
@@ -366,7 +389,7 @@ STEP 5 — SOLC VERSION
   solc_version must be a concrete string like "0.8.24", not "unknown".
 
 STEP 6 — CONTRACT RISK MATRIX
-  For every in-scope contract produce one row. Base it on everything gathered in steps 1–5
+  For every in-scope contract produce one row. Base it on everything gathered in steps 0–5
   plus the Slither function-summary and surya table above. For each contract determine:
     • sloc         — count non-blank, non-comment lines (use `shell` with wc/grep if needed)
     • external_calls — which protocols it calls into, or "None"
@@ -382,6 +405,8 @@ FINDINGS FORMAT  (pass to submit_findings)
 ════════════════════════════════════════
 
 {{
+  "protocol_name": "Morpho Blue",
+
   "protocol_summary": "2–4 sentences describing what the protocol does.",
 
   "roles": [
@@ -447,11 +472,14 @@ FINDINGS FORMAT  (pass to submit_findings)
 RULES
 ════════════════════════════════════════
 
+• Run STEP 0 before anything else — protocol_name must be actively searched for, not guessed.
+• protocol_name may be "" if genuinely undiscoverable, but you must have checked all five
+  sources listed in STEP 0 before setting it to empty.
 • If documentation is missing, use web_search before guessing.
 • Read source files before submitting — do not rely solely on docs.
 • Every role needs at least one power.
 • solc_version must be a concrete version string — "unknown" will be rejected.
 • external_protocols and tokens may be empty arrays [] if truly none exist, but you must have checked the source before concluding that.
 • contract_risk_matrix must have one entry per in-scope contract — do not skip contracts, even simple ones.
-• Do not submit until all six steps are complete.
+• Do not submit until all seven steps are complete.
 """
