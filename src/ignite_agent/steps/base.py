@@ -77,7 +77,7 @@ class BaseStep:
 
     def select_context(self, global_context: dict) -> dict:
         return global_context
-    
+
     def environment_prompt(self) -> str:
         return f"""- Target Project Path: {self.project_path}
 - Runtime State: You are executing inside a secure, high-performance, fully trusted isolation sandbox.
@@ -342,12 +342,18 @@ You can only exit the execution loop by explicitly invoking one of the following
                                 validation=validation,
                                 findings=findings,
                             )
-                            reason = validation if isinstance(validation, str) else "required fields are missing or empty"
-                            tool_results.append(ToolResultEntry(
-                                call.id,
-                                f"Findings rejected: {reason}\nFix only this issue and call submit_findings again.",
-                                is_error=True,
-                            ))
+                            reason = (
+                                validation
+                                if isinstance(validation, str)
+                                else "required fields are missing or empty"
+                            )
+                            tool_results.append(
+                                ToolResultEntry(
+                                    call.id,
+                                    f"Findings rejected: {reason}\nFix only this issue and call submit_findings again.",
+                                    is_error=True,
+                                )
+                            )
 
                     elif call.name == "report_blocker":
                         blocker = {

@@ -156,27 +156,29 @@ class ForkAnalysisStep(BaseStep):
     def validate_complete(self, findings: dict) -> str | None:
         if not isinstance(findings, dict):
             return "the output should be a json object (python dict)"
-            
+
         if "is_fork" not in findings:
             return "is_fork is not set which is required"
-            
+
         if not findings.get("summary"):
             return "summary is not set or empty, which is required"
-            
+
         if not findings["is_fork"]:
             return None
-            
+
         upstream = findings.get("upstream")
-        
+
         if not isinstance(upstream, dict):
-            return "upstream is missing or invalid; must be an object when is_fork is true"
-            
+            return (
+                "upstream is missing or invalid; must be an object when is_fork is true"
+            )
+
         if not upstream.get("protocol"):
             return "upstream.protocol is not set which is required for forks"
-            
+
         if not upstream.get("base_commit"):
             return "upstream.base_commit is not set which is required for forks"
-            
+
         return None
 
     def environment_prompt(self) -> str:

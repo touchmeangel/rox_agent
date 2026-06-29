@@ -763,9 +763,17 @@ RULES
     def validate_complete(self, findings: dict) -> str | None:
         if not isinstance(findings, dict):
             return "findings must be a JSON object"
-        for field in ("confirmed", "suspected", "false_positives", "informational", "metrics", "risk_rating", "summary"):
-            if field not in findings:
-                return f"missing top-level field: '{field}'"
+        for object_field in (
+            "confirmed",
+            "suspected",
+            "false_positives",
+            "informational",
+            "metrics",
+            "risk_rating",
+            "summary",
+        ):
+            if object_field not in findings:
+                return f"missing top-level field: '{object_field}'"
         for i, item in enumerate(findings.get("confirmed", [])):
             loc = item.get("location", {})
             for req in ("file", "function"):
