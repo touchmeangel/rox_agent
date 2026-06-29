@@ -106,7 +106,7 @@ class LLMClient:
                 from rich.console import Console
 
                 Console().print(
-                    f"  [yellow]⚠[/yellow]  [dim]{self.chain[attempt - 1].model} failed "
+                    f"    [dim]{self.chain[attempt - 1].model} failed "
                     f"({type(last_exc).__name__}) → trying {cfg.model}[/dim]"
                 )
 
