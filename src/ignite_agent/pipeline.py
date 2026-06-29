@@ -16,7 +16,7 @@ PIPELINE: list[BaseStep] = [
     TestCoverageStep(
         StepConfig(
             model_key="reasoning",
-            max_iterations=24,
+            max_iterations=32,
         )
     ),
     StaticAnalysisStep(
