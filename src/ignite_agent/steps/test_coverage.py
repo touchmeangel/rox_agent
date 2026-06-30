@@ -43,7 +43,7 @@ def _prescan_tests(workspace_path: str) -> TestSuitePrescan:
     base_path = Path(workspace_path)
     foundry_toml_path = base_path / "foundry.toml"
     has_toml = foundry_toml_path.exists()
-    
+
     toml_content = ""
     if has_toml:
         try:
@@ -56,7 +56,7 @@ def _prescan_tests(workspace_path: str) -> TestSuitePrescan:
         for p in base_path.rglob("*.sol"):
             if any(x in p.parts for x in (".git", "node_modules", "lib")):
                 continue
-            
+
             name = p.name
             if name.endswith(".t.sol") or "test" in name.lower():
                 test_files.append(str(p.relative_to(base_path)))
@@ -76,9 +76,9 @@ def _prescan_tests(workspace_path: str) -> TestSuitePrescan:
 class TestCoverageStep(BaseStep):
     name = "test_coverage"
 
-    def run(self, context: dict) -> StepResult:        
+    def run(self, context: dict) -> StepResult:
         self.scan = _prescan_tests(self.project_path)
-        
+
         if self.scan.test_files_count == 0:
             return StepResult(
                 step_name=self.name,
@@ -94,7 +94,7 @@ class TestCoverageStep(BaseStep):
                 summary="No local test files found — step skipped.",
                 iterations_used=0,
             )
-            
+
         return super().run(context)
 
     def select_context(self, global_context: dict) -> dict:
@@ -120,7 +120,10 @@ class TestCoverageStep(BaseStep):
                     "properties": {
                         "total_lines": {"type": "integer"},
                         "covered_lines": {"type": "integer"},
-                        "coverage_percentage": {"type": "number", "description": "Global percentage (0.0 to 100.0)"},
+                        "coverage_percentage": {
+                            "type": "number",
+                            "description": "Global percentage (0.0 to 100.0)",
+                        },
                     },
                     "required": ["total_lines", "covered_lines", "coverage_percentage"],
                 },
@@ -130,7 +133,10 @@ class TestCoverageStep(BaseStep):
                     "items": {
                         "type": "object",
                         "properties": {
-                            "file_path": {"type": "string", "description": "Relative path to target file, e.g., src/Vault.sol"},
+                            "file_path": {
+                                "type": "string",
+                                "description": "Relative path to target file, e.g., src/Vault.sol",
+                            },
                             "covered_lines": {"type": "integer"},
                             "total_lines": {"type": "integer"},
                             "percentage": {"type": "number"},
@@ -144,7 +150,14 @@ class TestCoverageStep(BaseStep):
                                 "items": {"type": "string"},
                             },
                         },
-                        "required": ["file_path", "covered_lines", "total_lines", "percentage", "silent_failure_detected", "uncovered_regions"],
+                        "required": [
+                            "file_path",
+                            "covered_lines",
+                            "total_lines",
+                            "percentage",
+                            "silent_failure_detected",
+                            "uncovered_regions",
+                        ],
                     },
                 },
                 "suite_anomalies": {
@@ -171,8 +184,12 @@ class TestCoverageStep(BaseStep):
         if not isinstance(findings, dict):
             return "findings must be a dict"
         required = {
-            "has_tests", "coverage_run_success", "global_metrics",
-            "per_file_coverage", "suite_anomalies", "summary"
+            "has_tests",
+            "coverage_run_success",
+            "global_metrics",
+            "per_file_coverage",
+            "suite_anomalies",
+            "summary",
         }
         missing = required - findings.keys()
         if missing:
@@ -190,7 +207,9 @@ class TestCoverageStep(BaseStep):
         protocol_name = doc_findings.get("protocol_name") or ""
         contract_risk_matrix = doc_findings.get("contract_risk_matrix") or []
 
-        expected_files = [c.get("contract", "") for c in contract_risk_matrix if c.get("contract")]
+        expected_files = [
+            c.get("contract", "") for c in contract_risk_matrix if c.get("contract")
+        ]
 
         return f"""You are running the test coverage evaluation step of a security pipeline.
 Repository Location: {self.github_repo_path}
@@ -198,7 +217,7 @@ Repository Location: {self.github_repo_path}
 ════════════════════════════════════════
 EXPECTED CODELINE PRODUCTION TARGETS
 ════════════════════════════════════════
-Protocol Name: {protocol_name or '(unknown)'}
+Protocol Name: {protocol_name or "(unknown)"}
 Expected target files to review for coverage mapping: {json.dumps(expected_files)}
 
 ════════════════════════════════════════

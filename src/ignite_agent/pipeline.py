@@ -1,6 +1,6 @@
+from ignite_agent.steps.audit_delta import AuditDeltaStep
 from ignite_agent.steps.base import BaseStep
 from ignite_agent.steps.config import StepConfig
-from ignite_agent.steps.audit_delta import AuditDeltaStep
 from ignite_agent.steps.documentation import DocumentationStep
 from ignite_agent.steps.fork_analysis import ForkAnalysisStep
 from ignite_agent.steps.known_issues import KnownIssuesStep

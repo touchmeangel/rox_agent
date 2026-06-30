@@ -19,6 +19,7 @@ from ignite_agent.debug_logger import DebugLogger, default_debug_logger
 from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.search_state import SearchState
 from ignite_agent.tool_result import ToolResult
+from ignite_agent.overflow_store import OverflowStore
 
 _RST = "\033[0m"
 _DIM = "\033[2m"
@@ -27,6 +28,7 @@ _DIM_CYAN = "\033[2;36m"
 _STREAM_PREFIX = f"  {_DIM}"
 _STREAM_SUFFIX = _RST
 
+_overflow_store = OverflowStore()
 
 def _tool_display(tool_name: str, tool_input: dict) -> str:
     match tool_name:
@@ -66,7 +68,6 @@ def _elapsed_str(seconds: float) -> str:
     m, s = divmod(int(seconds), 60)
     return f"  {_DIM}{m}m{s:02d}s{_RST}"
 
-
 def _smart_process_output(
     stdout: str, tool_name: str, project_path: str, limit: int
 ) -> str:
@@ -77,9 +78,8 @@ def _smart_process_output(
 
     try:
         data = json.loads(stdout)
-        log_file = f".ignite_{tool_name}_{run_hash}.json"
-        log_path = Path("/tmp") / log_file
-        log_path.write_text(stdout, encoding="utf-8")
+        log_path = _overflow_store.write(stdout, f"ignite_{tool_name}_{run_hash}", ".json")
+        log_file = log_path.name
 
         summary_data = {}
         if isinstance(data, dict):
@@ -107,9 +107,8 @@ def _smart_process_output(
     except json.JSONDecodeError:
         pass
 
-    log_file = f".ignite_{tool_name}_{run_hash}.log"
-    log_path = Path("/tmp") / log_file
-    log_path.write_text(stdout, encoding="utf-8")
+    log_path = _overflow_store.write(stdout, f"ignite_{tool_name}_{run_hash}", ".json")
+    log_file = log_path.name
 
     preview_size = 3000
     head = stdout[:preview_size]

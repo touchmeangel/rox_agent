@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from ignite_agent.debug_logger import DebugLogger
 from ignite_agent.rolling_window import RollingWindow
@@ -47,17 +46,23 @@ def _prescan(
 ) -> AuditPrescan:
     remote_url = _sh(
         f"cd '{repo_path}' && git remote get-url origin 2>/dev/null || echo '(no remote)'",
-        project_path, window, debug_logger,
+        project_path,
+        window,
+        debug_logger,
     )
 
     tags = _sh(
         f"cd '{repo_path}' && git tag --sort=-version:refname 2>/dev/null | head -20 || echo '(no tags)'",
-        project_path, window, debug_logger,
+        project_path,
+        window,
+        debug_logger,
     )
 
     git_log = _sh(
         f"cd '{repo_path}' && git log --oneline -25 2>/dev/null || echo '(no history)'",
-        project_path, window, debug_logger,
+        project_path,
+        window,
+        debug_logger,
     )
 
     audit_files = _sh(
@@ -65,7 +70,9 @@ def _prescan(
         r"\( -iname '*audit*' -o -iname '*review*' -o -iname '*security*' -o -iname '*assessment*' \) "
         r"-not -path '*/.git/*' -not -path '*/node_modules/*' -not -path '*/lib/*' "
         "2>/dev/null | head -20 || echo '(none found)'",
-        project_path, window, debug_logger,
+        project_path,
+        window,
+        debug_logger,
     )
 
     return AuditPrescan(
@@ -77,13 +84,15 @@ def _prescan(
 
 
 def _fmt_prescan(scan: AuditPrescan) -> str:
-    return "\n".join([
-        "Clone depth:    Full clone — complete git history available.",
-        f"\nRemote URL:     {scan.remote_url}",
-        f"\nVersion tags:\n{scan.tags}",
-        f"\nRecent git log:\n{scan.git_log}",
-        f"\nAudit files found in repo:\n{scan.audit_files}",
-    ])
+    return "\n".join(
+        [
+            "Clone depth:    Full clone — complete git history available.",
+            f"\nRemote URL:     {scan.remote_url}",
+            f"\nVersion tags:\n{scan.tags}",
+            f"\nRecent git log:\n{scan.git_log}",
+            f"\nAudit files found in repo:\n{scan.audit_files}",
+        ]
+    )
 
 
 _AUDIT_QUERIES = [
@@ -167,19 +176,35 @@ class AuditDeltaStep(BaseStep):
                         "audited_commit": {"type": "string"},
                         "audited_version": {"type": "string"},
                     },
-                    "required": ["firm", "date", "url", "audited_commit", "audited_version"],
+                    "required": [
+                        "firm",
+                        "date",
+                        "url",
+                        "audited_commit",
+                        "audited_version",
+                    ],
                 },
                 "diff_available": {"type": "boolean"},
                 "changed_files": {"type": "array", "items": {"type": "string"}},
                 "insertions": {"type": "integer"},
                 "deletions": {"type": "integer"},
                 "diff_excerpt": {"type": "string"},
-                "risk_level": {"type": "string", "enum": ["none", "low", "medium", "high", "critical"]},
+                "risk_level": {
+                    "type": "string",
+                    "enum": ["none", "low", "medium", "high", "critical"],
+                },
                 "summary": {"type": "string"},
             },
             "required": [
-                "audit_found", "audit", "diff_available", "changed_files",
-                "insertions", "deletions", "diff_excerpt", "risk_level", "summary"
+                "audit_found",
+                "audit",
+                "diff_available",
+                "changed_files",
+                "insertions",
+                "deletions",
+                "diff_excerpt",
+                "risk_level",
+                "summary",
             ],
         }
 
@@ -187,8 +212,15 @@ class AuditDeltaStep(BaseStep):
         if not isinstance(findings, dict):
             return "findings must be a dict"
         required = {
-            "audit_found", "audit", "diff_available", "changed_files",
-            "insertions", "deletions", "diff_excerpt", "risk_level", "summary",
+            "audit_found",
+            "audit",
+            "diff_available",
+            "changed_files",
+            "insertions",
+            "deletions",
+            "diff_excerpt",
+            "risk_level",
+            "summary",
         }
         missing = required - findings.keys()
         if missing:
@@ -229,7 +261,7 @@ Repository: {self.github_repo_path}
 ════════════════════════════════════════
 PROTOCOL CONTEXT
 ════════════════════════════════════════
-Protocol name: {protocol_name or '(unknown)'}
+Protocol name: {protocol_name or "(unknown)"}
 Summary: {protocol_summary}
 Fork status: {fork_context}
 
