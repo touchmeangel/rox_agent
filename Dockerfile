@@ -9,7 +9,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     FOUNDRY_DIR=/home/shared/.foundry \
     HOME=/tmp \
     PATH="/home/shared/.foundry/bin:/usr/local/bin:${PATH}" \
-    MPLCONFIGDIR=/tmp/matplotlib_cache
+    MPLCONFIGDIR=/tmp/matplotlib_cache \
+    PLAYWRIGHT_BROWSERS_PATH=/home/shared/.cache/ms-playwright
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libssl-dev pkg-config \
@@ -83,6 +84,7 @@ RUN chmod -R 777 /home/shared
 WORKDIR /app
 COPY . .
 RUN pip install --no-cache-dir .
+RUN playwright install --with-deps chromium && chmod -R 777 /home/shared
 
 VOLUME ["/project"]
 ENV PYTHONPATH=/app/src

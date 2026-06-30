@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import mimetypes
 import re
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.error
@@ -30,6 +33,14 @@ _STREAM_SUFFIX = _RST
 
 _overflow_store = OverflowStore()
 
+# ── Scratch space for downloads ─────────────────────────────────────────────
+# Independent of project_path on purpose: some steps (fork_analysis,
+# audit_delta) set project_path to the read-only repo mount. Downloads must
+# always succeed regardless of which path a given step is using as cwd.
+_SCRATCH_DIR = Path(tempfile.mkdtemp(prefix="ignite_scratch_"))
+_MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024  # 50 MB safety cap
+
+
 def _tool_display(tool_name: str, tool_input: dict) -> str:
     match tool_name:
         case "slither":
@@ -55,6 +66,12 @@ def _tool_display(tool_name: str, tool_input: dict) -> str:
             display = f'web_search  "{tool_input.get("query", "")}"'
         case "web_fetch":
             display = f"web_fetch  {tool_input.get('url', '')}"
+        case "download_file":
+            display = f"download_file  {tool_input.get('url', '')}"
+        case "read_pdf":
+            display = f"read_pdf  {tool_input.get('source', '')}"
+        case "github_search":
+            display = f'github_search [{tool_input.get("search_type", "repositories")}]  "{tool_input.get("query", "")}"'
         case _:
             display = f"{tool_name}  {tool_input}"
     return display.replace("\r", "").replace("\n", " ")
@@ -67,6 +84,7 @@ def _elapsed_str(seconds: float) -> str:
         return f"  {_DIM}{seconds:.1f}s{_RST}"
     m, s = divmod(int(seconds), 60)
     return f"  {_DIM}{m}m{s:02d}s{_RST}"
+
 
 def _smart_process_output(
     stdout: str, tool_name: str, project_path: str, limit: int
@@ -336,6 +354,181 @@ def web_search(query: str, max_results: int = 5) -> ToolResult:
     return _web_search_ddgs(query, max_results)
 
 
+def github_search(
+    query: str, search_type: str = "repositories", max_results: int = 5
+) -> ToolResult:
+    query = query.strip()
+    label = f"github_search [{search_type}] {query!r}"
+    if not query:
+        return ToolResult(label, "", "Empty query.", 1)
+    if search_type not in ("repositories", "code"):
+        return ToolResult(label, "", "search_type must be 'repositories' or 'code'.", 1)
+
+    endpoint = f"https://api.github.com/search/{search_type}"
+    params = urllib.parse.urlencode({"q": query, "per_page": max(1, min(max_results, 10))})
+    url = f"{endpoint}?{params}"
+
+    req = urllib.request.Request(  # noqa: S310
+        url,
+        headers={
+            "User-Agent": "ignite-agent/1.0",
+            "Accept": "application/vnd.github+json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 403:
+            return ToolResult(
+                label, "",
+                "GitHub API rate limit hit (unauthenticated: ~10 search req/min, ~60 req/hr). "
+                "Wait before retrying, or fall back to web_search.",
+                1,
+            )
+        return ToolResult(label, "", f"HTTP {exc.code} from GitHub API.", 1)
+    except Exception as exc:
+        return ToolResult(label, "", str(exc), 1)
+
+    items = data.get("items", [])
+    if not items:
+        return ToolResult(label, "(no results)", "", 0)
+
+    lines: list[str] = []
+    if search_type == "repositories":
+        for i, r in enumerate(items, 1):
+            lines.append(
+                f"[{i}] {r.get('full_name')}  ★{r.get('stargazers_count', 0)}\n"
+                f"    {r.get('html_url')}\n"
+                f"    {(r.get('description') or '')[:200]}\n"
+            )
+    else: 
+        for i, r in enumerate(items, 1):
+            repo_name = (r.get("repository") or {}).get("full_name", "?")
+            lines.append(
+                f"[{i}] {repo_name} :: {r.get('path')}\n"
+                f"    {r.get('html_url')}\n"
+            )
+
+    return ToolResult(label, "\n".join(lines), "", 0)
+
+
+def _pdftotext(path: Path, max_chars: int) -> tuple[str, str]:
+    if shutil.which("pdftotext") is None:
+        return "", (
+            "pdftotext not found in PATH. The Docker image needs poppler-utils: "
+            "add `apt-get install -y poppler-utils` to the Dockerfile."
+        )
+    try:
+        result = subprocess.run(  # noqa: S603, S607
+            ["pdftotext", "-layout", str(path), "-"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        return "", "pdftotext timed out after 60s — the PDF may be unusually large."
+    except Exception as exc:
+        return "", str(exc)
+
+    if result.returncode != 0:
+        return "", f"pdftotext failed (exit {result.returncode}): {result.stderr.strip()[:500]}"
+
+    text = result.stdout.strip()
+    if not text:
+        return "", (
+            "pdftotext produced no text — this is likely a scanned/image-only PDF. "
+            "OCR is not supported; try finding an HTML version of the same report instead."
+        )
+
+    if len(text) > max_chars:
+        omitted = len(text) - max_chars
+        text = text[:max_chars] + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+
+    return text, ""
+
+
+def download_file(url: str, filename: str | None = None) -> ToolResult:
+    url = url.strip()
+    label = f"download_file {url}"
+
+    scheme = urllib.parse.urlsplit(url).scheme.lower()
+    if scheme not in ("http", "https"):
+        return ToolResult(
+            label, "",
+            f"Refused: scheme '{scheme or '(none)'}' is not allowed — only http/https URLs.",
+            1,
+        )
+
+    req = urllib.request.Request(  # noqa: S310
+        url, headers={"User-Agent": "Mozilla/5.0 (compatible; ignite-agent/1.0)"}
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310
+            content_type = resp.headers.get_content_type() or "application/octet-stream"
+            raw = resp.read(_MAX_DOWNLOAD_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        return ToolResult(label, "", f"HTTP {exc.code} downloading {url}", 1)
+    except urllib.error.URLError as exc:
+        return ToolResult(label, "", f"Network error: {exc.reason}", 1)
+    except Exception as exc:
+        return ToolResult(label, "", str(exc), 1)
+
+    if len(raw) > _MAX_DOWNLOAD_BYTES:
+        return ToolResult(
+            label, "",
+            f"File exceeds {_MAX_DOWNLOAD_BYTES // (1024 * 1024)}MB safety limit — refused.",
+            1,
+        )
+
+    if not filename:
+        url_path = urllib.parse.urlsplit(url).path
+        filename = Path(url_path).name or "download"
+    if "." not in filename:
+        filename += mimetypes.guess_extension(content_type) or ""
+
+    safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", filename)[:120]
+    dest = _SCRATCH_DIR / f"{hashlib.sha256(url.encode()).hexdigest()[:8]}_{safe_name}"
+    dest.write_bytes(raw)
+
+    size_kb = len(raw) / 1024
+    return ToolResult(
+        label,
+        f"Downloaded {size_kb:.1f} KB to: {dest}\n"
+        f"Content-Type: {content_type}\n"
+        f"Use read_pdf on this path if it's a PDF, or shell/read_file for other formats.",
+        "", 0,
+    )
+
+
+def read_pdf(source: str, max_chars: int = 15_000) -> ToolResult:
+    source = source.strip()
+    label = f"read_pdf {source}"
+
+    if source.startswith(("http://", "https://")):
+        dl = download_file(source)
+        if not dl.success:
+            return ToolResult(label, "", f"Could not download PDF: {dl.stderr}", 1)
+        match = re.search(r"Downloaded .* to: (\S+)", dl.stdout)
+        path = Path(match.group(1)) if match else None
+    else:
+        candidate = Path(source)
+        path = candidate if candidate.exists() else (_SCRATCH_DIR / source)
+
+    if not path or not path.exists():
+        return ToolResult(
+            label, "",
+            f"File not found: {source}. Pass a URL, or a local path returned by download_file.",
+            1,
+        )
+
+    text, error = _pdftotext(path, max_chars)
+    if error:
+        return ToolResult(label, "", error, 1)
+    return ToolResult(label, text, "", 0)
+
+
 def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
     url = url.strip()
     label = f"web_fetch {url}"
@@ -350,15 +543,15 @@ def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
             1,
         )
 
-    req = urllib.request.Request(  # noqa: S310 — allowlist above
+    req = urllib.request.Request(  # noqa: S310
         url, headers={"User-Agent": "Mozilla/5.0 (compatible; ignite-agent/1.0)"}
     )
 
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310
-            raw = resp.read()
+            content_type = resp.headers.get_content_type() or ""
             charset = resp.headers.get_content_charset() or "utf-8"
-            html_text = raw.decode(charset, errors="replace")
+            raw = resp.read()
     except urllib.error.HTTPError as exc:
         return ToolResult(
             label, "", f"HTTP {exc.code} fetching {url} — try a web_search instead.", 1
@@ -368,6 +561,15 @@ def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
     except Exception as exc:
         return ToolResult(label, "", str(exc), 1)
 
+    if content_type == "application/pdf" or url.lower().endswith(".pdf"):
+        tmp_path = _SCRATCH_DIR / f"{hashlib.sha256(url.encode()).hexdigest()[:8]}.pdf"
+        tmp_path.write_bytes(raw)
+        text, error = _pdftotext(tmp_path, max_chars)
+        if error:
+            return ToolResult(label, "", f"Detected PDF but extraction failed: {error}", 1)
+        return ToolResult(label, f"[PDF detected — extracted via pdftotext]\n\n{text}", "", 0)
+
+    html_text = raw.decode(charset, errors="replace")
     html_text = re.sub(
         r"(?is)<(script|style|nav|footer|header)\b.*?</\1>", " ", html_text
     )
@@ -381,6 +583,14 @@ def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
     if len(text) > max_chars:
         text = text[:max_chars]
         note = f"\n\n... [truncated to {max_chars} chars]"
+
+    if len(text) < 150:
+        note += (
+            f"\n\n[SYSTEM: Only {len(text)} chars of text extracted — this page is likely "
+            "a JavaScript-rendered single-page app and most content did not load statically. "
+            "Try: web_search for the same topic, look for a GitHub repo with the actual content, "
+            "or try github_search for the protocol/firm name instead of fetching this URL again.]"
+        )
 
     return ToolResult(label, text + note, "", 0)
 
@@ -598,7 +808,12 @@ TOOL_SPECS: list[dict] = [
         "name": "web_fetch",
         "description": (
             "Fetch the full text of one specific URL — use after web_search when a result's "
-            "snippet isn't enough."
+            "snippet isn't enough.\n\n"
+            "PDFs are auto-detected and extracted via pdftotext automatically — no need to "
+            "call read_pdf separately if you already have a direct PDF URL.\n\n"
+            "If a page returns very little text, it's likely a JavaScript-rendered app whose "
+            "content isn't in the static HTML — don't keep re-fetching it; pivot to web_search "
+            "or github_search instead."
         ),
         "input_schema": {
             "type": "object",
@@ -609,6 +824,87 @@ TOOL_SPECS: list[dict] = [
                 }
             },
             "required": ["url"],
+        },
+    },
+    {
+        "name": "download_file",
+        "description": (
+            "Download a binary file (PDF, zip, etc.) to local scratch space and return its "
+            "saved path. Use this when you need the raw file for further processing rather "
+            "than just its extracted text — e.g. before running shell tools on it. For PDFs "
+            "you want to read, read_pdf is usually simpler (it downloads automatically)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "Direct URL to the file.",
+                },
+                "filename": {
+                    "type": "string",
+                    "description": "Optional filename override; inferred from the URL if omitted.",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
+        "name": "read_pdf",
+        "description": (
+            "Extract text from a PDF — audit reports are almost always distributed this way "
+            "(Trail of Bits, Spearbit, OpenZeppelin, Code4rena, Sherlock all publish PDFs). "
+            "Pass either a direct URL (downloaded automatically) or a local path already "
+            "returned by download_file or web_fetch. Scanned/image-only PDFs cannot be read "
+            "(no OCR support) — look for an HTML version instead if extraction fails."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string",
+                    "description": "A PDF URL, or a local path from a previous download_file call.",
+                },
+                "max_chars": {
+                    "type": "integer",
+                    "description": "Max characters of extracted text to return.",
+                    "default": 15000,
+                },
+            },
+            "required": ["source"],
+        },
+    },
+    {
+        "name": "github_search",
+        "description": (
+            "Search GitHub repositories or code via the public REST API. No API key needed "
+            "(unauthenticated, rate-limited to ~10 search req/min). Use this to find:\n"
+            "  - audit publication repos: trailofbits/publications, spearbit/portfolio, "
+            "code-423n4/* (Code4rena), sherlock-audit/*\n"
+            "  - a protocol's own source repo when you only have its name\n"
+            "  - code search across GitHub for specific function signatures or patterns\n"
+            "Prefer this over web_search when you specifically want GitHub results."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query, e.g. 'org:trailofbits-publications <protocol name>'.",
+                },
+                "search_type": {
+                    "type": "string",
+                    "enum": ["repositories", "code"],
+                    "default": "repositories",
+                },
+                "max_results": {
+                    "type": "integer",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 10,
+                },
+            },
+            "required": ["query"],
         },
     },
 ]
@@ -744,6 +1040,37 @@ def dispatch(
                     search_state.consume("web_fetch", url, lambda: web_fetch(url))
                     if search_state is not None
                     else web_fetch(url)
+                )
+                window.stop_spinner()
+            case "download_file":
+                url = tool_input.get("url", "")
+                filename = tool_input.get("filename")
+                window.start_spinner("Downloading…")
+                result = (
+                    download_file(url, filename)
+                    if url
+                    else ToolResult("download_file", "", "Missing required 'url'.", 1)
+                )
+                window.stop_spinner()
+            case "read_pdf":
+                source = tool_input.get("source", "")
+                max_chars = tool_input.get("max_chars", 15_000)
+                window.start_spinner("Reading PDF…")
+                result = (
+                    read_pdf(source, max_chars)
+                    if source
+                    else ToolResult("read_pdf", "", "Missing required 'source'.", 1)
+                )
+                window.stop_spinner()
+            case "github_search":
+                query = tool_input.get("query", "")
+                search_type = tool_input.get("search_type", "repositories")
+                max_results = tool_input.get("max_results", 5)
+                window.start_spinner("Searching GitHub…")
+                result = (
+                    github_search(query, search_type, max_results)
+                    if query
+                    else ToolResult("github_search", "", "Missing required 'query'.", 1)
                 )
                 window.stop_spinner()
             case _:
