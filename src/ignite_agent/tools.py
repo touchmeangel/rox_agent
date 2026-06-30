@@ -39,6 +39,7 @@ _overflow_store = OverflowStore()
 _download_store = DownloadStore()
 _MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024  # 100 MB safety cap
 
+
 def _tool_display(tool_name: str, tool_input: dict) -> str:
     match tool_name:
         case "slither":
@@ -96,7 +97,9 @@ def _smart_process_output(
 
     try:
         data = json.loads(stdout)
-        log_path = _overflow_store.write(stdout, f"ignite_{tool_name}_{run_hash}", ".json")
+        log_path = _overflow_store.write(
+            stdout, f"ignite_{tool_name}_{run_hash}", ".json"
+        )
         log_file = log_path.name
 
         summary_data = {}
@@ -329,7 +332,8 @@ def _web_search_ddgs(query: str, max_results: int = 5) -> ToolResult:
 
     if last_exc is not None:
         return ToolResult(
-            label, "",
+            label,
+            "",
             f"Search failed after retry: {last_exc}. Try a shorter/differently-worded query, "
             f"or use browser_fetch on 'https://search.brave.com/search?q={urllib.parse.quote(query)}"
             f"&source=web' as a fallback.",
@@ -342,7 +346,8 @@ def _web_search_ddgs(query: str, max_results: int = 5) -> ToolResult:
             label,
             f"(no results — today is {today}). If that seems wrong, try browser_fetch on "
             f"'https://search.brave.com/search?q={urllib.parse.quote(query)}&source=web' instead.",
-            "", 0,
+            "",
+            0,
         )
 
     lines = [f"(search run {today})\n"]
@@ -370,7 +375,9 @@ def github_search(
         return ToolResult(label, "", "search_type must be 'repositories' or 'code'.", 1)
 
     endpoint = f"https://api.github.com/search/{search_type}"
-    params = urllib.parse.urlencode({"q": query, "per_page": max(1, min(max_results, 10))})
+    params = urllib.parse.urlencode(
+        {"q": query, "per_page": max(1, min(max_results, 10))}
+    )
     url = f"{endpoint}?{params}"
 
     req = urllib.request.Request(  # noqa: S310
@@ -386,7 +393,8 @@ def github_search(
     except urllib.error.HTTPError as exc:
         if exc.code == 403:
             return ToolResult(
-                label, "",
+                label,
+                "",
                 "GitHub API rate limit hit (unauthenticated: ~10 search req/min, ~60 req/hr). "
                 "Wait before retrying, or fall back to web_search.",
                 1,
@@ -407,12 +415,11 @@ def github_search(
                 f"    {r.get('html_url')}\n"
                 f"    {(r.get('description') or '')[:200]}\n"
             )
-    else: 
+    else:
         for i, r in enumerate(items, 1):
             repo_name = (r.get("repository") or {}).get("full_name", "?")
             lines.append(
-                f"[{i}] {repo_name} :: {r.get('path')}\n"
-                f"    {r.get('html_url')}\n"
+                f"[{i}] {repo_name} :: {r.get('path')}\n    {r.get('html_url')}\n"
             )
 
     return ToolResult(label, "\n".join(lines), "", 0)
@@ -425,8 +432,8 @@ def _pdftotext(path: Path, max_chars: int) -> tuple[str, str]:
             "add `apt-get install -y poppler-utils` to the Dockerfile."
         )
     try:
-        result = subprocess.run(  # noqa: S603, S607
-            ["pdftotext", "-layout", str(path), "-"],
+        result = subprocess.run(  # noqa: S603
+            ["pdftotext", "-layout", str(path), "-"],  # noqa: S607
             capture_output=True,
             text=True,
             timeout=60,
@@ -437,7 +444,10 @@ def _pdftotext(path: Path, max_chars: int) -> tuple[str, str]:
         return "", str(exc)
 
     if result.returncode != 0:
-        return "", f"pdftotext failed (exit {result.returncode}): {result.stderr.strip()[:500]}"
+        return (
+            "",
+            f"pdftotext failed (exit {result.returncode}): {result.stderr.strip()[:500]}",
+        )
 
     text = result.stdout.strip()
     if not text:
@@ -448,7 +458,10 @@ def _pdftotext(path: Path, max_chars: int) -> tuple[str, str]:
 
     if len(text) > max_chars:
         omitted = len(text) - max_chars
-        text = text[:max_chars] + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+        text = (
+            text[:max_chars]
+            + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+        )
 
     return text, ""
 
@@ -460,7 +473,8 @@ def download_file(url: str, filename: str | None = None) -> ToolResult:
     scheme = urllib.parse.urlsplit(url).scheme.lower()
     if scheme not in ("http", "https"):
         return ToolResult(
-            label, "",
+            label,
+            "",
             f"Refused: scheme '{scheme or '(none)'}' is not allowed — only http/https URLs.",
             1,
         )
@@ -482,7 +496,8 @@ def download_file(url: str, filename: str | None = None) -> ToolResult:
 
     if len(raw) > _MAX_DOWNLOAD_BYTES:
         return ToolResult(
-            label, "",
+            label,
+            "",
             f"File exceeds {_MAX_DOWNLOAD_BYTES // (1024 * 1024)}MB safety limit — refused.",
             1,
         )
@@ -505,15 +520,20 @@ def download_file(url: str, filename: str | None = None) -> ToolResult:
         f"Downloaded {size_kb:.1f} KB to: {dest}\n"
         f"Content-Type: {content_type}\n"
         f"Use read_document on this path if it's a PDF or any other document file, or shell/read_file for other formats.",
-        "", 0,
+        "",
+        0,
     )
 
 
-def _resolve_source_path(source: str, label: str) -> tuple[Path | None, ToolResult | None]:
+def _resolve_source_path(
+    source: str, label: str
+) -> tuple[Path | None, ToolResult | None]:
     if source.startswith(("http://", "https://")):
         dl = download_file(source)
         if not dl.success:
-            return None, ToolResult(label, "", f"Could not download file: {dl.stderr}", 1)
+            return None, ToolResult(
+                label, "", f"Could not download file: {dl.stderr}", 1
+            )
         match = re.search(r"Downloaded .* to: (\S+)", dl.stdout)
         path = Path(match.group(1)) if match else None
     else:
@@ -522,12 +542,15 @@ def _resolve_source_path(source: str, label: str) -> tuple[Path | None, ToolResu
 
     if not path or not path.exists():
         return None, ToolResult(
-            label, "", f"File not found: {source}. Pass a URL, or a local path returned by download_file.", 1,
+            label,
+            "",
+            f"File not found: {source}. Pass a URL, or a local path returned by download_file.",
+            1,
         )
     return path, None
 
 
-def _extract_docx(path: Path, max_chars: int) -> tuple[str, str]:    
+def _extract_docx(path: Path, max_chars: int) -> tuple[str, str]:
     try:
         document = docx.Document(str(path))
     except Exception as exc:
@@ -545,7 +568,10 @@ def _extract_docx(path: Path, max_chars: int) -> tuple[str, str]:
         return "", "No extractable text found in .docx (it may be empty or image-only)."
     if len(text) > max_chars:
         omitted = len(text) - max_chars
-        text = text[:max_chars] + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+        text = (
+            text[:max_chars]
+            + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+        )
     return text, ""
 
 
@@ -568,7 +594,10 @@ def _extract_xlsx(path: Path, max_chars: int) -> tuple[str, str]:
         return "", "No data found in spreadsheet."
     if len(text) > max_chars:
         omitted = len(text) - max_chars
-        text = text[:max_chars] + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+        text = (
+            text[:max_chars]
+            + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+        )
     return text, ""
 
 
@@ -581,7 +610,10 @@ def _extract_csv(path: Path, max_chars: int) -> tuple[str, str]:
         return "", "CSV/TSV file is empty."
     if len(text) > max_chars:
         omitted = len(text) - max_chars
-        text = text[:max_chars] + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+        text = (
+            text[:max_chars]
+            + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+        )
     return text, ""
 
 
@@ -622,7 +654,8 @@ def read_document(source: str, max_chars: int = 15_000) -> ToolResult:
     extractor = _DOC_DISPATCH.get(ext)
     if extractor is None:
         return ToolResult(
-            label, "",
+            label,
+            "",
             f"Unsupported extension '{ext}'. Supported: {sorted(_DOC_DISPATCH)}. "
             f"For .sol/.json/.md/.txt/.log, use read_file or shell('cat ...') instead.",
             1,
@@ -633,19 +666,26 @@ def read_document(source: str, max_chars: int = 15_000) -> ToolResult:
         return ToolResult(label, "", error, 1)
     return ToolResult(label, text, "", 0)
 
+
 def browser_fetch(url: str, max_chars: int = 8_000, wait_ms: int = 0) -> ToolResult:
     url = url.strip()
     label = f"browser_fetch {url}"
 
     scheme = urllib.parse.urlsplit(url).scheme.lower()
     if scheme not in ("http", "https"):
-        return ToolResult(label, "", f"Refused: scheme '{scheme or '(none)'}' is not allowed.", 1)
+        return ToolResult(
+            label, "", f"Refused: scheme '{scheme or '(none)'}' is not allowed.", 1
+        )
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            browser = p.chromium.launch(
+                headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
             try:
-                page = browser.new_page(user_agent="Mozilla/5.0 (compatible; ignite-agent/1.0)")
+                page = browser.new_page(
+                    user_agent="Mozilla/5.0 (compatible; ignite-agent/1.0)"
+                )
                 page.goto(url, timeout=25_000, wait_until="networkidle")
                 if wait_ms:
                     page.wait_for_timeout(wait_ms)
@@ -665,6 +705,7 @@ def browser_fetch(url: str, max_chars: int = 8_000, wait_ms: int = 0) -> ToolRes
         text = text[:max_chars]
         note = f"\n\n... [truncated to {max_chars} chars]"
     return ToolResult(label, text + note, "", 0)
+
 
 def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
     url = url.strip()
@@ -705,8 +746,12 @@ def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
         )
         text, error = _DOC_DISPATCH[doc_ext](tmp_path, max_chars)
         if error:
-            return ToolResult(label, "", f"Detected {doc_ext} but extraction failed: {error}", 1)
-        return ToolResult(label, f"[{doc_ext} detected — extracted automatically]\n\n{text}", "", 0)
+            return ToolResult(
+                label, "", f"Detected {doc_ext} but extraction failed: {error}", 1
+            )
+        return ToolResult(
+            label, f"[{doc_ext} detected — extracted automatically]\n\n{text}", "", 0
+        )
 
     html_text = raw.decode(charset, errors="replace")
     html_text = re.sub(
@@ -970,10 +1015,14 @@ TOOL_SPECS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "url": {"type": "string", "description": "Exact URL to render and extract text from."},
+                "url": {
+                    "type": "string",
+                    "description": "Exact URL to render and extract text from.",
+                },
                 "max_chars": {"type": "integer", "default": 8000},
                 "wait_ms": {
-                    "type": "integer", "default": 0,
+                    "type": "integer",
+                    "default": 0,
                     "description": "Extra wait after page load, ms — only needed if content finishes rendering after network-idle.",
                 },
             },
@@ -1203,7 +1252,11 @@ def dispatch(
                 wait_ms = tool_input.get("wait_ms", 0)
                 window.start_spinner("Rendering page…")
                 result = (
-                    search_state.consume("browser_fetch", url, lambda: browser_fetch(url, max_chars, wait_ms))
+                    search_state.consume(
+                        "browser_fetch",
+                        url,
+                        lambda: browser_fetch(url, max_chars, wait_ms),
+                    )
                     if search_state is not None
                     else browser_fetch(url, max_chars, wait_ms)
                 )
@@ -1225,7 +1278,9 @@ def dispatch(
                 result = (
                     read_document(source, max_chars)
                     if source
-                    else ToolResult("read_document", "", "Missing required 'source'.", 1)
+                    else ToolResult(
+                        "read_document", "", "Missing required 'source'.", 1
+                    )
                 )
                 window.stop_spinner()
             case "github_search":

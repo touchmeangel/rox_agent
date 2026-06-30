@@ -24,7 +24,9 @@ class TempStorage:
             except OSError:
                 continue
 
-        raise RuntimeError(f"No writable directory available for {self._PREFIX.strip('_')}")
+        raise RuntimeError(
+            f"No writable directory available for {self._PREFIX.strip('_')}"
+        )
 
     def path(self) -> Path:
         return self._ensure_dir()

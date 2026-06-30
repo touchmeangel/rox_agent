@@ -17,7 +17,6 @@ from ignite_agent.pipeline import PIPELINE
 from ignite_agent.steps.base import StepResult
 from ignite_agent.tools import _download_store, _overflow_store
 
-
 console = Console()
 color = "#1dcccc"
 
@@ -131,7 +130,9 @@ def run_agent(
             work_path=work_path,
         )
 
-        console.print(f"\n[{color}]●[/{color}] [bold white]Syncing workspace[/bold white]")
+        console.print(
+            f"\n[{color}]●[/{color}] [bold white]Syncing workspace[/bold white]"
+        )
         try:
             _copy_repo_to_workspace(repo_path, work_path)
             console.print(
@@ -145,7 +146,9 @@ def run_agent(
         results: dict[str, StepResult] = {}
 
         for step in PIPELINE:
-            console.print(f"\n[{color}]●[/{color}] [bold white]{step.name}[/bold white]")
+            console.print(
+                f"\n[{color}]●[/{color}] [bold white]{step.name}[/bold white]"
+            )
 
             step.github_repo_path = repo_path
             step.project_path = work_path
@@ -167,7 +170,9 @@ def run_agent(
                 f"[dim]{result.iterations_used} iteration{plural}[/dim]"
             )
             if result.plan:
-                done = sum(1 for item in result.plan if item.get("status") == "completed")
+                done = sum(
+                    1 for item in result.plan if item.get("status") == "completed"
+                )
                 line += f"  [dim]·  {done}/{len(result.plan)} planned steps done[/dim]"
             console.print(line)
 
@@ -188,6 +193,7 @@ def run_agent(
     finally:
         _overflow_store.cleanup()
         _download_store.cleanup()
+
 
 def _print_summary(results: dict[str, StepResult]) -> None:
     succeeded = sum(1 for r in results.values() if r.success)
