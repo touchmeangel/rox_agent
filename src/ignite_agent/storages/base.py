@@ -1,8 +1,10 @@
-import os
 import tempfile
 from pathlib import Path
 
-class OverflowStore:
+
+class TempStorage:
+    _PREFIX: str = "ignite_"
+
     def __init__(self) -> None:
         self._dir: tempfile.TemporaryDirectory | None = None
 
@@ -15,22 +17,17 @@ class OverflowStore:
                 if base is not None:
                     base.mkdir(parents=True, exist_ok=True)
                 self._dir = tempfile.TemporaryDirectory(
-                    prefix="ignite_overflow_",
+                    prefix=self._PREFIX,
                     dir=str(base) if base is not None else None,
                 )
                 return Path(self._dir.name)
             except OSError:
                 continue
 
-        raise RuntimeError("No writable directory available for overflow logs")
+        raise RuntimeError(f"No writable directory available for {self._PREFIX.strip('_')}")
 
-    def write(self, content: str, prefix: str, suffix: str) -> Path:
-        base = self._ensure_dir()
-        fd, path_str = tempfile.mkstemp(suffix=suffix, prefix=f"{prefix}_", dir=base)
-        path = Path(path_str)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(content)
-        return path
+    def path(self) -> Path:
+        return self._ensure_dir()
 
     def cleanup(self) -> None:
         if self._dir is not None:

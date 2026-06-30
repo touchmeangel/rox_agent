@@ -15,7 +15,8 @@ from rich.text import Text
 from ignite_agent.debug_logger import default_debug_logger
 from ignite_agent.pipeline import PIPELINE
 from ignite_agent.steps.base import StepResult
-from ignite_agent.tools import _overflow_store
+from ignite_agent.tools import _download_store, _overflow_store
+
 
 console = Console()
 color = "#1dcccc"
@@ -186,6 +187,7 @@ def run_agent(
         return results
     finally:
         _overflow_store.cleanup()
+        _download_store.cleanup()
 
 def _print_summary(results: dict[str, StepResult]) -> None:
     succeeded = sum(1 for r in results.values() if r.success)

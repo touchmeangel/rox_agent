@@ -6,7 +6,6 @@ import mimetypes
 import re
 import shutil
 import subprocess
-import tempfile
 import threading
 import time
 import urllib.error
@@ -16,13 +15,17 @@ from datetime import UTC, datetime
 from html import unescape
 from pathlib import Path
 
+import docx
+import openpyxl
 from ddgs import DDGS
+from playwright.sync_api import sync_playwright
 
 from ignite_agent.debug_logger import DebugLogger, default_debug_logger
 from ignite_agent.rolling_window import RollingWindow
 from ignite_agent.search_state import SearchState
+from ignite_agent.storages.download_store import DownloadStore
+from ignite_agent.storages.overflow_store import OverflowStore
 from ignite_agent.tool_result import ToolResult
-from ignite_agent.overflow_store import OverflowStore
 
 _RST = "\033[0m"
 _DIM = "\033[2m"
@@ -33,13 +36,8 @@ _STREAM_SUFFIX = _RST
 
 _overflow_store = OverflowStore()
 
-# ── Scratch space for downloads ─────────────────────────────────────────────
-# Independent of project_path on purpose: some steps (fork_analysis,
-# audit_delta) set project_path to the read-only repo mount. Downloads must
-# always succeed regardless of which path a given step is using as cwd.
-_SCRATCH_DIR = Path(tempfile.mkdtemp(prefix="ignite_scratch_"))
-_MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024  # 50 MB safety cap
-
+_download_store = DownloadStore()
+_MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024  # 100 MB safety cap
 
 def _tool_display(tool_name: str, tool_input: dict) -> str:
     match tool_name:
@@ -66,10 +64,12 @@ def _tool_display(tool_name: str, tool_input: dict) -> str:
             display = f'web_search  "{tool_input.get("query", "")}"'
         case "web_fetch":
             display = f"web_fetch  {tool_input.get('url', '')}"
+        case "browser_fetch":
+            display = f"browser_fetch  {tool_input.get('url', '')}"
         case "download_file":
             display = f"download_file  {tool_input.get('url', '')}"
-        case "read_pdf":
-            display = f"read_pdf  {tool_input.get('source', '')}"
+        case "read_document":
+            display = f"read_document  {tool_input.get('source', '')}"
         case "github_search":
             display = f'github_search [{tool_input.get("search_type", "repositories")}]  "{tool_input.get("query", "")}"'
         case _:
@@ -329,16 +329,21 @@ def _web_search_ddgs(query: str, max_results: int = 5) -> ToolResult:
 
     if last_exc is not None:
         return ToolResult(
-            label,
-            "",
-            f"Search failed after retry: {last_exc}. Try a shorter or differently-worded "
-            f"query rather than retrying this exact one.",
+            label, "",
+            f"Search failed after retry: {last_exc}. Try a shorter/differently-worded query, "
+            f"or use browser_fetch on 'https://search.brave.com/search?q={urllib.parse.quote(query)}"
+            f"&source=web' as a fallback.",
             1,
         )
 
     today = datetime.now(UTC).strftime("%Y-%m-%d")
     if not results:
-        return ToolResult(label, f"(no results — today is {today})", "", 0)
+        return ToolResult(
+            label,
+            f"(no results — today is {today}). If that seems wrong, try browser_fetch on "
+            f"'https://search.brave.com/search?q={urllib.parse.quote(query)}&source=web' instead.",
+            "", 0,
+        )
 
     lines = [f"(search run {today})\n"]
     for i, r in enumerate(results, 1):
@@ -489,7 +494,9 @@ def download_file(url: str, filename: str | None = None) -> ToolResult:
         filename += mimetypes.guess_extension(content_type) or ""
 
     safe_name = re.sub(r"[^a-zA-Z0-9._-]", "_", filename)[:120]
-    dest = _SCRATCH_DIR / f"{hashlib.sha256(url.encode()).hexdigest()[:8]}_{safe_name}"
+    dest = _download_store.write_bytes(
+        raw, f"{hashlib.sha256(url.encode()).hexdigest()[:8]}_{safe_name}"
+    )
     dest.write_bytes(raw)
 
     size_kb = len(raw) / 1024
@@ -497,37 +504,167 @@ def download_file(url: str, filename: str | None = None) -> ToolResult:
         label,
         f"Downloaded {size_kb:.1f} KB to: {dest}\n"
         f"Content-Type: {content_type}\n"
-        f"Use read_pdf on this path if it's a PDF, or shell/read_file for other formats.",
+        f"Use read_document on this path if it's a PDF or any other document file, or shell/read_file for other formats.",
         "", 0,
     )
 
 
-def read_pdf(source: str, max_chars: int = 15_000) -> ToolResult:
-    source = source.strip()
-    label = f"read_pdf {source}"
-
+def _resolve_source_path(source: str, label: str) -> tuple[Path | None, ToolResult | None]:
     if source.startswith(("http://", "https://")):
         dl = download_file(source)
         if not dl.success:
-            return ToolResult(label, "", f"Could not download PDF: {dl.stderr}", 1)
+            return None, ToolResult(label, "", f"Could not download file: {dl.stderr}", 1)
         match = re.search(r"Downloaded .* to: (\S+)", dl.stdout)
         path = Path(match.group(1)) if match else None
     else:
         candidate = Path(source)
-        path = candidate if candidate.exists() else (_SCRATCH_DIR / source)
+        path = candidate if candidate.exists() else (_download_store.path() / source)
 
     if not path or not path.exists():
+        return None, ToolResult(
+            label, "", f"File not found: {source}. Pass a URL, or a local path returned by download_file.", 1,
+        )
+    return path, None
+
+
+def _extract_docx(path: Path, max_chars: int) -> tuple[str, str]:    
+    try:
+        document = docx.Document(str(path))
+    except Exception as exc:
+        return "", f"Failed to open .docx: {exc}"
+
+    parts = [p.text for p in document.paragraphs if p.text.strip()]
+    for table in document.tables:
+        for row in table.rows:
+            cells = [c.text.strip() for c in row.cells]
+            if any(cells):
+                parts.append(" | ".join(cells))
+
+    text = "\n".join(parts).strip()
+    if not text:
+        return "", "No extractable text found in .docx (it may be empty or image-only)."
+    if len(text) > max_chars:
+        omitted = len(text) - max_chars
+        text = text[:max_chars] + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+    return text, ""
+
+
+def _extract_xlsx(path: Path, max_chars: int) -> tuple[str, str]:
+    try:
+        wb = openpyxl.load_workbook(str(path), data_only=True, read_only=True)
+    except Exception as exc:
+        return "", f"Failed to open spreadsheet: {exc}"
+
+    parts = []
+    for sheet in wb.worksheets:
+        parts.append(f"--- Sheet: {sheet.title} ---")
+        for row in sheet.iter_rows(values_only=True):
+            if row is None or all(c is None for c in row):
+                continue
+            parts.append(" | ".join("" if c is None else str(c) for c in row))
+
+    text = "\n".join(parts).strip()
+    if not text:
+        return "", "No data found in spreadsheet."
+    if len(text) > max_chars:
+        omitted = len(text) - max_chars
+        text = text[:max_chars] + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+    return text, ""
+
+
+def _extract_csv(path: Path, max_chars: int) -> tuple[str, str]:
+    try:
+        text = path.read_text(errors="replace")
+    except Exception as exc:
+        return "", str(exc)
+    if not text.strip():
+        return "", "CSV/TSV file is empty."
+    if len(text) > max_chars:
+        omitted = len(text) - max_chars
+        text = text[:max_chars] + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+    return text, ""
+
+
+_DOC_DISPATCH = {
+    ".pdf": _pdftotext,
+    ".docx": _extract_docx,
+    ".xlsx": _extract_xlsx,
+    ".xlsm": _extract_xlsx,
+    ".csv": _extract_csv,
+    ".tsv": _extract_csv,
+}
+
+_CONTENT_TYPE_EXT: dict[str, str] = {
+    "application/pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "text/csv": ".csv",
+    "text/tab-separated-values": ".tsv",
+}
+
+
+def _guess_doc_ext(url: str, content_type: str) -> str | None:
+    ext = _CONTENT_TYPE_EXT.get(content_type)
+    if ext:
+        return ext
+    url_ext = Path(urllib.parse.urlsplit(url).path).suffix.lower()
+    return url_ext if url_ext in _DOC_DISPATCH else None
+
+
+def read_document(source: str, max_chars: int = 15_000) -> ToolResult:
+    source = source.strip()
+    label = f"read_document {source}"
+    path, err = _resolve_source_path(source, label)
+    if err:
+        return err
+
+    ext = path.suffix.lower()
+    extractor = _DOC_DISPATCH.get(ext)
+    if extractor is None:
         return ToolResult(
             label, "",
-            f"File not found: {source}. Pass a URL, or a local path returned by download_file.",
+            f"Unsupported extension '{ext}'. Supported: {sorted(_DOC_DISPATCH)}. "
+            f"For .sol/.json/.md/.txt/.log, use read_file or shell('cat ...') instead.",
             1,
         )
 
-    text, error = _pdftotext(path, max_chars)
+    text, error = extractor(path, max_chars)
     if error:
         return ToolResult(label, "", error, 1)
     return ToolResult(label, text, "", 0)
 
+def browser_fetch(url: str, max_chars: int = 8_000, wait_ms: int = 0) -> ToolResult:
+    url = url.strip()
+    label = f"browser_fetch {url}"
+
+    scheme = urllib.parse.urlsplit(url).scheme.lower()
+    if scheme not in ("http", "https"):
+        return ToolResult(label, "", f"Refused: scheme '{scheme or '(none)'}' is not allowed.", 1)
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            try:
+                page = browser.new_page(user_agent="Mozilla/5.0 (compatible; ignite-agent/1.0)")
+                page.goto(url, timeout=25_000, wait_until="networkidle")
+                if wait_ms:
+                    page.wait_for_timeout(wait_ms)
+                text = page.inner_text("body")
+            finally:
+                browser.close()
+    except Exception as exc:
+        return ToolResult(label, "", f"Browser fetch failed: {exc}", 1)
+
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n\s*\n+", "\n\n", text).strip()
+    if not text:
+        return ToolResult(label, "", "Page rendered but produced no visible text.", 1)
+
+    note = ""
+    if len(text) > max_chars:
+        text = text[:max_chars]
+        note = f"\n\n... [truncated to {max_chars} chars]"
+    return ToolResult(label, text + note, "", 0)
 
 def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
     url = url.strip()
@@ -561,13 +698,15 @@ def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
     except Exception as exc:
         return ToolResult(label, "", str(exc), 1)
 
-    if content_type == "application/pdf" or url.lower().endswith(".pdf"):
-        tmp_path = _SCRATCH_DIR / f"{hashlib.sha256(url.encode()).hexdigest()[:8]}.pdf"
-        tmp_path.write_bytes(raw)
-        text, error = _pdftotext(tmp_path, max_chars)
+    doc_ext = _guess_doc_ext(url, content_type)
+    if doc_ext:
+        tmp_path = _download_store.write_bytes(
+            raw, f"{hashlib.sha256(url.encode()).hexdigest()[:8]}{doc_ext}"
+        )
+        text, error = _DOC_DISPATCH[doc_ext](tmp_path, max_chars)
         if error:
-            return ToolResult(label, "", f"Detected PDF but extraction failed: {error}", 1)
-        return ToolResult(label, f"[PDF detected — extracted via pdftotext]\n\n{text}", "", 0)
+            return ToolResult(label, "", f"Detected {doc_ext} but extraction failed: {error}", 1)
+        return ToolResult(label, f"[{doc_ext} detected — extracted automatically]\n\n{text}", "", 0)
 
     html_text = raw.decode(charset, errors="replace")
     html_text = re.sub(
@@ -583,14 +722,6 @@ def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
     if len(text) > max_chars:
         text = text[:max_chars]
         note = f"\n\n... [truncated to {max_chars} chars]"
-
-    if len(text) < 150:
-        note += (
-            f"\n\n[SYSTEM: Only {len(text)} chars of text extracted — this page is likely "
-            "a JavaScript-rendered single-page app and most content did not load statically. "
-            "Try: web_search for the same topic, look for a GitHub repo with the actual content, "
-            "or try github_search for the protocol/firm name instead of fetching this URL again.]"
-        )
 
     return ToolResult(label, text + note, "", 0)
 
@@ -810,9 +941,9 @@ TOOL_SPECS: list[dict] = [
             "Fetch the full text of one specific URL — use after web_search when a result's "
             "snippet isn't enough.\n\n"
             "PDFs are auto-detected and extracted via pdftotext automatically — no need to "
-            "call read_pdf separately if you already have a direct PDF URL.\n\n"
+            "call read_document separately if you already have a direct PDF or any other document type URL.\n\n"
             "If a page returns very little text, it's likely a JavaScript-rendered app whose "
-            "content isn't in the static HTML — don't keep re-fetching it; pivot to web_search "
+            "content isn't in the static HTML — don't keep re-fetching it; pivot to browser_fethc, web_search "
             "or github_search instead."
         ),
         "input_schema": {
@@ -827,12 +958,35 @@ TOOL_SPECS: list[dict] = [
         },
     },
     {
+        "name": "browser_fetch",
+        "description": (
+            "Fetch a URL with a real headless Chromium browser instead of a raw HTTP request. Use "
+            "this when web_fetch reports very little extracted text (JS-rendered single-page app), "
+            "or to drive a search engine whose results only render client-side, e.g. "
+            "'https://search.brave.com/search?q=<query>&source=web'.\n\n"
+            "Slower than web_fetch (full browser boot, ~2-5s) — try web_fetch first for ordinary "
+            "pages and only reach for this when it's actually needed."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "Exact URL to render and extract text from."},
+                "max_chars": {"type": "integer", "default": 8000},
+                "wait_ms": {
+                    "type": "integer", "default": 0,
+                    "description": "Extra wait after page load, ms — only needed if content finishes rendering after network-idle.",
+                },
+            },
+            "required": ["url"],
+        },
+    },
+    {
         "name": "download_file",
         "description": (
             "Download a binary file (PDF, zip, etc.) to local scratch space and return its "
             "saved path. Use this when you need the raw file for further processing rather "
             "than just its extracted text — e.g. before running shell tools on it. For PDFs "
-            "you want to read, read_pdf is usually simpler (it downloads automatically)."
+            "you want to read, read_document is usually simpler (it downloads automatically)."
         ),
         "input_schema": {
             "type": "object",
@@ -850,20 +1004,21 @@ TOOL_SPECS: list[dict] = [
         },
     },
     {
-        "name": "read_pdf",
+        "name": "read_document",
         "description": (
-            "Extract text from a PDF — audit reports are almost always distributed this way "
-            "(Trail of Bits, Spearbit, OpenZeppelin, Code4rena, Sherlock all publish PDFs). "
-            "Pass either a direct URL (downloaded automatically) or a local path already "
-            "returned by download_file or web_fetch. Scanned/image-only PDFs cannot be read "
-            "(no OCR support) — look for an HTML version instead if extraction fails."
+            "Extract text from a document. Audit reports and findings trackers come in several "
+            "formats: PDF (Trail of Bits, Spearbit, OpenZeppelin, Code4rena, Sherlock all publish "
+            "these), Word .docx, and Excel .xlsx/.xlsm or .csv/.tsv finding trackers.\n\n"
+            "Pass either a direct URL (downloaded automatically) or a local path already returned "
+            "by download_file. Scanned/image-only PDFs cannot be read (no OCR support) — look for "
+            "an HTML version instead if extraction fails."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "source": {
                     "type": "string",
-                    "description": "A PDF URL, or a local path from a previous download_file call.",
+                    "description": "A URL, or a local path from download_file. Supported: .pdf, .docx, .xlsx, .xlsm, .csv, .tsv.",
                 },
                 "max_chars": {
                     "type": "integer",
@@ -1042,6 +1197,17 @@ def dispatch(
                     else web_fetch(url)
                 )
                 window.stop_spinner()
+            case "browser_fetch":
+                url = tool_input.get("url", "")
+                max_chars = tool_input.get("max_chars", 8_000)
+                wait_ms = tool_input.get("wait_ms", 0)
+                window.start_spinner("Rendering page…")
+                result = (
+                    search_state.consume("browser_fetch", url, lambda: browser_fetch(url, max_chars, wait_ms))
+                    if search_state is not None
+                    else browser_fetch(url, max_chars, wait_ms)
+                )
+                window.stop_spinner()
             case "download_file":
                 url = tool_input.get("url", "")
                 filename = tool_input.get("filename")
@@ -1052,14 +1218,14 @@ def dispatch(
                     else ToolResult("download_file", "", "Missing required 'url'.", 1)
                 )
                 window.stop_spinner()
-            case "read_pdf":
+            case "read_document":
                 source = tool_input.get("source", "")
                 max_chars = tool_input.get("max_chars", 15_000)
-                window.start_spinner("Reading PDF…")
+                window.start_spinner("Reading document…")
                 result = (
-                    read_pdf(source, max_chars)
+                    read_document(source, max_chars)
                     if source
-                    else ToolResult("read_pdf", "", "Missing required 'source'.", 1)
+                    else ToolResult("read_document", "", "Missing required 'source'.", 1)
                 )
                 window.stop_spinner()
             case "github_search":
