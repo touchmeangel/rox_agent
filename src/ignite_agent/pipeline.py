@@ -3,6 +3,7 @@ from ignite_agent.steps.base import BaseStep
 from ignite_agent.steps.config import StepConfig
 from ignite_agent.steps.documentation import DocumentationStep
 from ignite_agent.steps.fork_analysis import ForkAnalysisStep
+from ignite_agent.steps.invariant_testing import InvariantTestingStep
 from ignite_agent.steps.known_issues import KnownIssuesStep
 from ignite_agent.steps.report import FinalReportStep
 from ignite_agent.steps.static_analysis import StaticAnalysisStep
@@ -33,6 +34,13 @@ PIPELINE: list[BaseStep] = [
     ),
     AuditDeltaStep(
         StepConfig(model_key="reasoning", max_iterations=32, max_web_calls=16)
+    ),
+    InvariantTestingStep(
+        StepConfig(
+            model_key="reasoning",
+            max_iterations=64,
+            max_web_calls=12
+        )
     ),
     FinalReportStep(
         StepConfig(
