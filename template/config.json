@@ -15,7 +15,9 @@
     }
   },
   "task_routing": {
-    "default": "local",
-    "reasoning": "reasoning"
+    "reasoning": [
+      "reasoning",
+      "local"
+    ]
   }
 }
