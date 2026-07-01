@@ -3,7 +3,6 @@ from __future__ import annotations
 from ignite_core.debug_logger import DebugLogger
 from ignite_core.rolling_window import RollingWindow
 from ignite_core.steps.base import BaseStep
-from ignite_core.steps.config import StepConfig
 
 _CONTEXT_KEYS = (
     "documentation",

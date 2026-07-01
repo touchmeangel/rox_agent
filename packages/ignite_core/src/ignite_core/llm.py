@@ -5,8 +5,8 @@ import os
 import time
 from dataclasses import dataclass, field
 
-from ignite_core.model_config import ModelConfig
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
+from ignite_core.model_config import ModelConfig
 from ignite_core.rolling_window import RollingWindow
 from ignite_core.tool_call_parser import ToolCall, parse_text_tool_calls
 

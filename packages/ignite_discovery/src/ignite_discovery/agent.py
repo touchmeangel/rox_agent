@@ -6,18 +6,16 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+from ignite_core.debug_logger import default_debug_logger
+from ignite_core.steps.base import StepResult
+from ignite_core.tools import _download_store, _overflow_store
+from ignite_discovery.config import MODELS
+from ignite_discovery.pipeline import PIPELINE
 from rich import box
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-
-from ignite_discovery.pipeline import PIPELINE
-from ignite_discovery.config import MODELS
-
-from ignite_core.debug_logger import default_debug_logger
-from ignite_core.steps.base import StepResult
-from ignite_core.tools import _download_store, _overflow_store
 
 console = Console()
 color = "#1dcccc"
@@ -27,6 +25,7 @@ REPO_URL = "https://github.com/touchmeangel/ignite_agent"
 ASCII_LOGO = r"""   __
 __(o )>
 \___)"""
+
 
 def print_welcome_banner():
     logo = Text(ASCII_LOGO, style=color)

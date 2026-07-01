@@ -1,7 +1,6 @@
-from ignite_discovery.config import MODELS
-
 from ignite_core.steps.base import BaseStep
 from ignite_core.steps.config import StepConfig
+from ignite_discovery.config import MODELS
 from ignite_discovery.steps.audit_delta import AuditDeltaStep
 from ignite_discovery.steps.documentation import DocumentationStep
 from ignite_discovery.steps.fork_analysis import ForkAnalysisStep
@@ -38,11 +37,7 @@ PIPELINE: list[BaseStep] = [
         StepConfig(models=MODELS["reasoning"], max_iterations=32, max_web_calls=16)
     ),
     InvariantTestingStep(
-        StepConfig(
-            models=MODELS["reasoning"],
-            max_iterations=64,
-            max_web_calls=12
-        )
+        StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=12)
     ),
     FinalReportStep(
         StepConfig(
