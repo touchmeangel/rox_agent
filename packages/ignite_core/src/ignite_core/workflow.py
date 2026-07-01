@@ -28,7 +28,7 @@ class Workflow(ABC):
     def __init__(self, pipeline: Sequence[BaseStep]) -> None:
         self.pipeline = pipeline
 
-    def run(self, repo_path: str, work_path: str) -> dict[str, StepResult]:
+    def run(self, repo_path: str, work_path: str, context: dict = {}) -> dict[str, StepResult]:
         try:
             default_debug_logger.log_event(
                 "agent_run_start",
@@ -36,7 +36,6 @@ class Workflow(ABC):
                 work_path=work_path,
             )
             
-            context: dict = {}
             results: dict[str, StepResult] = {}
             for step in self.pipeline:
                 console.print(

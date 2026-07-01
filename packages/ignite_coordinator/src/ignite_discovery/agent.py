@@ -9,7 +9,7 @@ from pathlib import Path
 from ignite_core.steps.base import StepResult
 from ignite_core.workflow import Workflow
 from ignite_core.debug_logger import default_debug_logger
-from ignite_discovery.pipeline import PIPELINE, MODELS
+from ignite_coordinator.pipeline import PIPELINE, MODELS
 
 from rich import box
 from rich.console import Console, Group

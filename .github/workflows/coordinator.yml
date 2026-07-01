@@ -1,4 +1,4 @@
-name: Deploy Ignite Discovery
+name: Deploy Ignite Coordinator
 
 on:
   workflow_run:
@@ -31,10 +31,10 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./docker/discovery.Dockerfile
+          file: ./docker/coordinator.Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_NAME }}/${{ vars.DISCOVERY_IMAGE_NAME }}:latest
-            ${{ secrets.DOCKER_NAME }}/${{ vars.DISCOVERY_IMAGE_NAME }}:${{ github.event.workflow_run.head_sha }}
+            ${{ secrets.DOCKER_NAME }}/${{ vars.COORDINATOR_IMAGE_NAME }}:latest
+            ${{ secrets.DOCKER_NAME }}/${{ vars.COORDINATOR_IMAGE_NAME }}:${{ github.event.workflow_run.head_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

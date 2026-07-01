@@ -206,9 +206,6 @@ You can only exit the execution loop by explicitly invoking one of the following
         ]
 
     def run(self, context: dict) -> StepResult:
-        if not self.cfg.enabled:
-            return StepResult(self.name, True, {}, "Step disabled.", 0)
-
         default_debug_logger.log_event(
             "step_start", step=self.name, max_iterations=self.cfg.max_iterations
         )

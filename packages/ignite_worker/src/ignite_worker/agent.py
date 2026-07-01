@@ -82,6 +82,12 @@ def parse_args() -> argparse.Namespace:
             "Pass 'stderr' (or '-') or a file path."
         ),
     )
+    
+    parser.add_argument(
+        "--mission",
+        required=True,
+        help="Mission JSON produced by ignite_coordinator.",
+    )
 
     return parser.parse_args()
 
@@ -93,9 +99,17 @@ def main():
     repo_path = args.repo_path
     work_path = args.work_path
     output_path = args.output
-        
+    mission = json.loads(Path(args.mission).read_text())
+
     workflow = Workflow(PIPELINE)
-    results = workflow.run(repo_path, work_path)
+
+    results = workflow.run(
+        repo_path,
+        work_path,
+        context={
+            "mission": mission,
+        },
+    )
         
     if output_path:
         _write_results(results, output_path)

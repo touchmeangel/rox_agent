@@ -10,8 +10,9 @@ resolution-markers = [
 [manifest]
 members = [
     "ignite-agent",
+    "ignite-coordinator",
     "ignite-core",
-    "ignite-discovery",
+    "ignite-worker",
 ]
 
 [[package]]
@@ -636,6 +637,17 @@ dev = [
 ]
 
 [[package]]
+name = "ignite-coordinator"
+version = "0.1.0"
+source = { editable = "packages/ignite_coordinator" }
+dependencies = [
+    { name = "ignite-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "ignite-core", editable = "packages/ignite_core" }]
+
+[[package]]
 name = "ignite-core"
 version = "0.1.0"
 source = { editable = "packages/ignite_core" }
@@ -663,9 +675,9 @@ requires-dist = [
 ]
 
 [[package]]
-name = "ignite-discovery"
+name = "ignite-worker"
 version = "0.1.0"
-source = { editable = "packages/ignite_discovery" }
+source = { editable = "packages/ignite_worker" }
 dependencies = [
     { name = "ignite-core" },
 ]

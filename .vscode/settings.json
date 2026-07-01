@@ -2,7 +2,7 @@
     "python-envs.defaultEnvManager": "ms-python.python:venv",
     "python.analysis.extraPaths": [
         "${workspaceFolder}/packages/ignite_core/src",
-        "${workspaceFolder}/packages/ignite_discovery/src",
-        "${workspaceFolder}/packages/ignite_solver/src"
+        "${workspaceFolder}/packages/ignite_coordinator/src",
+        "${workspaceFolder}/packages/ignite_worker/src"
     ]
 }
