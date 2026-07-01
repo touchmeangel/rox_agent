@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import shutil
 import json
 from datetime import datetime
@@ -7,7 +8,6 @@ from pathlib import Path
 
 from ignite_core.steps.base import StepResult
 from ignite_core.workflow import Workflow
-from ignite_core.cli import parse_args
 from ignite_core.debug_logger import default_debug_logger
 from ignite_discovery.pipeline import PIPELINE, MODELS
 
@@ -75,6 +75,45 @@ def print_welcome_banner():
     
 def _copy_repo_to_workspace(repo_path: str, work_path: str) -> None:
     shutil.copytree(repo_path, work_path, dirs_exist_ok=True)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="EVM Smart Contract Audit Agent | ignite"
+    )
+
+    parser.add_argument(
+        "--repo-path",
+        required=True,
+        help="Path to the pre-cloned repository (read-only source of truth).",
+    )
+
+    parser.add_argument(
+        "--work-path",
+        required=True,
+        help=(
+            "Path to the writable workspace. The agent stages build artifacts "
+            "and writes results here."
+        ),
+    )
+
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="JSON output path.",
+    )
+
+    parser.add_argument(
+        "--debug",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Log full tool calls, LLM requests/responses, and lifecycle events. "
+            "Pass 'stderr' (or '-') or a file path."
+        ),
+    )
+
+    return parser.parse_args()
 
 def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     output = {
