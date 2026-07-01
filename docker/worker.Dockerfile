@@ -31,9 +31,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
-        apt-get update && apt-get install -y --no-install-recommends libc6-amd64-cross \
-        && rm -rf /var/lib/apt/lists/* \
-        && ln -s /usr/x86_64-linux-gnu/lib64/ /lib64; \
+    apt-get update && apt-get install -y --no-install-recommends libc6-amd64-cross \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -s /usr/x86_64-linux-gnu/lib64/ /lib64; \
     fi
 
 ENV LD_LIBRARY_PATH="/lib64:/usr/x86_64-linux-gnu/lib"
@@ -43,7 +43,6 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /tmp/matplotlib_cache && chmod -R 777 /tmp/matplotlib_cache
-
 RUN mkdir -p /home/shared && chmod 777 /home/shared
 
 RUN curl -L https://foundry.paradigm.xyz | bash && foundryup
@@ -64,7 +63,7 @@ RUN pip install --no-cache-dir "mythril>=0.23.25"
 
 RUN npm install -g \
     solhint \
-    surya 
+    surya
 
 RUN solc-select install 0.8.28 && \
     solc-select install 0.8.26 && \
@@ -83,10 +82,12 @@ RUN chmod -R 777 /home/shared
 
 WORKDIR /app
 COPY . .
-RUN pip install --no-cache-dir .
-RUN playwright install --with-deps chromium && chmod -R 777 /home/shared
+
+RUN pip install --no-cache-dir uv \
+    && uv sync --frozen --no-dev --all-packages
+
+RUN uv run playwright install --with-deps chromium && chmod -R 777 /home/shared
 
 VOLUME ["/project"]
-ENV PYTHONPATH=/app/src
 
-ENTRYPOINT ["python", "-m", "ignite_agent.agent"]
+ENTRYPOINT ["uv", "run", "--no-sync", "python", "-m", "ignite_worker.agent"]

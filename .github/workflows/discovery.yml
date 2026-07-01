@@ -34,7 +34,7 @@ jobs:
           file: ./docker/discovery.Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_NAME }}/${{ vars.IMAGE_NAME }}:latest
-            ${{ secrets.DOCKER_NAME }}/${{ vars.IMAGE_NAME }}:${{ github.event.workflow_run.head_sha }}
+            ${{ secrets.DOCKER_NAME }}/${{ vars.DISCOVERY_IMAGE_NAME }}:latest
+            ${{ secrets.DOCKER_NAME }}/${{ vars.DISCOVERY_IMAGE_NAME }}:${{ github.event.workflow_run.head_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
