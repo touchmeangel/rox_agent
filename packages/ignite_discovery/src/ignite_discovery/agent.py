@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-import argparse
-import json
 import shutil
+import json
 from datetime import datetime
 from pathlib import Path
 
-from ignite_core.debug_logger import default_debug_logger
 from ignite_core.steps.base import StepResult
-from ignite_core.tools import _download_store, _overflow_store
-from ignite_discovery.config import MODELS
-from ignite_discovery.pipeline import PIPELINE
+from ignite_core.workflow import Workflow
+from ignite_core.cli import parse_args
+from ignite_core.debug_logger import default_debug_logger
+from ignite_discovery.pipeline import PIPELINE, MODELS
+
 from rich import box
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -72,141 +72,9 @@ def print_welcome_banner():
     console.print()
     console.print(Panel(grid, box=box.ROUNDED, border_style="dim", padding=(1, 3)))
     console.print()
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="EVM Smart Contract Audit Agent | ignite"
-    )
-    parser.add_argument(
-        "--repo-path",
-        type=str,
-        required=True,
-        help="Path to the pre-cloned repository (read-only source of truth).",
-    )
-    parser.add_argument(
-        "--work-path",
-        type=str,
-        required=True,
-        help=(
-            "Path to the writable workspace. The agent stages build artifacts "
-            "and writes results here. Pass an existing workspace to skip "
-            "rebuild phases once they are implemented."
-        ),
-    )
-    parser.add_argument(
-        "--output", type=str, required=False, default=None, help="JSON output path."
-    )
-    parser.add_argument(
-        "--debug",
-        type=str,
-        default=None,
-        metavar="PATH",
-        help=(
-            "Log full tool calls, full LLM requests/responses, and step "
-            "lifecycle events. Pass 'stderr' (or '-') to print as JSONL to "
-            "stderr — useful in a container since `docker logs` picks it up "
-            "without a volume mount — or a file PATH to append JSONL there."
-        ),
-    )
-    return parser.parse_args()
-
-
+    
 def _copy_repo_to_workspace(repo_path: str, work_path: str) -> None:
     shutil.copytree(repo_path, work_path, dirs_exist_ok=True)
-
-
-def run_agent(
-    repo_path: str,
-    work_path: str,
-    output_path: str | None = None,
-) -> dict[str, StepResult]:
-    try:
-        default_debug_logger.log_event(
-            "agent_run_start",
-            repo_path=repo_path,
-            work_path=work_path,
-        )
-
-        console.print(
-            f"\n[{color}]●[/{color}] [bold white]Syncing workspace[/bold white]"
-        )
-        try:
-            _copy_repo_to_workspace(repo_path, work_path)
-            console.print(
-                f"  [dim]⎿[/dim]  [green]✓[/green]  [dim]{repo_path} → {work_path}[/dim]"
-            )
-        except Exception as e:
-            console.print(f"  [dim]⎿[/dim]  [red]✗[/red]  [dim]{e}[/dim]")
-            raise SystemExit(1) from None
-
-        context: dict = {}
-        results: dict[str, StepResult] = {}
-
-        for step in PIPELINE:
-            console.print(
-                f"\n[{color}]●[/{color}] [bold white]{step.name}[/bold white]"
-            )
-
-            step.github_repo_path = repo_path
-            step.project_path = work_path
-
-            filtered_context = step.select_context(context)
-            result = step.run(filtered_context)
-            results[step.name] = result
-
-            context[step.name] = {
-                "findings": result.findings,
-                "summary": result.summary,
-                "success": result.success,
-            }
-
-            icon = "[green]✓[/green]" if result.success else "[red]✗[/red]"
-            plural = "" if result.iterations_used == 1 else "s"
-            line = (
-                f"  [dim]⎿[/dim]  {icon}  "
-                f"[dim]{result.iterations_used} iteration{plural}[/dim]"
-            )
-            if result.plan:
-                done = sum(
-                    1 for item in result.plan if item.get("status") == "completed"
-                )
-                line += f"  [dim]·  {done}/{len(result.plan)} planned steps done[/dim]"
-            console.print(line)
-
-        _print_summary(results)
-
-        if output_path:
-            _write_results(results, output_path)
-
-        default_debug_logger.log_event(
-            "agent_run_complete",
-            repo_path=repo_path,
-            work_path=work_path,
-            succeeded=sum(1 for r in results.values() if r.success),
-            failed=sum(1 for r in results.values() if not r.success),
-        )
-
-        return results
-    finally:
-        _overflow_store.cleanup()
-        _download_store.cleanup()
-
-
-def _print_summary(results: dict[str, StepResult]) -> None:
-    succeeded = sum(1 for r in results.values() if r.success)
-    failed = len(results) - succeeded
-
-    parts = []
-    if succeeded:
-        parts.append(f"[green]✓ {succeeded} succeeded[/green]")
-    if failed:
-        parts.append(f"[red]✗ {failed} failed[/red]")
-    if not parts:
-        parts.append("[dim]no steps ran[/dim]")
-
-    console.print("\n" + "   ".join(parts) + "\n")
-
 
 def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     output = {
@@ -233,12 +101,27 @@ def main():
     default_debug_logger.configure(args.debug)
     print_welcome_banner()
 
-    run_agent(
-        repo_path=args.repo_path,
-        work_path=args.work_path,
-        output_path=args.output,
-    )
+    repo_path = args.repo_path
+    work_path = args.work_path
+    output_path = args.output
 
+    console.print(
+        f"\n[{color}]●[/{color}] [bold white]Syncing workspace[/bold white]"
+    )
+    try:
+        _copy_repo_to_workspace(repo_path, work_path)
+        console.print(
+            f"  [dim]⎿[/dim]  [green]✓[/green]  [dim]{repo_path} → {work_path}[/dim]"
+        )
+    except Exception as e:
+        console.print(f"  [dim]⎿[/dim]  [red]✗[/red]  [dim]{e}[/dim]")
+        raise SystemExit(1) from None
+        
+    workflow = Workflow(PIPELINE)
+    results = workflow.run(repo_path, work_path)
+        
+    if output_path:
+        _write_results(results, output_path)
 
 if __name__ == "__main__":
     main()
