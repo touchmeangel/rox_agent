@@ -20,12 +20,12 @@ import openpyxl
 from ddgs import DDGS
 from playwright.sync_api import sync_playwright
 
-from ignite_agent.debug_logger import DebugLogger, default_debug_logger
-from ignite_agent.rolling_window import RollingWindow
-from ignite_agent.search_state import SearchState
-from ignite_agent.storages.download_store import DownloadStore
-from ignite_agent.storages.overflow_store import OverflowStore
-from ignite_agent.tool_result import ToolResult
+from ignite_core.debug_logger import DebugLogger, default_debug_logger
+from ignite_core.rolling_window import RollingWindow
+from ignite_core.search_state import SearchState
+from ignite_core.storages.download_store import DownloadStore
+from ignite_core.storages.overflow_store import OverflowStore
+from ignite_core.tool_result import ToolResult
 
 _RST = "\033[0m"
 _DIM = "\033[2m"

@@ -3,10 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-from ignite_agent.debug_logger import DebugLogger
-from ignite_agent.rolling_window import RollingWindow
-from ignite_agent.steps.base import BaseStep, StepResult
-from ignite_agent.tools import dispatch
+from ignite_core.debug_logger import DebugLogger
+from ignite_core.rolling_window import RollingWindow
+from ignite_core.steps.base import BaseStep, StepResult
+from ignite_core.tools import dispatch
 
 _FORK_README_KEYWORDS = [
     "fork of",

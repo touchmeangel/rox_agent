@@ -12,10 +12,12 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from ignite_agent.debug_logger import default_debug_logger
-from ignite_agent.pipeline import PIPELINE
-from ignite_agent.steps.base import StepResult
-from ignite_agent.tools import _download_store, _overflow_store
+from ignite_discovery.pipeline import PIPELINE
+from ignite_discovery.config import MODELS
+
+from ignite_core.debug_logger import default_debug_logger
+from ignite_core.steps.base import StepResult
+from ignite_core.tools import _download_store, _overflow_store
 
 console = Console()
 color = "#1dcccc"
@@ -26,10 +28,7 @@ ASCII_LOGO = r"""   __
 __(o )>
 \___)"""
 
-
 def print_welcome_banner():
-    from ignite_agent.config import MODELS
-
     logo = Text(ASCII_LOGO, style=color)
 
     header = Text.from_markup(

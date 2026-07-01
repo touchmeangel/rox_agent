@@ -3,8 +3,9 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
-from dataclasses import dataclass
 from pathlib import Path
+
+from ignite_core.model_config import ModelConfig
 
 _env_override = os.environ.get("IGNITE_CONFIG_PATH")
 
@@ -25,17 +26,6 @@ def _load_raw() -> dict:
             f"Hint: Set the 'IGNITE_CONFIG_PATH' environment variable to point to your config file."
         )
     return json.loads(_CONFIG_PATH.read_text())
-
-
-@dataclass
-class ModelConfig:
-    provider: str
-    model: str
-    max_tokens: int
-    temperature: float | None = None
-    reasoning_effort: str | None = None
-    base_url: str | None = None
-    api_key_env: str | None = None
 
 
 _raw = _load_raw()

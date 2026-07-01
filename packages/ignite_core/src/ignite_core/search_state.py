@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from ignite_agent.tool_result import ToolResult
+from ignite_core.tool_result import ToolResult
 
 
 @dataclass

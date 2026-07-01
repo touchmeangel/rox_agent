@@ -6,10 +6,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ignite_agent.debug_logger import DebugLogger
-from ignite_agent.rolling_window import RollingWindow
-from ignite_agent.steps.base import BaseStep
-from ignite_agent.tools import dispatch
+from ignite_core.debug_logger import DebugLogger
+from ignite_core.rolling_window import RollingWindow
+from ignite_core.steps.base import BaseStep
+from ignite_core.tools import dispatch
 
 _IMPACT_ORDER = ["High", "Medium", "Low", "Informational", "Optimization"]
 

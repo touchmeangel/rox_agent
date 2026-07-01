@@ -2,7 +2,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from ignite_agent.storages.base import TempStorage
+from ignite_core.storages.base import TempStorage
 
 
 class OverflowStore(TempStorage):

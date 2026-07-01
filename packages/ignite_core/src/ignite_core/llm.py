@@ -5,10 +5,10 @@ import os
 import time
 from dataclasses import dataclass, field
 
-from ignite_agent.config import ModelConfig
-from ignite_agent.debug_logger import DebugLogger, default_debug_logger
-from ignite_agent.rolling_window import RollingWindow
-from ignite_agent.tool_call_parser import ToolCall, parse_text_tool_calls
+from ignite_core.model_config import ModelConfig
+from ignite_core.debug_logger import DebugLogger, default_debug_logger
+from ignite_core.rolling_window import RollingWindow
+from ignite_core.tool_call_parser import ToolCall, parse_text_tool_calls
 
 _INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14"
 
@@ -70,12 +70,10 @@ class AssistantTurn:
 
 
 class LLMClient:
-    def __init__(self, model_key: str):
-        from ignite_agent.config import MODELS
-
-        if model_key not in MODELS:
-            raise ValueError(f"Unknown model key '{model_key}'.")
-        self.chain: list[ModelConfig] = MODELS[model_key]
+    def __init__(self, chain: list[ModelConfig]):
+        if not chain:
+            raise ValueError("LLMClient requires at least one ModelConfig in `chain`.")
+        self.chain: list[ModelConfig] = chain
 
     @staticmethod
     def thinking_budget(cfg: ModelConfig) -> int | None:
@@ -552,5 +550,5 @@ def _log_repr(turn: AssistantTurn) -> str:
     return "\n".join(parts) if parts else ""
 
 
-def get_llm(model_key: str) -> LLMClient:
-    return LLMClient(model_key)
+def get_llm(*configs: ModelConfig) -> LLMClient:
+    return LLMClient(chain=list(configs))

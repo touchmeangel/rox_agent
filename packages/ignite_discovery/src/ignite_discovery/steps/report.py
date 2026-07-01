@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 
-from ignite_agent.debug_logger import DebugLogger
-from ignite_agent.rolling_window import RollingWindow
-from ignite_agent.steps.base import BaseStep
+from ignite_core.debug_logger import DebugLogger
+from ignite_core.rolling_window import RollingWindow
+from ignite_core.steps.base import BaseStep
 
 
 class FinalReportStep(BaseStep):

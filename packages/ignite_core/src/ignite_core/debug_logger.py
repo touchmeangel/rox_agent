@@ -4,7 +4,7 @@ import threading
 import time
 from pathlib import Path
 
-from ignite_agent.tool_result import ToolResult
+from ignite_core.tool_result import ToolResult
 
 
 class DebugLogger:

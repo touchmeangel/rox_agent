@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
-from ignite_agent.debug_logger import DebugLogger, default_debug_logger
-from ignite_agent.llm import LLMClient, ToolResultEntry, get_llm
-from ignite_agent.planning import UPDATE_PLAN_SPEC, Plan
-from ignite_agent.rolling_window import RollingWindow
-from ignite_agent.search_state import SearchState
-from ignite_agent.steps.config import StepConfig
-from ignite_agent.tools import TOOL_SPECS, dispatch
+from ignite_core.debug_logger import DebugLogger, default_debug_logger
+from ignite_core.llm import LLMClient, ToolResultEntry, get_llm
+from ignite_core.planning import UPDATE_PLAN_SPEC, Plan
+from ignite_core.rolling_window import RollingWindow
+from ignite_core.search_state import SearchState
+from ignite_core.steps.config import StepConfig
+from ignite_core.tools import TOOL_SPECS, dispatch
 
 
 @dataclass
@@ -71,7 +71,7 @@ class BaseStep:
 
     def __init__(self, cfg: StepConfig):
         self.cfg = cfg
-        self.llm: LLMClient = get_llm(cfg.model_key)
+        self.llm: LLMClient = get_llm(*cfg.models)
         self.project_path: str = ""
         self.github_repo_path: str = ""
 
