@@ -1,4 +1,4 @@
-name: CI
+name: Lint, Type Check & Test
 on:
   pull_request:
     branches: [main]
