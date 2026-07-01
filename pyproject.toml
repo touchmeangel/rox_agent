@@ -1,49 +1,49 @@
-    [project]
-    name = "ignite-agent"
-    version = "0.0.0"
-    requires-python = ">=3.11"
-    dependencies = []
+[project]
+name = "ignite-agent"
+version = "0.0.0"
+requires-python = ">=3.11"
+dependencies = []
 
-    [tool.uv]
-    package = false
+[tool.uv]
+package = false
 
-    [tool.uv.workspace]
-    members = ["packages/*"]
+[tool.uv.workspace]
+members = ["packages/*"]
 
-    [dependency-groups]
-    dev = [
-        "pytest>=8.0.0",
-        "pytest-cov>=4.1.0",
-        "pytest-asyncio>=0.23.0",
-        "pytest-mock>=3.12.0",
-        "ruff>=0.3.0",
-        "bandit[toml]>=1.7.0",
-        "mypy>=1.8.0",
-        "types-requests",
-    ]
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.12.0",
+    "ruff>=0.3.0",
+    "bandit[toml]>=1.7.0",
+    "mypy>=1.8.0",
+    "types-requests",
+]
 
-    [tool.ruff]
-    line-length = 88
-    target-version = "py311"
+[tool.ruff]
+line-length = 88
+target-version = "py311"
 
-    [tool.ruff.lint]
-    select = ["E", "W", "F", "I", "B", "C4", "UP", "S"]
-    ignore = ["E501", "S101", "S110", "S112"]
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP", "S"]
+ignore = ["E501", "S101", "S110", "S112"]
 
-    [tool.ruff.lint.per-file-ignores]
-    "**/tests/*.py" = ["S101", "S105", "S106"]
+[tool.ruff.lint.per-file-ignores]
+"**/tests/*.py" = ["S101", "S105", "S106"]
 
-    [tool.bandit]
-    exclude_dirs = ["tests", "venv", ".venv"]
-    skips = ["B101"]
+[tool.bandit]
+exclude_dirs = ["tests", "venv", ".venv"]
+skips = ["B101"]
 
-    [tool.mypy]
-    python_version = "3.11"
-    warn_return_any = true
-    warn_unused_configs = true
-    disallow_untyped_defs = false
-    ignore_missing_imports = true
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
 
-    [tool.pytest.ini_options]
-    testpaths = ["packages"]
-    addopts = "-v --import-mode=importlib --cov=packages --cov-report=term-missing --cov-report=xml"
+[tool.pytest.ini_options]
+testpaths = ["packages"]
+addopts = "-v --import-mode=importlib --cov=packages --cov-report=term-missing --cov-report=xml"
