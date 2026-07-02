@@ -114,7 +114,9 @@ def main():
     missions = data.get("coordinator", {}).get("missions", [])
     mission_data = next((m for m in missions if m["id"] == args.mission_id), None)
     if mission_data is None:
-        raise SystemExit(f"mission id '{args.mission_id}' not found in {args.missions_file}")
+        raise SystemExit(
+            f"mission id '{args.mission_id}' not found in {args.missions_file}"
+        )
 
     mission = Mission(
         id=mission_data["id"],
