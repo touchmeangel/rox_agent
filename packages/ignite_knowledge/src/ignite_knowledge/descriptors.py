@@ -67,7 +67,3 @@ def get_descriptor(descriptor_id: str) -> Descriptor:
         if d.id == descriptor_id:
             return d
     raise KeyError(f"Unknown descriptor id: {descriptor_id!r}")
-
-
-def descriptors_for_tags(tags: set[str]) -> list[Descriptor]:
-    return [d for d in load_descriptors() if set(d.tags) & tags]

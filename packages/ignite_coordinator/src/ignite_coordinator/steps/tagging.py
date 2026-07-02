@@ -32,14 +32,6 @@ class TaggingStep(BaseStep):
                         "items": {"type": "string", "enum": tag_ids},
                     },
                 },
-                "repo_tags": {
-                    "type": "array",
-                    "description": (
-                        "Tags that apply at the whole-repository level rather "
-                        "than to one contract, e.g. multi_contract."
-                    ),
-                    "items": {"type": "string", "enum": tag_ids},
-                },
             },
         }
 
@@ -65,12 +57,6 @@ class TaggingStep(BaseStep):
                         "fit, omit tagging for that property rather than making "
                         "one up."
                     )
-
-        for tag in findings.get("repo_tags", []):
-            if tag not in registry:
-                return (
-                    f"Unknown repo tag '{tag}'. Valid tags: {sorted(registry.keys())}"
-                )
 
         return None
 

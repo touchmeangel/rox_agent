@@ -127,6 +127,7 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
                 "findings": r.findings,
                 "plan": r.plan,
                 "blockers": r.blockers,
+                "missions": getattr(r, "missions", None),
             }
             for name, r in results.items()
         },
