@@ -1,41 +1,31 @@
-
-from abc import ABC
 from collections.abc import Sequence
 
-import argparse
-import json
-import shutil
-from datetime import datetime
-from pathlib import Path
-
-from ignite_core.steps.base import StepResult
-from ignite_core.tools import _download_store, _overflow_store
 from ignite_core.debug_logger import default_debug_logger
-
-from rich import box
-from rich.console import Console, Group
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
-
-
-from ignite_core.steps.base import BaseStep
+from ignite_core.steps.base import BaseStep, StepResult
+from ignite_core.tools import _download_store, _overflow_store
+from rich.console import Console
 
 console = Console()
 COLOR = "#1dcccc"
 
-class Workflow(ABC):
+
+class Workflow:
     def __init__(self, pipeline: Sequence[BaseStep]) -> None:
         self.pipeline = pipeline
 
-    def run(self, repo_path: str, work_path: str, context: dict = {}) -> dict[str, StepResult]:
+    def run(
+        self, repo_path: str, work_path: str, context: dict | None = None
+    ) -> dict[str, StepResult]:
+        if context is None:
+            context = {}
+
         try:
             default_debug_logger.log_event(
                 "agent_run_start",
                 repo_path=repo_path,
                 work_path=work_path,
             )
-            
+
             results: dict[str, StepResult] = {}
             for step in self.pipeline:
                 console.print(
@@ -65,7 +55,9 @@ class Workflow(ABC):
                     done = sum(
                         1 for item in result.plan if item.get("status") == "completed"
                     )
-                    line += f"  [dim]·  {done}/{len(result.plan)} planned steps done[/dim]"
+                    line += (
+                        f"  [dim]·  {done}/{len(result.plan)} planned steps done[/dim]"
+                    )
                 console.print(line)
             _print_summary(results)
             default_debug_logger.log_event(
@@ -79,6 +71,7 @@ class Workflow(ABC):
         finally:
             _overflow_store.cleanup()
             _download_store.cleanup()
+
 
 def _print_summary(results: dict[str, StepResult]) -> None:
     succeeded = sum(1 for r in results.values() if r.success)

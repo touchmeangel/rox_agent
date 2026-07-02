@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import argparse
-import shutil
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 
+from ignite_coordinator.pipeline import MODELS, PIPELINE
+from ignite_core.debug_logger import default_debug_logger
 from ignite_core.steps.base import StepResult
 from ignite_core.workflow import Workflow
-from ignite_core.debug_logger import default_debug_logger
-from ignite_coordinator.pipeline import PIPELINE, MODELS
-
 from rich import box
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -72,7 +71,8 @@ def print_welcome_banner():
     console.print()
     console.print(Panel(grid, box=box.ROUNDED, border_style="dim", padding=(1, 3)))
     console.print()
-    
+
+
 def _copy_repo_to_workspace(repo_path: str, work_path: str) -> None:
     shutil.copytree(repo_path, work_path, dirs_exist_ok=True)
 
@@ -115,6 +115,7 @@ def parse_args() -> argparse.Namespace:
 
     return parser.parse_args()
 
+
 def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     output = {
         "generated_at": datetime.now().isoformat(),
@@ -144,9 +145,7 @@ def main():
     work_path = args.work_path
     output_path = args.output
 
-    console.print(
-        f"\n[{color}]●[/{color}] [bold white]Syncing workspace[/bold white]"
-    )
+    console.print(f"\n[{color}]●[/{color}] [bold white]Syncing workspace[/bold white]")
     try:
         _copy_repo_to_workspace(repo_path, work_path)
         console.print(
@@ -155,12 +154,13 @@ def main():
     except Exception as e:
         console.print(f"  [dim]⎿[/dim]  [red]✗[/red]  [dim]{e}[/dim]")
         raise SystemExit(1) from None
-        
+
     workflow = Workflow(PIPELINE)
     results = workflow.run(repo_path, work_path)
-        
+
     if output_path:
         _write_results(results, output_path)
+
 
 if __name__ == "__main__":
     main()

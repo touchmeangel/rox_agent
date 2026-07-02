@@ -1,5 +1,3 @@
-from ignite_core.steps.base import BaseStep
-from ignite_core.steps.config import StepConfig
 from ignite_coordinator.config import MODELS
 from ignite_coordinator.steps.audit_delta import AuditDeltaStep
 from ignite_coordinator.steps.documentation import DocumentationStep
@@ -9,6 +7,8 @@ from ignite_coordinator.steps.known_issues import KnownIssuesStep
 from ignite_coordinator.steps.report import FinalReportStep
 from ignite_coordinator.steps.static_analysis import StaticAnalysisStep
 from ignite_coordinator.steps.test_coverage import TestCoverageStep
+from ignite_core.steps.base import BaseStep
+from ignite_core.steps.config import StepConfig
 
 # The active pipeline, using direct class references
 PIPELINE: list[BaseStep] = [

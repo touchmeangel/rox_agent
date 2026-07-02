@@ -4,8 +4,8 @@ from functools import lru_cache
 from pathlib import Path
 
 import yaml
-from ignite_knowledge.descriptor import Descriptor
 
+from ignite_knowledge.descriptor import Descriptor
 from ignite_knowledge.tags import is_valid_tag
 
 _DESCRIPTORS_DIR = Path(__file__).parent / "data" / "descriptors"

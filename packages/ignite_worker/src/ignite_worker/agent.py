@@ -1,24 +1,24 @@
 from __future__ import annotations
 
-import json
 import argparse
+import json
 from datetime import datetime
 from pathlib import Path
 
-from ignite_core.steps.base import StepResult
-from ignite_core.workflow import Workflow
 from ignite_core.debug_logger import default_debug_logger
-from ignite_knowledge.descriptor import Descriptor
 from ignite_core.mission import Mission
 from ignite_core.repository_knowlage import RepositoryKnowledge
+from ignite_core.steps.base import StepResult
+from ignite_core.workflow import Workflow
+from ignite_knowledge.descriptor import Descriptor
 from ignite_worker.pipeline import PIPELINE
-
 from rich.console import Console
 
 console = Console()
 color = "#1dcccc"
 
 REPO_URL = "https://github.com/touchmeangel/ignite_agent"
+
 
 def print_worker_banner(repo_path: str) -> None:
     console.print()
@@ -29,6 +29,7 @@ def print_worker_banner(repo_path: str) -> None:
     )
     console.print(f"[dim]{REPO_URL}[/dim]")
     console.print()
+
 
 def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     output = {
@@ -85,7 +86,7 @@ def parse_args() -> argparse.Namespace:
             "Pass 'stderr' (or '-') or a file path."
         ),
     )
-    
+
     parser.add_argument(
         "--mission",
         required=True,
@@ -93,6 +94,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     return parser.parse_args()
+
 
 def main():
     args = parse_args()
@@ -121,9 +123,10 @@ def main():
             "mission": mission,
         },
     )
-        
+
     if output_path:
         _write_results(results, output_path)
+
 
 if __name__ == "__main__":
     main()

@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+
 from ignite_core.repository_knowlage import RepositoryKnowledge
 from ignite_knowledge.descriptor import Descriptor
 
@@ -13,8 +14,6 @@ class Mission:
 
     descriptor: Descriptor
 
-    knowledge: RepositoryKnowledge = field(
-        default_factory=RepositoryKnowledge
-    )
+    knowledge: RepositoryKnowledge = field(default_factory=RepositoryKnowledge)
 
     hints: list[str] = field(default_factory=list)

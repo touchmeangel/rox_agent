@@ -68,7 +68,9 @@ class TaggingStep(BaseStep):
 
         for tag in findings.get("repo_tags", []):
             if tag not in registry:
-                return f"Unknown repo tag '{tag}'. Valid tags: {sorted(registry.keys())}"
+                return (
+                    f"Unknown repo tag '{tag}'. Valid tags: {sorted(registry.keys())}"
+                )
 
         return None
 
