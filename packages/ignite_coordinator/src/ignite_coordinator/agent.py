@@ -10,6 +10,8 @@ from ignite_coordinator.pipeline import MODELS, PIPELINE
 from ignite_core.debug_logger import default_debug_logger
 from ignite_core.steps.base import StepResult
 from ignite_core.workflow import Workflow
+
+from dataclasses import asdict
 from rich import box
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -115,6 +117,8 @@ def parse_args() -> argparse.Namespace:
 
     return parser.parse_args()
 
+def _serialize_missions(missions: list) -> list[dict]:
+    return [asdict(m) for m in missions]
 
 def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     output = {
@@ -127,14 +131,19 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
                 "findings": r.findings,
                 "plan": r.plan,
                 "blockers": r.blockers,
-                "missions": getattr(r, "missions", None),
+                "missions": _serialize_missions(getattr(r, "missions", [])),
             }
             for name, r in results.items()
         },
     }
+    
+    def custom_encoder(obj):
+        if hasattr(obj, "as_dict"): return obj.as_dict()
+        raise TypeError(f"Type {type(obj)} is not JSON serializable")
+
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(output, indent=2))
+    path.write_text(json.dumps(output, indent=2, default=custom_encoder))
 
 
 def main():

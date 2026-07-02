@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
 from ignite_core.llm import LLMClient, ToolResultEntry, get_llm
+from ignite_core.mission import Mission  # adjust path if Mission lives elsewhere
 from ignite_core.planning import UPDATE_PLAN_SPEC, Plan
 from ignite_core.rolling_window import RollingWindow
 from ignite_core.search_state import SearchState
@@ -24,11 +25,6 @@ class StepResult:
     blockers: list[dict] = field(default_factory=list)
     plan: list[dict] = field(default_factory=list)
 
-
-_INCOMPLETE_FINDINGS_HINT = (
-    "Those findings are incomplete — required fields are missing or empty. "
-    "Review what you have, fill in the gaps, and call submit_findings again when it's complete."
-)
 
 _REPEAT_CALL_HINT = (
     "BLOCKED: this exact call (same tool, same arguments) just failed and was not re-run — "
