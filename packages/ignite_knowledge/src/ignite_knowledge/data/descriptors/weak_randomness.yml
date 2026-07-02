@@ -1,0 +1,52 @@
+id: weak_randomness
+name: Weak / Predictable Randomness Source
+granularity: contract
+tags:
+  - weak_randomness_source
+
+scenario: |
+  The contract derives a value used for selection, allocation, ordering, or
+  reward outcomes from on-chain data that is visible or influenceable before
+  the transaction finalizes (block.timestamp, blockhash, block.prevrandao,
+  block.difficulty, block.number, block.coinbase, or a hash combining only
+  values like these).
+
+properties:
+  - id: predictable_seed
+    check: |
+      The "random" value is derived solely from on-chain state available to
+      any observer, or to the block producer, before the result is used —
+      no VRF (e.g. Chainlink VRF), no commit-reveal scheme, no external
+      randomness oracle.
+    confirm_with: |
+      shell: rg "block\.(timestamp|difficulty|prevrandao|number|coinbase)" src/ -n
+      shell: rg "blockhash\(" src/ -n
+      Read the surrounding function: does the derived value gate a payout,
+      winner selection, NFT trait roll, loot drop, or any ordering-sensitive
+      outcome?
+    severity: high
+
+  - id: miner_validator_influence
+    check: |
+      A block producer can influence the outcome by choosing whether to
+      include, exclude, or reorder the transaction, or by controlling
+      coinbase/timestamp within protocol-allowed bounds — and the potential
+      gain from doing so plausibly exceeds the cost of that influence.
+    confirm_with: |
+      Trace which flagged values (timestamp, coinbase, etc.) are actually
+      within block-producer control, and estimate the economic incentive:
+      compare the value at stake in the outcome against the cost of
+      reordering or selectively including the transaction.
+    severity: high
+
+exploitation_context: |
+  Always use cryptographically secure randomness for anything of value — an
+  off-chain VRF (e.g. Chainlink VRF) or a commit-reveal scheme with an
+  adequate delay. Randomness derived purely from on-chain block data is not
+  random to anyone watching the mempool or producing the block; it is
+  trivially replicable or predictable ahead of execution, so any protocol
+  relying on it can have its "random" outcome front-run or selectively
+  excluded by whoever controls block production.
+
+references:
+  - https://swcregistry.io/docs/SWC-120

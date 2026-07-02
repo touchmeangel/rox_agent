@@ -1,0 +1,41 @@
+id: vault_rounding_direction
+name: Pooled Vault Incorrect Rounding Direction
+granularity: contract
+tags:
+  - pooled_share_vault
+
+scenario: |
+  The contract pools an underlying asset and issues proportional shares/
+  claims against it, with conversion math (in either direction) involving
+  integer division — under any naming.
+
+properties:
+  - id: rounding_direction
+    check: |
+      Deposit-style operations (deposit()/mint(), or stake()/enter(), etc.)
+      round the issued shares/claims UP in the user's favor instead of DOWN
+      (contract's favor), or withdraw-style operations (withdraw()/redeem(),
+      unstake()/leave(), etc.) round the returned assets UP in the user's
+      favor instead of DOWN. The correct direction is always to round in the
+      contract's own favor on every operation — getting this backwards lets
+      a user extract value via repeated small operations.
+    confirm_with: |
+      shell: rg "mulDiv|Math\.Rounding" src/ -n
+      Check the Rounding parameter on each conversion call: deposit-style
+      outputs should floor, withdraw-style inputs should ceil.
+      If the contract doesn't use a library with explicit rounding control
+      (common outside ERC-4626 implementations), trace the integer division
+      manually in each deposit/withdraw-equivalent function — identify every
+      division in the share/asset conversion path and determine which side
+      of the transaction it favors.
+    severity: high
+
+exploitation_context: |
+  Usually exploitable via repeated round-trips (deposit then immediately
+  redeem, or vice versa) rather than a single large transaction — check
+  whether the extractable amount per round-trip is large enough to be
+  profitable after gas costs, and whether any minimum-amount or cooldown
+  guard limits repetition.
+
+references:
+  - https://docs.openzeppelin.com/contracts/4.x/erc4626

@@ -12,6 +12,7 @@ members = [
     "ignite-agent",
     "ignite-coordinator",
     "ignite-core",
+    "ignite-knowledge",
     "ignite-worker",
 ]
 
@@ -642,10 +643,14 @@ version = "0.1.0"
 source = { editable = "packages/ignite_coordinator" }
 dependencies = [
     { name = "ignite-core" },
+    { name = "ignite-knowledge" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "ignite-core", editable = "packages/ignite_core" }]
+requires-dist = [
+    { name = "ignite-core", editable = "packages/ignite_core" },
+    { name = "ignite-knowledge", editable = "packages/ignite_knowledge" },
+]
 
 [[package]]
 name = "ignite-core"
@@ -672,6 +677,21 @@ requires-dist = [
     { name = "playwright", specifier = "==1.61.0" },
     { name = "python-docx", specifier = "==1.2.0" },
     { name = "rich", specifier = "==15.0.0" },
+]
+
+[[package]]
+name = "ignite-knowledge"
+version = "0.1.0"
+source = { editable = "packages/ignite_knowledge" }
+dependencies = [
+    { name = "ignite-core" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ignite-core", editable = "packages/ignite_core" },
+    { name = "pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]

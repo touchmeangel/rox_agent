@@ -1,0 +1,22 @@
+[project]
+name = "ignite-knowledge"
+version = "0.1.0"
+description = "Shared vulnerability descriptors and tag vocabulary for the ignite agent"
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0",
+    "ignite-core",
+]
+
+[tool.uv.sources]
+ignite-core = { workspace = true }
+
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ignite_knowledge = ["data/**/*.yaml"]

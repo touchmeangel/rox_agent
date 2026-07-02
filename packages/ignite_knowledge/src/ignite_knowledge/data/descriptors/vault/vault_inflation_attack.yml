@@ -1,0 +1,59 @@
+id: vault_inflation_attack
+name: Pooled Vault Inflation Attack (First Depositor Rate Manipulation)
+granularity: contract
+tags:
+  - pooled_share_vault
+
+scenario: |
+  The contract pools an underlying asset and issues proportional shares/claims
+  against it, computing a claim's value from a ratio of total pooled assets
+  to total claims outstanding — under any naming (deposit/withdraw,
+  stake/unstake, enter/leave, mint/burn against a pool, etc.). The very first
+  deposit/stake sets this ratio from a zero state (totalSupply / total claims
+  outstanding == 0).
+
+properties:
+  - id: missing_virtual_offset
+    check: |
+      The share/claim conversion math computes the exchange rate from raw
+      pooled-total and claims-outstanding with no virtual offset (no constant
+      added to both sides of the ratio) and no dead-shares mint to address(0)
+      (or equivalent) on first deposit. This is the vulnerability itself — it
+      does not matter HOW the pooled total ends up disproportionate to claims
+      outstanding (a direct donation, a fee-on-transfer/rebasing underlying
+      asset, or any other side channel). What matters is whether the
+      conversion math has any protection against a skewed initial rate at
+      all. This can be exploitable even with fully internally-tracked
+      accounting, if any path exists for the pooled total to grow without a
+      matching increase in claims outstanding.
+    confirm_with: |
+      Read the share/claim conversion functions directly — under ERC-4626
+      naming these are convertToShares()/convertToAssets(), but check for
+      equivalents under any naming this contract uses (a function computing
+      shares from a deposited amount, or an amount from a share count).
+      shell: rg "_decimalsOffset|virtualShares|virtualAssets|DEAD_SHARES" src/ -n
+      shell: rg "function initialize|constructor" src/ -A15 -n
+      If those greps come up empty, this may not be a standard ERC-4626
+      vault — read the actual deposit/stake and withdraw/unstake functions
+      directly and identify how they compute the exchange rate, then check
+      whether ANY constant-offset or dead-claim protection exists in that
+      math, under whatever names this contract actually uses.
+      Check whether the constructor/initializer mints any shares/claims to
+      address(0) or otherwise guarantees non-zero claims outstanding before
+      any external deposit is possible.
+    severity: critical
+
+exploitation_context: |
+  Requires the attacker to be the first depositor (or otherwise get claims
+  outstanding back to zero / near-zero). Check git log / the deployment
+  script for whether liquidity is ever seeded atomically at deploy time — a
+  factory that mints an initial deposit before the vault address is
+  externally reachable defeats this even if the conversion math itself looks
+  vulnerable. See vault_donation_attack separately for the specific case of
+  the pooled total being balanceOf-based — that's the most common way to
+  actually trigger this, but not the only one, and it's tracked as its own
+  descriptor because it's independently exploitable even when this property
+  doesn't hold.
+
+references:
+  - https://docs.openzeppelin.com/contracts/4.x/erc4626

@@ -1,0 +1,56 @@
+id: vault_donation_attack
+name: Vault Donation / balanceOf()-Style Accounting Manipulation
+granularity: contract
+tags:
+  - pooled_share_vault
+
+scenario: |
+  The contract pools an underlying asset and computes its pooled-total (the
+  "total assets" side of the share/claim exchange rate) from a live token
+  balance query — IERC20(asset).balanceOf(address(this)) under ERC-4626
+  naming, or an equivalent live-balance read under any other naming (a
+  staking pool reading its own token balance, a vault reading an LP token
+  balance, etc.) — rather than an internally tracked, explicitly updated
+  variable.
+
+properties:
+  - id: balanceof_accounting
+    check: |
+      The pooled-total value (totalAssets() under ERC-4626, or whatever this
+      contract calls it) reads a live balanceOf(address(this))-style query
+      directly, meaning anyone can change its value just by transferring the
+      underlying token straight to the contract address — no deposit()/
+      stake() call required. This is a distinct issue from missing
+      virtual-offset protection: a vault WITH correct inflation-attack
+      mitigations can still have this bug, and it still causes problems — it
+      dilutes/inflates share price for reasons unrelated to actual yield, and
+      if the underlying asset has non-standard transfer behavior
+      (fee-on-transfer, rebasing), balance-based accounting will silently
+      desync from what the contract's internal bookkeeping assumes.
+    confirm_with: |
+      shell: rg "function totalAssets" src/ -A5 -n
+      shell: rg "balanceOf\(address\(this\)\)" src/ -n
+      If those greps come up empty, this contract may compute its
+      pooled-total under a different name — search more broadly for the
+      pattern and check whatever function determines the exchange rate's
+      "total assets" side:
+      shell: rg "\.balanceOf\(" src/ -n
+      Confirm there is no internal accounting variable (e.g. a
+      `uint256 internal _totalAssets` / `_totalPooled` incremented and
+      decremented explicitly in deposit/withdraw) that this value reads from
+      instead.
+    severity: high
+
+exploitation_context: |
+  Mitigation is to track pooled assets with an internal accounting variable
+  updated explicitly on deposit/withdraw, rather than trusting a live balance
+  query. Whether this is exploitable for direct profit depends on what else
+  in the protocol reads this value — check for downstream effects (fee
+  calculations, liquidation thresholds, other contracts pricing off this
+  contract's shares). Also check whether the underlying asset is a standard,
+  non-rebasing, non-fee-on-transfer ERC-20 — if it is, this property is still
+  true but the practical impact is limited to direct-donation griefing rather
+  than silent desync.
+
+references:
+  - https://docs.openzeppelin.com/contracts/4.x/erc4626

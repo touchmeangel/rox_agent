@@ -8,6 +8,9 @@ from pathlib import Path
 from ignite_core.steps.base import StepResult
 from ignite_core.workflow import Workflow
 from ignite_core.debug_logger import default_debug_logger
+from ignite_core.descriptor import Descriptor
+from ignite_core.mission import Mission
+from ignite_core.repository_knowlage import RepositoryKnowledge
 from ignite_worker.pipeline import PIPELINE
 
 from rich.console import Console
@@ -99,7 +102,15 @@ def main():
     repo_path = args.repo_path
     work_path = args.work_path
     output_path = args.output
-    mission = json.loads(Path(args.mission).read_text())
+    data = json.loads(Path(args.mission).read_text())
+    mission = Mission(
+        id=data["id"],
+        contract=data["contract"],
+        vulnerability=data["vulnerability"],
+        descriptor=Descriptor(**data["descriptor"]),
+        knowledge=RepositoryKnowledge(**data["knowledge"]),
+        hints=data["hints"],
+    )
 
     workflow = Workflow(PIPELINE)
 

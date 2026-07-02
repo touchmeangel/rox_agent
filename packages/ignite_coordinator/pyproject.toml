@@ -5,10 +5,12 @@ description = "Coordinator pipeline — documentation, static analysis, and repo
 requires-python = ">=3.11"
 dependencies = [
     "ignite-core",
+    "ignite-knowledge",
 ]
 
 [tool.uv.sources]
 ignite-core = { workspace = true }
+ignite-knowledge = { workspace = true }
 
 [project.scripts]
 ignite-coordinator = "ignite_coordinator.pipeline:main"
