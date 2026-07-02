@@ -37,11 +37,11 @@ PIPELINE: list[BaseStep] = [
     AuditDeltaStep(
         StepConfig(models=MODELS["reasoning"], max_iterations=32, max_web_calls=16)
     ),
-    InvariantTestingStep(
-        StepConfig(
-            models=MODELS["reasoning"], max_iterations=64, max_web_calls=12
-        )  # idk
-    ),
+    # InvariantTestingStep(
+    #     StepConfig(
+    #         models=MODELS["reasoning"], max_iterations=64, max_web_calls=12
+    #     )
+    # ), # Needs to be moved to POC step
     TaggingStep(
         StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=12)
     ),
