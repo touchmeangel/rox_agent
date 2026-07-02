@@ -5,13 +5,16 @@ import json
 import shutil
 from datetime import datetime
 from pathlib import Path
+from typing import Any
+
 
 from ignite_coordinator.pipeline import MODELS, PIPELINE
 from ignite_core.debug_logger import default_debug_logger
 from ignite_core.steps.base import StepResult
 from ignite_core.workflow import Workflow
 
-from dataclasses import asdict
+from dataclasses import fields, is_dataclass
+from enum import Enum
 from rich import box
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -117,8 +120,32 @@ def parse_args() -> argparse.Namespace:
 
     return parser.parse_args()
 
-def _serialize_missions(missions: list) -> list[dict]:
-    return [asdict(m) for m in missions]
+
+def _to_jsonable(obj: Any) -> Any:
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+
+    if isinstance(obj, Enum):
+        return obj.value
+
+    if isinstance(obj, (list, tuple, set)):
+        return [_to_jsonable(v) for v in obj]
+
+    if isinstance(obj, dict):
+        return {str(k): _to_jsonable(v) for k, v in obj.items()}
+
+    if is_dataclass(obj) and not isinstance(obj, type):
+        return {f.name: _to_jsonable(getattr(obj, f.name)) for f in fields(obj)}
+
+    as_dict_method = getattr(obj, "as_dict", None)
+    if callable(as_dict_method):
+        return _to_jsonable(as_dict_method())
+
+    obj_dict = getattr(obj, "__dict__", None)
+    if obj_dict is not None:
+        return _to_jsonable(obj_dict)
+
+    return str(obj)
 
 def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     output = {
@@ -131,20 +158,15 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
                 "findings": r.findings,
                 "plan": r.plan,
                 "blockers": r.blockers,
-                "missions": _serialize_missions(getattr(r, "missions", [])),
+                "missions": _to_jsonable(getattr(r, "missions", [])),
             }
             for name, r in results.items()
         },
     }
-    
-    def custom_encoder(obj):
-        if hasattr(obj, "as_dict"): return obj.as_dict()
-        raise TypeError(f"Type {type(obj)} is not JSON serializable")
 
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(output, indent=2, default=custom_encoder))
-
+    path.write_text(json.dumps(_to_jsonable(output), indent=2))
 
 def main():
     args = parse_args()
