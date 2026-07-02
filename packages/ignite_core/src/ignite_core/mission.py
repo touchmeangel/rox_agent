@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from ignite_core.repository_knowlage import RepositoryKnowledge
-from packages.ignite_knowledge.src.ignite_knowledge.descriptor import Descriptor
+from ignite_knowledge.descriptor import Descriptor
 
 
 @dataclass

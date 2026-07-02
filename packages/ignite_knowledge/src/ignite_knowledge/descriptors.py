@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 
 import yaml
-from packages.ignite_knowledge.src.ignite_knowledge.descriptor import Descriptor
+from ignite_knowledge.descriptor import Descriptor
 
 from ignite_knowledge.tags import is_valid_tag
 

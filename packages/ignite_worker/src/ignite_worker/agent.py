@@ -8,7 +8,7 @@ from pathlib import Path
 from ignite_core.steps.base import StepResult
 from ignite_core.workflow import Workflow
 from ignite_core.debug_logger import default_debug_logger
-from ignite_core.descriptor import Descriptor
+from ignite_knowledge.descriptor import Descriptor
 from ignite_core.mission import Mission
 from ignite_core.repository_knowlage import RepositoryKnowledge
 from ignite_worker.pipeline import PIPELINE
