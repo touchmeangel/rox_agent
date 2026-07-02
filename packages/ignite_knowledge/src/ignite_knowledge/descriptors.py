@@ -16,7 +16,7 @@ def load_descriptors() -> list[Descriptor]:
     descriptors: list[Descriptor] = []
     seen_ids: set[str] = set()
 
-    for path in sorted(_DESCRIPTORS_DIR.glob("*.yaml")):
+    for path in sorted(_DESCRIPTORS_DIR.rglob("*.yaml")):
         raw = yaml.safe_load(path.read_text())
 
         descriptor_id = raw["id"]
@@ -38,6 +38,7 @@ def load_descriptors() -> list[Descriptor]:
                 f"Descriptor {descriptor_id!r} ({path}) has invalid granularity "
                 f"{granularity!r} — must be 'contract' or 'location'."
             )
+
         if granularity == "location" and not raw.get("candidate_pattern"):
             raise ValueError(
                 f"Descriptor {descriptor_id!r} ({path}) has granularity='location' "
