@@ -1,5 +1,6 @@
 from ignite_coordinator.config import MODELS
 from ignite_coordinator.steps.audit_delta import AuditDeltaStep
+from ignite_coordinator.steps.coordinator import CoordinatorStep
 from ignite_coordinator.steps.documentation import DocumentationStep
 from ignite_coordinator.steps.fork_analysis import ForkAnalysisStep
 from ignite_coordinator.steps.invariant_testing import InvariantTestingStep
@@ -7,7 +8,6 @@ from ignite_coordinator.steps.known_issues import KnownIssuesStep
 from ignite_coordinator.steps.static_analysis import StaticAnalysisStep
 from ignite_coordinator.steps.tagging import TaggingStep
 from ignite_coordinator.steps.test_coverage import TestCoverageStep
-from ignite_coordinator.steps.coordinator import CoordinatorStep
 from ignite_core.steps.base import BaseStep
 from ignite_core.steps.config import StepConfig
 
@@ -38,7 +38,9 @@ PIPELINE: list[BaseStep] = [
         StepConfig(models=MODELS["reasoning"], max_iterations=32, max_web_calls=16)
     ),
     InvariantTestingStep(
-        StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=12) # idk
+        StepConfig(
+            models=MODELS["reasoning"], max_iterations=64, max_web_calls=12
+        )  # idk
     ),
     TaggingStep(
         StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=12)

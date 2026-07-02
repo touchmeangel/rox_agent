@@ -6,15 +6,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
-from ignite_core.llm import ToolResultEntry, get_llm
 from ignite_core.mission import Mission
 from ignite_core.repository_knowlage import RepositoryKnowledge
 from ignite_core.rolling_window import RollingWindow
 from ignite_core.steps.base import BaseStep, StepResult
-from ignite_core.steps.config import StepConfig
 from ignite_knowledge.descriptor import Descriptor
 from ignite_knowledge.descriptors import load_descriptors
-from ignite_knowledge.tags import load_tag_registry
 
 
 @dataclass
@@ -53,14 +50,16 @@ def _candidates_for_context(context: dict) -> list[_Candidate]:
             ki_hints = _known_issue_hints_for(descriptor, known_issues)
             delta_hint = _audit_delta_hint_for(contract, audit_delta)
 
-            candidates.append(_Candidate(
-                contract=contract,
-                descriptor=descriptor,
-                matching_tags=sorted(matching),
-                static_hints=static_hints,
-                known_issue_hints=ki_hints,
-                audit_delta_hint=delta_hint,
-            ))
+            candidates.append(
+                _Candidate(
+                    contract=contract,
+                    descriptor=descriptor,
+                    matching_tags=sorted(matching),
+                    static_hints=static_hints,
+                    known_issue_hints=ki_hints,
+                    audit_delta_hint=delta_hint,
+                )
+            )
 
     return candidates
 
@@ -78,11 +77,16 @@ def _static_hints_for(
         for finding in static_findings.get(bucket, []):
             loc = finding.get("location", {})
             finding_file = loc.get("file", "").lower()
-            if contract_name not in finding_file and contract.lower() not in finding_file:
+            if (
+                contract_name not in finding_file
+                and contract.lower() not in finding_file
+            ):
                 continue
             check = finding.get("check", "")
             title = finding.get("title", "")
-            if any(tag in check.lower() or tag in title.lower() for tag in descriptor_tags):
+            if any(
+                tag in check.lower() or tag in title.lower() for tag in descriptor_tags
+            ):
                 hint = f"[{bucket.upper()}] {check}: {title} @ {loc.get('file')}:{loc.get('lines', '?')}"
                 hints.append(hint)
 
@@ -126,7 +130,7 @@ def _build_knowledge(context: dict, candidate: _Candidate) -> RepositoryKnowledg
     static = context.get("static_analysis", {}).get("findings", {})
     fork = context.get("fork_analysis", {}).get("findings")
     audit_delta = context.get("audit_delta", {}).get("findings")
-    known_issues = context.get("known_issues", {}).get("findings")
+    context.get("known_issues", {}).get("findings")
 
     previous_audits: list[dict[str, Any]] = []
     if audit_delta and audit_delta.get("audit"):
@@ -142,7 +146,8 @@ def _build_knowledge(context: dict, candidate: _Candidate) -> RepositoryKnowledg
 
     risk_matrix = doc.get("contract_risk_matrix", [])
     related = [
-        row["contract"] for row in risk_matrix
+        row["contract"]
+        for row in risk_matrix
         if row.get("external_calls") and row.get("external_calls") != "None"
     ]
 
@@ -160,7 +165,8 @@ def _build_knowledge(context: dict, candidate: _Candidate) -> RepositoryKnowledg
         previous_audits=previous_audits,
         diff=diff,
         investigation_scope={
-            "contracts": [candidate.contract] + [c for c in related if c != candidate.contract],
+            "contracts": [candidate.contract]
+            + [c for c in related if c != candidate.contract],
             "entrypoints": [],
             "ignore": [],
         },
@@ -231,7 +237,9 @@ def _fmt_context_summary(context: dict) -> str:
     if ki.get("success"):
         checklists = ki.get("findings", {}).get("protocol_checklists", [])
         total = sum(len(c["known_issues"]) for c in checklists)
-        sections.append(f"KNOWN ISSUES  {total} relevant issues across {len(checklists)} protocol(s)")
+        sections.append(
+            f"KNOWN ISSUES  {total} relevant issues across {len(checklists)} protocol(s)"
+        )
 
     return "\n\n".join(sections) if sections else "(no prior context available)"
 
@@ -259,7 +267,12 @@ _SUBMIT_SPEC: dict = {
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "required": ["candidate_index", "property_ids", "hints", "rationale"],
+                    "required": [
+                        "candidate_index",
+                        "property_ids",
+                        "hints",
+                        "rationale",
+                    ],
                     "properties": {
                         "candidate_index": {
                             "type": "integer",
@@ -312,9 +325,7 @@ class CoordinatorStep(BaseStep):
         return {k: v for k, v in global_context.items() if k in _CONTEXT_KEYS}
 
     def run(self, context: dict) -> StepResult:
-        default_debug_logger.log_event(
-            "step_start", step=self.name, max_iterations=1
-        )
+        default_debug_logger.log_event("step_start", step=self.name, max_iterations=1)
 
         candidates = _candidates_for_context(context)
 
@@ -326,7 +337,7 @@ class CoordinatorStep(BaseStep):
                 summary="No tag-matched candidates found — no missions created.",
                 iterations_used=0,
             )
-            result.missions = [] # type: ignore[attr-defined]
+            result.missions = []  # type: ignore[attr-defined]
             return result
 
         with RollingWindow(max_lines=8) as window:
@@ -476,7 +487,11 @@ def _build_missions(
             hints=[
                 *candidate.static_hints,
                 *candidate.known_issue_hints,
-                *([] if not candidate.audit_delta_hint else [candidate.audit_delta_hint]),
+                *(
+                    []
+                    if not candidate.audit_delta_hint
+                    else [candidate.audit_delta_hint]
+                ),
                 *raw.get("hints", []),
             ],
         )
