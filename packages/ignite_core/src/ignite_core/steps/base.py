@@ -46,11 +46,42 @@ _NUDGE_FINISH_PROMPT = (
     "call submit_findings now."
 )
 
+_PACING_WARNING_THRESHOLD = 25
 
-def _tool_failure_hint(result, iterations_left: int) -> str:
-    parts = [
-        f"TOOL FAILED (exit {result.returncode}). {iterations_left} iterations remain.\n"
-    ]
+
+def _pacing_note(iterations_used: int, max_iterations: int, plan: Plan) -> str:
+    remaining = max_iterations - iterations_used
+    used_pct = int(100 * iterations_used / max_iterations) if max_iterations else 0
+
+    todos = plan.as_dicts()
+    if not todos:
+        return (
+            f"{remaining} iterations remaining ({used_pct}% of budget used). "
+            "No plan items tracked yet."
+        )
+
+    done = sum(1 for t in todos if t.get("status") == "completed")
+    total_todos = len(todos)
+    done_pct = int(100 * done / total_todos) if total_todos else 0
+
+    note = (
+        f"{remaining} iterations remaining ({used_pct}% of budget used). "
+        f"Plan: {done}/{total_todos} items completed ({done_pct}%)."
+    )
+
+    if used_pct - done_pct >= _PACING_WARNING_THRESHOLD:
+        note += (
+            " You are BEHIND PACE — budget consumption is well ahead of plan "
+            "completion. Stop opening new investigation threads: finish or "
+            "explicitly drop remaining plan items with update_plan before "
+            "starting anything new."
+        )
+
+    return note
+
+
+def _tool_failure_hint(result, pacing_note: str) -> str:
+    parts = [f"TOOL FAILED (exit {result.returncode}). {pacing_note}\n"]
 
     if result.stdout:
         parts.append(f"stdout:\n{result.stdout}\n")
@@ -81,7 +112,8 @@ class BaseStep:
     def environment_prompt(self) -> str:
         return f"""- Target Project Path: {self.project_path}
 - Runtime State: You are executing inside a secure, high-performance, fully trusted isolation sandbox.
-- Permissions: UNRESTRICTED. You have root privileges within this sandbox. You can safely compile code, execute arbitrary scripts, trigger tests, mutate files, and run any tool or shell command required to prove a vulnerability. There are no external guardrails blocking your execution—the sandbox is entirely yours to command."""
+- Permissions: UNRESTRICTED. You have root privileges within this sandbox. You can safely compile code, execute arbitrary scripts, trigger tests, mutate files, and run any tool or shell command required to prove a vulnerability. There are no external guardrails blocking your execution—the sandbox is entirely yours to command.
+- Pipeline Output Files: agent_results.json, debug.log, and any file matching this pipeline's own output format are NEVER useful evidence about the target codebase — they are this tool's own prior output, not something a human put there. Do not read or investigate them."""
 
     def system_prompt(self) -> str:
         return f"""<ROLE>
@@ -99,6 +131,8 @@ You operate in a strict observation-action loop. Every action consumes 1 iterati
 3. Execute via a structural tool call.
 
 CRITICAL: Plain text responses DO NOT advance or terminate the step. You must call a tool on every single turn until completion.
+
+PACING: Every tool result tells you your remaining budget AND your plan completion percentage together. If budget consumed is running well ahead of plan completion, that is a direct signal to cut scope NOW — finish or explicitly drop remaining plan items — not a reason to keep exploring new threads hoping something turns up.
 </OPERATIONAL_BUDGET & LOOP>
 
 <WORKING_METHODOLOGY>
@@ -106,7 +140,7 @@ CRITICAL: Plain text responses DO NOT advance or terminate the step. You must ca
 - Strategic Pivot Rule: If a tool call fails, do not guess. Analyze `stdout` and `stderr` directly—errors often embed the exact JSON fix. If a tool call fails or gets blocked, you MUST radically alter your approach (e.g., pivot from an automated tool to manual file reading, or vice versa). Repeating an identical signature is blocked.
 - Pacing & Planning:
   * Simple Tasks (<3 steps): Skip planning overhead; execute immediately.
-  * Complex Tasks (>=3 steps): You MUST invoke `update_plan` to log milestones and maintain structural state.
+  * Complex Tasks (>=3 steps): You MUST invoke `update_plan` to log milestones and maintain structural state. Once logged, keep it current — a stale plan makes the pacing signal in every tool result meaningless.
 </WORKING_METHODOLOGY>
 
 <TERMINATION_CRITERIA>
@@ -490,6 +524,10 @@ You can only exit the execution loop by explicitly invoking one of the following
                             search_state=search_state,
                         )
 
+                        # Computed fresh per call: an update_plan earlier in this
+                        # same turn's tool_calls should already be reflected here.
+                        pacing_note = _pacing_note(i + 1, self.cfg.max_iterations, plan)
+
                         if result.success:
                             last_failed_signature = None
                             consecutive_repeat_blocks = 0
@@ -498,7 +536,7 @@ You can only exit the execution loop by explicitly invoking one of the following
                                 "success": True,
                                 "stdout": result.stdout,
                                 "stderr": result.stderr,
-                                "system_note": f"{iterations_left} iterations remaining.",
+                                "system_note": pacing_note,
                             }
                             tool_results.append(
                                 ToolResultEntry(call.id, json.dumps(payload, indent=2))
@@ -508,7 +546,7 @@ You can only exit the execution loop by explicitly invoking one of the following
                             tool_results.append(
                                 ToolResultEntry(
                                     call.id,
-                                    _tool_failure_hint(result, iterations_left),
+                                    _tool_failure_hint(result, pacing_note),
                                     is_error=True,
                                 )
                             )
