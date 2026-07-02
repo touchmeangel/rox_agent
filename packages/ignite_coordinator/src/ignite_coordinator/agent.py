@@ -3,18 +3,16 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+from dataclasses import fields, is_dataclass
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Any
-
 
 from ignite_coordinator.pipeline import MODELS, PIPELINE
 from ignite_core.debug_logger import default_debug_logger
 from ignite_core.steps.base import StepResult
 from ignite_core.workflow import Workflow
-
-from dataclasses import fields, is_dataclass
-from enum import Enum
 from rich import box
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -147,6 +145,7 @@ def _to_jsonable(obj: Any) -> Any:
 
     return str(obj)
 
+
 def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     output = {
         "generated_at": datetime.now().isoformat(),
@@ -167,6 +166,7 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(_to_jsonable(output), indent=2))
+
 
 def main():
     args = parse_args()

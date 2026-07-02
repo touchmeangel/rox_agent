@@ -5,7 +5,6 @@ from dataclasses import dataclass, field
 
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
 from ignite_core.llm import LLMClient, ToolResultEntry, get_llm
-from ignite_core.mission import Mission  # adjust path if Mission lives elsewhere
 from ignite_core.planning import UPDATE_PLAN_SPEC, Plan
 from ignite_core.rolling_window import RollingWindow
 from ignite_core.search_state import SearchState
