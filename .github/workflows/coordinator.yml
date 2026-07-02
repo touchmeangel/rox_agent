@@ -2,7 +2,7 @@ name: Deploy Ignite Coordinator
 
 on:
   workflow_run:
-    workflows: ["CI"]
+    workflows: ["Lint, Type Check & Test"]
     types: [completed]
     branches: [main]
 
