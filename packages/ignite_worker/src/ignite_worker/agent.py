@@ -111,7 +111,7 @@ def main():
     work_path = args.work_path
     output_path = args.output
     data = json.loads(Path(args.missions_file).read_text())
-    missions = data.get("coordinator", {}).get("missions", [])
+    missions = data.get("missions", [])
     mission_data = next((m for m in missions if m["id"] == args.mission_id), None)
     if mission_data is None:
         raise SystemExit(

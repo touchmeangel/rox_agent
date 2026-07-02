@@ -147,8 +147,13 @@ def _to_jsonable(obj: Any) -> Any:
 
 
 def _write_results(results: dict[str, StepResult], output_path: str) -> None:
+    missions: list[Any] = []
+    for r in results.values():
+        missions.extend(getattr(r, "missions", []) or [])
+        
     output = {
         "generated_at": datetime.now().isoformat(),
+        "missions": _to_jsonable(missions),
         "steps": {
             name: {
                 "success": r.success,
