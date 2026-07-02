@@ -7,10 +7,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     SOLC_SELECT_PATH=/home/shared/.solc-select \
     FOUNDRY_DIR=/home/shared/.foundry \
-    HOME=/tmp \
+    HOME=/home/shared \
     PATH="/home/shared/.foundry/bin:/usr/local/bin:${PATH}" \
-    MPLCONFIGDIR=/tmp/matplotlib_cache \
-    PLAYWRIGHT_BROWSERS_PATH=/home/shared/.cache/ms-playwright
+    MPLCONFIGDIR=/home/shared/matplotlib_cache \
+    PLAYWRIGHT_BROWSERS_PATH=/home/shared/.cache/ms-playwright \
+    UV_CACHE_DIR=/home/shared/.cache/uv
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libssl-dev pkg-config \
