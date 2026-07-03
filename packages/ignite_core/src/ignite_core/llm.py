@@ -91,10 +91,11 @@ class LLMClient:
             spinner_msg = "Extended thinking…" if thinking_enabled else "Thinking…"
             reporter.start_spinner(spinner_msg)
 
-            api_key = self._resolve_api_key(cfg)
             start = time.time()
 
             try:
+                api_key = self._resolve_api_key(cfg)
+
                 match cfg.provider:
                     case "openai":
                         turn = self._openai_with_tools(

@@ -51,7 +51,7 @@ class Reporter(ABC):
 
     @abstractmethod
     def model_fallback(
-        self, from_model: str, to_model: str, error: Exception
+        self, from_model: str, to_model: str, error: Exception | None
     ) -> None: ...
 
     @abstractmethod
@@ -99,7 +99,7 @@ class NullReporter(Reporter):
     def thinking_end(self, char_count: int) -> None:
         pass
 
-    def model_fallback(self, from_model: str, to_model: str, error: Exception) -> None:
+    def model_fallback(self, from_model: str, to_model: str, error: Exception | None) -> None:
         pass
 
     def step_started(self, name: str) -> None:
@@ -197,7 +197,7 @@ class RichReporter(Reporter):
         dashes = max(2, _BOX_W - 2 - len(tag))
         self.window.feed(f"{_RST}\n{_DIM_CYAN}╰{'─' * dashes}{tag}╯{_RST}\n\n")
 
-    def model_fallback(self, from_model: str, to_model: str, error: Exception) -> None:
+    def model_fallback(self, from_model: str, to_model: str, error: Exception | None) -> None:
         self.window.stop_spinner()
         self.console.print(
             f"†  [dim]{from_model} failed "
