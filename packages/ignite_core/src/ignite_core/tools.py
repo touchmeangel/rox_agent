@@ -19,19 +19,13 @@ import docx
 import openpyxl
 from ddgs import DDGS
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
+from ignite_core.reporting import Reporter, RichReporter
 from ignite_core.rolling_window import RollingWindow
 from ignite_core.search_state import SearchState
 from ignite_core.storages.download_store import DownloadStore
 from ignite_core.storages.overflow_store import OverflowStore
 from ignite_core.tool_result import ToolResult
 from playwright.sync_api import sync_playwright
-
-_RST = "\033[0m"
-_DIM = "\033[2m"
-_DIM_CYAN = "\033[2;36m"
-
-_STREAM_PREFIX = f"  {_DIM}"
-_STREAM_SUFFIX = _RST
 
 _overflow_store = OverflowStore()
 
@@ -76,14 +70,6 @@ def _tool_display(tool_name: str, tool_input: dict) -> str:
             display = f"{tool_name}  {tool_input}"
     return display.replace("\r", "").replace("\n", " ")
 
-
-def _elapsed_str(seconds: float) -> str:
-    if seconds < 0.1:
-        return ""
-    if seconds < 60:
-        return f"  {_DIM}{seconds:.1f}s{_RST}"
-    m, s = divmod(int(seconds), 60)
-    return f"  {_DIM}{m}m{s:02d}s{_RST}"
 
 
 def _smart_process_output(
@@ -149,9 +135,7 @@ def _stream_subprocess(
     args: list[str],
     cwd: str,
     timeout: int,
-    window: RollingWindow,
-    line_prefix: str = _STREAM_PREFIX,
-    line_suffix: str = _STREAM_SUFFIX,
+    reporter: Reporter,
 ) -> tuple[str, str, int]:
     proc = subprocess.Popen(  # noqa: S603 — isolated docker environment
         args,
@@ -173,7 +157,7 @@ def _stream_subprocess(
                 with lock:
                     display = line.rstrip("\r\n")
                     if display:
-                        window.feed(f"{line_prefix}{display}{line_suffix}\n")
+                        reporter.stream_line(display)
         finally:
             pipe.close()
 
@@ -204,12 +188,12 @@ def run_command(
     command: str,
     cwd: str,
     timeout: int = 180,
-    window: RollingWindow | None = None,
+    reporter: Reporter | None = None,
 ) -> ToolResult:
     try:
         args = ["bash", "-c", command]
-        if window is not None:
-            stdout, stderr, returncode = _stream_subprocess(args, cwd, timeout, window)
+        if reporter is not None:
+            stdout, stderr, returncode = _stream_subprocess(args, cwd, timeout, reporter)
             return ToolResult(command, stdout, stderr, returncode)
 
         result = subprocess.run(  # noqa: S603 — isolated docker container
@@ -228,10 +212,10 @@ def run_command(
 
 
 def slither(
-    project_path: str, args: str = "./", window: RollingWindow | None = None
+    project_path: str, args: str = "./", reporter: Reporter | None = None
 ) -> ToolResult:
     result = run_command(
-        f"slither {args}", cwd=project_path, timeout=240, window=window
+        f"slither {args}", cwd=project_path, timeout=240, reporter=reporter
     )
     if not result.success:
         data = result.json_data()
@@ -241,39 +225,39 @@ def slither(
 
 
 def aderyn(
-    project_path: str, flags: str = "", window: RollingWindow | None = None
+    project_path: str, flags: str = "", reporter: Reporter | None = None
 ) -> ToolResult:
     cmd_str = f"aderyn {flags}".strip() if flags else "aderyn"
-    return run_command(cmd_str, cwd=project_path, timeout=180, window=window)
+    return run_command(cmd_str, cwd=project_path, timeout=180, reporter=reporter)
 
 
 def myth(
-    project_path: str, flags: str = "", window: RollingWindow | None = None
+    project_path: str, flags: str = "", reporter: Reporter | None = None
 ) -> ToolResult:
     cmd = f"myth {flags}".strip() if flags else "myth analyze ./"
-    return run_command(cmd, cwd=project_path, timeout=300, window=window)
+    return run_command(cmd, cwd=project_path, timeout=300, reporter=reporter)
 
 
 def cast(
-    project_path: str, subcommand: str, window: RollingWindow | None = None
+    project_path: str, subcommand: str, reporter: Reporter | None = None
 ) -> ToolResult:
     return run_command(
-        f"cast {subcommand}", cwd=project_path, timeout=30, window=window
+        f"cast {subcommand}", cwd=project_path, timeout=30, reporter=reporter
     )
 
 
 def forge(
-    project_path: str, args: str = "build", window: RollingWindow | None = None
+    project_path: str, args: str = "build", reporter: Reporter | None = None
 ) -> ToolResult:
-    return run_command(f"forge {args}", cwd=project_path, timeout=180, window=window)
+    return run_command(f"forge {args}", cwd=project_path, timeout=180, reporter=reporter)
 
 
 def git(
     project_path: str,
     args: str = "log --oneline -10",
-    window: RollingWindow | None = None,
+    reporter: Reporter | None = None,
 ) -> ToolResult:
-    return run_command(f"git {args}", cwd=project_path, timeout=30, window=window)
+    return run_command(f"git {args}", cwd=project_path, timeout=30, reporter=reporter)
 
 
 def read_file(project_path: str, relative_path: str) -> ToolResult:
@@ -306,9 +290,9 @@ def list_sol_files(project_path: str, pattern: str = "**/*.sol") -> ToolResult:
 
 
 def shell(
-    project_path: str, command: str, window: RollingWindow | None = None
+    project_path: str, command: str, reporter: Reporter | None = None
 ) -> ToolResult:
-    return run_command(command, cwd=project_path, timeout=120, window=window)
+    return run_command(command, cwd=project_path, timeout=120, reporter=reporter)
 
 
 def _web_search_ddgs(query: str, max_results: int = 5) -> ToolResult:
@@ -424,6 +408,13 @@ def github_search(
     return ToolResult(label, "\n".join(lines), "", 0)
 
 
+def _truncate_to_file(text: str, max_chars: int, path: Path) -> str:
+    if len(text) <= max_chars:
+        return text
+    omitted = len(text) - max_chars
+    return text[:max_chars] + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+
+
 def _pdftotext(path: Path, max_chars: int) -> tuple[str, str]:
     if shutil.which("pdftotext") is None:
         return "", (
@@ -455,12 +446,7 @@ def _pdftotext(path: Path, max_chars: int) -> tuple[str, str]:
             "OCR is not supported; try finding an HTML version of the same report instead."
         )
 
-    if len(text) > max_chars:
-        omitted = len(text) - max_chars
-        text = (
-            text[:max_chars]
-            + f"\n…[truncated — {omitted} more chars in the file at {path}]"
-        )
+    text = _truncate_to_file(text, max_chars, path)
 
     return text, ""
 
@@ -565,13 +551,7 @@ def _extract_docx(path: Path, max_chars: int) -> tuple[str, str]:
     text = "\n".join(parts).strip()
     if not text:
         return "", "No extractable text found in .docx (it may be empty or image-only)."
-    if len(text) > max_chars:
-        omitted = len(text) - max_chars
-        text = (
-            text[:max_chars]
-            + f"\n…[truncated — {omitted} more chars in the file at {path}]"
-        )
-    return text, ""
+    return _truncate_to_file(text, max_chars, path), ""
 
 
 def _extract_xlsx(path: Path, max_chars: int) -> tuple[str, str]:
@@ -591,13 +571,7 @@ def _extract_xlsx(path: Path, max_chars: int) -> tuple[str, str]:
     text = "\n".join(parts).strip()
     if not text:
         return "", "No data found in spreadsheet."
-    if len(text) > max_chars:
-        omitted = len(text) - max_chars
-        text = (
-            text[:max_chars]
-            + f"\n…[truncated — {omitted} more chars in the file at {path}]"
-        )
-    return text, ""
+    return _truncate_to_file(text, max_chars, path), ""
 
 
 def _extract_csv(path: Path, max_chars: int) -> tuple[str, str]:
@@ -607,13 +581,7 @@ def _extract_csv(path: Path, max_chars: int) -> tuple[str, str]:
         return "", str(exc)
     if not text.strip():
         return "", "CSV/TSV file is empty."
-    if len(text) > max_chars:
-        omitted = len(text) - max_chars
-        text = (
-            text[:max_chars]
-            + f"\n…[truncated — {omitted} more chars in the file at {path}]"
-        )
-    return text, ""
+    return _truncate_to_file(text, max_chars, path), ""
 
 
 _DOC_DISPATCH = {
@@ -1133,70 +1101,54 @@ _STDOUT_LIMITS: dict[str, int] = {
 _DEFAULT_STDOUT_LIMIT = 10_000
 
 
-def _summary(result: ToolResult, elapsed: float = 0.0) -> str:
-    total = len(result.stdout) + len(result.stderr)
-    size = f"{total / 1024:.1f} KB" if total >= 1024 else f"{total} B"
-    time_ = _elapsed_str(elapsed)
-
-    if result.success:
-        if total == 0:
-            return f"[green]✓[/green]{time_}"
-        raw = result.stdout if result.stdout else result.stderr
-        snippet = next((line.strip() for line in raw.splitlines() if line.strip()), "")
-        if snippet and total < 400:
-            safe_snippet = snippet[:72].replace("[", r"\[")
-            snippet_str = f"  [dim]·  {safe_snippet}[/dim]"
-        else:
-            snippet_str = ""
-        return f"[green]✓[/green]  {size}{time_}{snippet_str}"
-
-    return f"[red]✗[/red]  exit {result.returncode}  {size}{time_}"
-
-
 def dispatch(
     tool_name: str,
     tool_input: dict,
     project_path: str,
-    window: RollingWindow | None = None,
+    reporter: Reporter | None = None,
     search_state: SearchState | None = None,
     debug_logger: DebugLogger | None = None,
 ) -> ToolResult:
     debug_logger = debug_logger or default_debug_logger
 
-    owns_window = window is None
+    owns_window = reporter is None
+    window = None
     if owns_window:
         window = RollingWindow()
         window.__enter__()
+        reporter = RichReporter(window)
 
     args_repr = ", ".join(f"{k}={v!r}" for k, v in tool_input.items())
     cmd_display = _tool_display(tool_name, tool_input)
 
     try:
-        window.feed(f"\n{_DIM_CYAN}$ {_RST}{cmd_display}\n")
+        reporter.tool_started(tool_name, cmd_display)
 
         t0 = time.monotonic()
 
         match tool_name:
             case "slither":
                 result = slither(
-                    project_path, tool_input.get("flags") or "./", window=window
+                    project_path, tool_input.get("flags") or "./", reporter=reporter
                 )
             case "aderyn":
                 result = aderyn(
-                    project_path, tool_input.get("flags") or "", window=window
+                    project_path, tool_input.get("flags") or "", reporter=reporter
                 )
             case "myth":
                 result = myth(
-                    project_path, tool_input.get("flags") or "", window=window
+                    project_path, tool_input.get("flags") or "", reporter=reporter
                 )
             case "forge":
                 result = forge(
-                    project_path, tool_input.get("subcommand") or "build", window=window
+                    project_path,
+                    tool_input.get("subcommand") or "build",
+                    reporter=reporter,
                 )
             case "cast":
                 subcommand = tool_input.get("subcommand", "")
                 result = (
-                    cast(project_path, subcommand, window=window)
+                    cast(project_path, subcommand, reporter=reporter)
                     if subcommand
                     else ToolResult("cast", "", "Missing required 'subcommand'.", 1)
                 )
@@ -1204,7 +1156,7 @@ def dispatch(
                 result = git(
                     project_path,
                     tool_input.get("args") or "log --oneline -10",
-                    window=window,
+                    reporter=reporter,
                 )
             case "read_file":
                 path = tool_input.get("path", "")
@@ -1220,79 +1172,77 @@ def dispatch(
             case "shell":
                 command = tool_input.get("command", "")
                 result = (
-                    shell(project_path, command, window=window)
+                    shell(project_path, command, reporter=reporter)
                     if command
                     else ToolResult("shell", "", "Missing required 'command'.", 1)
                 )
             case "web_search":
                 query = tool_input.get("query", "")
                 max_results = tool_input.get("max_results", 5)
-                window.start_spinner("Searching…")
-                result = (
-                    search_state.consume(
-                        "web_search", query, lambda: web_search(query, max_results)
+                with reporter.spinner("Searching…"):
+                    result = (
+                        search_state.consume(
+                            "web_search", query, lambda: web_search(query, max_results)
+                        )
+                        if search_state is not None
+                        else web_search(query, max_results)
                     )
-                    if search_state is not None
-                    else web_search(query, max_results)
-                )
-                window.stop_spinner()
             case "web_fetch":
                 url = tool_input.get("url", "")
-                window.start_spinner("Fetching…")
-                result = (
-                    search_state.consume("web_fetch", url, lambda: web_fetch(url))
-                    if search_state is not None
-                    else web_fetch(url)
-                )
-                window.stop_spinner()
+                with reporter.spinner("Fetching…"):
+                    result = (
+                        search_state.consume("web_fetch", url, lambda: web_fetch(url))
+                        if search_state is not None
+                        else web_fetch(url)
+                    )
             case "browser_fetch":
                 url = tool_input.get("url", "")
                 max_chars = tool_input.get("max_chars", 8_000)
                 wait_ms = tool_input.get("wait_ms", 0)
-                window.start_spinner("Rendering page…")
-                result = (
-                    search_state.consume(
-                        "browser_fetch",
-                        url,
-                        lambda: browser_fetch(url, max_chars, wait_ms),
+                with reporter.spinner("Rendering page…"):
+                    result = (
+                        search_state.consume(
+                            "browser_fetch",
+                            url,
+                            lambda: browser_fetch(url, max_chars, wait_ms),
+                        )
+                        if search_state is not None
+                        else browser_fetch(url, max_chars, wait_ms)
                     )
-                    if search_state is not None
-                    else browser_fetch(url, max_chars, wait_ms)
-                )
-                window.stop_spinner()
             case "download_file":
                 url = tool_input.get("url", "")
                 filename = tool_input.get("filename")
-                window.start_spinner("Downloading…")
-                result = (
-                    download_file(url, filename)
-                    if url
-                    else ToolResult("download_file", "", "Missing required 'url'.", 1)
-                )
-                window.stop_spinner()
+                with reporter.spinner("Downloading…"):
+                    result = (
+                        download_file(url, filename)
+                        if url
+                        else ToolResult(
+                            "download_file", "", "Missing required 'url'.", 1
+                        )
+                    )
             case "read_document":
                 source = tool_input.get("source", "")
                 max_chars = tool_input.get("max_chars", 15_000)
-                window.start_spinner("Reading document…")
-                result = (
-                    read_document(source, max_chars)
-                    if source
-                    else ToolResult(
-                        "read_document", "", "Missing required 'source'.", 1
+                with reporter.spinner("Reading document…"):
+                    result = (
+                        read_document(source, max_chars)
+                        if source
+                        else ToolResult(
+                            "read_document", "", "Missing required 'source'.", 1
+                        )
                     )
-                )
-                window.stop_spinner()
             case "github_search":
                 query = tool_input.get("query", "")
                 search_type = tool_input.get("search_type", "repositories")
                 max_results = tool_input.get("max_results", 5)
-                window.start_spinner("Searching GitHub…")
-                result = (
-                    github_search(query, search_type, max_results)
-                    if query
-                    else ToolResult("github_search", "", "Missing required 'query'.", 1)
-                )
-                window.stop_spinner()
+                with reporter.spinner("Searching GitHub…"):
+                    result = (
+                        github_search(query, search_type, max_results)
+                        if query
+                        else ToolResult(
+                            "github_search", "", "Missing required 'query'.", 1
+                        )
+                    )
             case _:
                 result = ToolResult(
                     tool_name,
@@ -1318,7 +1268,7 @@ def dispatch(
         )
 
         debug_logger.log(tool_name, args_repr, result)
-        window.feed(f"  {_summary(result, elapsed)}\n")
+        reporter.tool_finished(result, elapsed)
 
     finally:
         if owns_window:

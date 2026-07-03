@@ -7,27 +7,10 @@ from dataclasses import dataclass, field
 
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
 from ignite_core.model_config import ModelConfig
-from ignite_core.rolling_window import RollingWindow
+from ignite_core.reporting import NullReporter, Reporter
 from ignite_core.tool_call_parser import ToolCall, parse_text_tool_calls
 
 _INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14"
-
-_RST = "\033[0m"
-_DIM = "\033[2m"
-_DIM_CYAN = "\033[2;36m"
-_BOX_W = 52
-
-_THINKING_LINE = f"{_DIM_CYAN}│{_RST}{_DIM} "
-
-_THINKING_OPEN = (f"\n{_DIM_CYAN}╭─ thinking {'─' * (_BOX_W - 13)}╮\n") + _THINKING_LINE
-
-
-def _thinking_close(char_count: int = 0) -> str:
-    if char_count > 0:
-        tag = f" {char_count:,} chars "
-        dashes = max(2, _BOX_W - 2 - len(tag))
-        return f"{_RST}\n{_DIM_CYAN}╰{'─' * dashes}{tag}╯{_RST}\n\n"
-    return f"{_RST}\n{_DIM_CYAN}╰{'─' * (_BOX_W - 2)}╯{_RST}\n\n"
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -89,29 +72,22 @@ class LLMClient:
         tools: list[dict],
         system: str,
         *,
-        window: RollingWindow | None = None,
+        reporter: Reporter | None = None,
         step_name: str = "",
         debug_logger: DebugLogger | None = None,
         show_thinking: bool = False,
     ) -> AssistantTurn:
+        reporter = reporter or NullReporter()
         debug_logger = debug_logger or default_debug_logger
         last_exc: Exception | None = None
 
         for attempt, cfg in enumerate(self.chain):
             if attempt > 0:
-                if window is not None:
-                    window.stop_spinner()
-                from rich.console import Console
+                reporter.model_fallback(self.chain[attempt - 1].model, cfg.model, last_exc)
 
-                Console().print(
-                    f"†  [dim]{self.chain[attempt - 1].model} failed "
-                    f"({type(last_exc).__name__}) → trying {cfg.model}[/dim]"
-                )
-
-            if window is not None:
-                thinking_enabled = bool(getattr(cfg, "thinking_budget", None))
-                spinner_msg = "Extended thinking…" if thinking_enabled else "Thinking…"
-                window.start_spinner(spinner_msg)
+            thinking_enabled = bool(getattr(cfg, "thinking_budget", None))
+            spinner_msg = "Extended thinking…" if thinking_enabled else "Thinking…"
+            reporter.start_spinner(spinner_msg)
 
             api_key = self._resolve_api_key(cfg)
             start = time.time()
@@ -124,7 +100,7 @@ class LLMClient:
                             messages,
                             tools,
                             system,
-                            window,
+                            reporter,
                             base_url=cfg.base_url,
                             api_key=api_key,
                             show_thinking=show_thinking,
@@ -135,7 +111,7 @@ class LLMClient:
                             messages,
                             tools,
                             system,
-                            window,
+                            reporter,
                             api_key=api_key,
                             show_thinking=show_thinking,
                         )
@@ -153,8 +129,7 @@ class LLMClient:
                 return turn
 
             except Exception as exc:
-                if window is not None:
-                    window.stop_spinner()
+                reporter.stop_spinner()
                 debug_logger.log_llm_call(
                     step=step_name,
                     provider=cfg.provider,
@@ -191,7 +166,7 @@ class LLMClient:
         messages,
         tools,
         system,
-        window,
+        reporter: Reporter,
         *,
         api_key,
         show_thinking=False,
@@ -222,33 +197,25 @@ class LLMClient:
 
         text_parts: list[str] = []
         thinking_parts: list[str] = []
-        spinner_stopped = window is None
+        spinner_stopped = False
         current_block_type: str | None = None
 
         with client.messages.stream(extra_headers=extra_headers, **kwargs) as stream:
             for event in stream:
                 if not spinner_stopped:
-                    window.stop_spinner()
+                    reporter.stop_spinner()
                     spinner_stopped = True
 
                 if event.type == "content_block_start":
                     current_block_type = getattr(event.content_block, "type", None)
-                    if (
-                        current_block_type == "thinking"
-                        and show_thinking
-                        and window is not None
-                    ):
-                        window.feed(_THINKING_OPEN)
+                    if current_block_type == "thinking" and show_thinking:
+                        reporter.thinking_start()
                     continue
 
                 if event.type == "content_block_stop":
-                    if (
-                        current_block_type == "thinking"
-                        and show_thinking
-                        and window is not None
-                    ):
+                    if current_block_type == "thinking" and show_thinking:
                         char_count = sum(len(p) for p in thinking_parts)
-                        window.feed(_thinking_close(char_count))
+                        reporter.thinking_end(char_count)
                     current_block_type = None
                     continue
 
@@ -258,13 +225,11 @@ class LLMClient:
                 delta = event.delta
                 if delta.type == "text_delta":
                     text_parts.append(delta.text)
-                    if window is not None:
-                        window.feed(delta.text)
+                    reporter.feed(delta.text)
                 elif delta.type == "thinking_delta":
                     thinking_parts.append(delta.thinking)
-                    if show_thinking and window is not None:
-                        indented = delta.thinking.replace("\n", f"\n{_THINKING_LINE}")
-                        window.feed(indented)
+                    if show_thinking:
+                        reporter.thinking_delta(delta.thinking)
 
             final = stream.get_final_message()
 
@@ -289,7 +254,7 @@ class LLMClient:
         messages,
         tools,
         system,
-        window,
+        reporter: Reporter,
         *,
         base_url,
         api_key,
@@ -323,12 +288,12 @@ class LLMClient:
         reasoning_parts: list[str] = []
         tool_call_slots: dict[int, dict] = {}
         finish_reason = ""
-        spinner_stopped = window is None
+        spinner_stopped = False
         thinking_box_open = False
 
         for chunk in stream:
             if not spinner_stopped:
-                window.stop_spinner()
+                reporter.stop_spinner()
                 spinner_stopped = True
             if not chunk.choices:
                 continue
@@ -342,21 +307,19 @@ class LLMClient:
             )
             if reasoning:
                 reasoning_parts.append(reasoning)
-                if show_thinking and window is not None:
+                if show_thinking:
                     if not thinking_box_open:
-                        window.feed(_THINKING_OPEN)
+                        reporter.thinking_start()
                         thinking_box_open = True
-                    indented = reasoning.replace("\n", f"\n{_THINKING_LINE}")
-                    window.feed(indented)
+                    reporter.thinking_delta(reasoning)
 
             if delta.content:
-                if thinking_box_open and show_thinking and window is not None:
+                if thinking_box_open and show_thinking:
                     char_count = sum(len(p) for p in reasoning_parts)
-                    window.feed(_thinking_close(char_count))
+                    reporter.thinking_end(char_count)
                     thinking_box_open = False
                 text_parts.append(delta.content)
-                if window is not None:
-                    window.feed(delta.content)
+                reporter.feed(delta.content)
 
             if delta.tool_calls:
                 for tc_delta in delta.tool_calls:
@@ -370,9 +333,9 @@ class LLMClient:
                     if tc_delta.function and tc_delta.function.arguments:
                         slot["arguments"] += tc_delta.function.arguments
 
-        if thinking_box_open and show_thinking and window is not None:
+        if thinking_box_open and show_thinking:
             char_count = sum(len(p) for p in reasoning_parts)
-            window.feed(_thinking_close(char_count))
+            reporter.thinking_end(char_count)
 
         tool_calls: list[ToolCall] = []
         for idx in sorted(tool_call_slots):
