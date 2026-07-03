@@ -71,7 +71,6 @@ def _tool_display(tool_name: str, tool_input: dict) -> str:
     return display.replace("\r", "").replace("\n", " ")
 
 
-
 def _smart_process_output(
     stdout: str, tool_name: str, project_path: str, limit: int
 ) -> str:
@@ -193,7 +192,9 @@ def run_command(
     try:
         args = ["bash", "-c", command]
         if reporter is not None:
-            stdout, stderr, returncode = _stream_subprocess(args, cwd, timeout, reporter)
+            stdout, stderr, returncode = _stream_subprocess(
+                args, cwd, timeout, reporter
+            )
             return ToolResult(command, stdout, stderr, returncode)
 
         result = subprocess.run(  # noqa: S603 — isolated docker container
@@ -249,7 +250,9 @@ def cast(
 def forge(
     project_path: str, args: str = "build", reporter: Reporter | None = None
 ) -> ToolResult:
-    return run_command(f"forge {args}", cwd=project_path, timeout=180, reporter=reporter)
+    return run_command(
+        f"forge {args}", cwd=project_path, timeout=180, reporter=reporter
+    )
 
 
 def git(
@@ -412,7 +415,10 @@ def _truncate_to_file(text: str, max_chars: int, path: Path) -> str:
     if len(text) <= max_chars:
         return text
     omitted = len(text) - max_chars
-    return text[:max_chars] + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+    return (
+        text[:max_chars]
+        + f"\n…[truncated — {omitted} more chars in the file at {path}]"
+    )
 
 
 def _pdftotext(path: Path, max_chars: int) -> tuple[str, str]:

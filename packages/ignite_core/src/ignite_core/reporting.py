@@ -7,16 +7,15 @@ from typing import TYPE_CHECKING
 from ignite_core.tool_result import ToolResult
 
 if TYPE_CHECKING:
-    from rich.console import Console
-
     from ignite_core.rolling_window import RollingWindow
+    from rich.console import Console
 
 
 class Reporter(ABC):
     @abstractmethod
     def feed(self, text: str) -> None:
         pass
-    
+
     @abstractmethod
     def stream_line(self, line: str) -> None:
         pass
@@ -51,7 +50,9 @@ class Reporter(ABC):
     def thinking_end(self, char_count: int) -> None: ...
 
     @abstractmethod
-    def model_fallback(self, from_model: str, to_model: str, error: Exception) -> None: ...
+    def model_fallback(
+        self, from_model: str, to_model: str, error: Exception
+    ) -> None: ...
 
     @abstractmethod
     def step_started(self, name: str) -> None: ...
@@ -158,7 +159,7 @@ def _format_tool_summary(result: ToolResult, elapsed: float) -> str:
 
 
 class RichReporter(Reporter):
-    def __init__(self, window: "RollingWindow", console: "Console | None" = None):
+    def __init__(self, window: RollingWindow, console: Console | None = None):
         from rich.console import Console
 
         self.window = window

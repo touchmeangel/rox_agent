@@ -83,7 +83,9 @@ class LLMClient:
 
         for attempt, cfg in enumerate(self.chain):
             if attempt > 0:
-                reporter.model_fallback(self.chain[attempt - 1].model, cfg.model, last_exc)
+                reporter.model_fallback(
+                    self.chain[attempt - 1].model, cfg.model, last_exc
+                )
 
             thinking_enabled = bool(getattr(cfg, "thinking_budget", None))
             spinner_msg = "Extended thinking…" if thinking_enabled else "Thinking…"
