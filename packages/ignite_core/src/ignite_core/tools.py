@@ -108,7 +108,7 @@ def _smart_process_output(
             f"[Full raw JSON saved to '{log_path}'. Use `shell` with `jq` to query the full file if needed.]\n"
             f"[Preview below:]\n\n{summary_str}"
         )
-        return _truncate(prompt_msg, limit, "json_summary")
+        return _truncate(prompt_msg, limit, "The full file path is already noted above.")
     except json.JSONDecodeError:
         pass
 
@@ -411,14 +411,15 @@ def github_search(
     return ToolResult(label, "\n".join(lines), "", 0)
 
 
-def _truncate_to_file(text: str, max_chars: int, path: Path) -> str:
-    if len(text) <= max_chars:
+def _truncate(text: str, limit: int, note: str) -> str:
+    """Hard-cut `text` at `limit` chars and append `note` explaining what got
+    cut and how to see the rest. Every truncation in this module — tool
+    stdout/stderr, extracted document text — funnels through here so there's
+    one place that decides what a truncation notice looks like."""
+    if len(text) <= limit:
         return text
-    omitted = len(text) - max_chars
-    return (
-        text[:max_chars]
-        + f"\n…[truncated — {omitted} more chars in the file at {path}]"
-    )
+    omitted = len(text) - limit
+    return text[:limit] + f"\n\n...[truncated — {omitted} more chars omitted. {note}]"
 
 
 def _pdftotext(path: Path, max_chars: int) -> tuple[str, str]:
@@ -452,7 +453,7 @@ def _pdftotext(path: Path, max_chars: int) -> tuple[str, str]:
             "OCR is not supported; try finding an HTML version of the same report instead."
         )
 
-    text = _truncate_to_file(text, max_chars, path)
+    text = _truncate(text, max_chars, f"See the full file at {path}.")
 
     return text, ""
 
@@ -557,7 +558,7 @@ def _extract_docx(path: Path, max_chars: int) -> tuple[str, str]:
     text = "\n".join(parts).strip()
     if not text:
         return "", "No extractable text found in .docx (it may be empty or image-only)."
-    return _truncate_to_file(text, max_chars, path), ""
+    return _truncate(text, max_chars, f"See the full file at {path}."), ""
 
 
 def _extract_xlsx(path: Path, max_chars: int) -> tuple[str, str]:
@@ -577,7 +578,7 @@ def _extract_xlsx(path: Path, max_chars: int) -> tuple[str, str]:
     text = "\n".join(parts).strip()
     if not text:
         return "", "No data found in spreadsheet."
-    return _truncate_to_file(text, max_chars, path), ""
+    return _truncate(text, max_chars, f"See the full file at {path}."), ""
 
 
 def _extract_csv(path: Path, max_chars: int) -> tuple[str, str]:
@@ -587,7 +588,7 @@ def _extract_csv(path: Path, max_chars: int) -> tuple[str, str]:
         return "", str(exc)
     if not text.strip():
         return "", "CSV/TSV file is empty."
-    return _truncate_to_file(text, max_chars, path), ""
+    return _truncate(text, max_chars, f"See the full file at {path}."), ""
 
 
 _DOC_DISPATCH = {
@@ -1089,16 +1090,6 @@ TOOL_SPECS: list[dict] = [
 DISPATCHABLE_TOOL_NAMES: frozenset[str] = frozenset(spec["name"] for spec in TOOL_SPECS)
 
 
-def _truncate(text: str, limit: int, what: str) -> str:
-    if len(text) <= limit:
-        return text
-    omitted = len(text) - limit
-    return (
-        text[:limit] + f"\n\n... [{what} truncated — {omitted} more chars omitted. "
-        f"Use a more targeted command (narrower flags, grep, head/tail) to see more.]"
-    )
-
-
 _STDOUT_LIMITS: dict[str, int] = {
     "myth": 200_000,
     "slither": 200_000,
@@ -1263,7 +1254,11 @@ def dispatch(
         smart_stdout = _smart_process_output(
             result.stdout, tool_name, project_path, stdout_limit
         )
-        smart_stderr = _truncate(result.stderr, 4_000, "stderr")
+        smart_stderr = _truncate(
+            result.stderr,
+            4_000,
+            "Use a more targeted command (narrower flags, grep, head/tail) to see more.",
+        )
 
         result = ToolResult(
             result.command,

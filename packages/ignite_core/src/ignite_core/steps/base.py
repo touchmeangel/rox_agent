@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
 from ignite_core.llm import LLMClient, ToolResultEntry, get_llm
 from ignite_core.planning import UPDATE_PLAN_SPEC, Plan
+from ignite_core.reporting import Reporter, RichReporter
 from ignite_core.rolling_window import RollingWindow
 from ignite_core.search_state import SearchState
 from ignite_core.steps.config import StepConfig
@@ -147,7 +148,7 @@ You can only exit the execution loop by explicitly invoking one of the following
 </TERMINATION_CRITERIA>"""
 
     def initial_prompt(
-        self, context: dict, window: RollingWindow, debug_logger: DebugLogger
+        self, context: dict, reporter: Reporter, debug_logger: DebugLogger
     ) -> str:
         raise NotImplementedError(
             f"{self.__class__.__name__} must implement initial_prompt()"
@@ -234,6 +235,20 @@ You can only exit the execution loop by explicitly invoking one of the following
             },
         ]
 
+    def _finalize(
+        self,
+        result: StepResult,
+        messages: list[dict],
+        thinking_trace: list[str],
+        blockers: list[dict],
+        plan: Plan,
+    ) -> StepResult:
+        result.messages = messages
+        result.thinking_trace = thinking_trace
+        result.blockers = blockers
+        result.plan = plan.as_dicts()
+        return result
+
     def run(self, context: dict) -> StepResult:
         default_debug_logger.log_event(
             "step_start", step=self.name, max_iterations=self.cfg.max_iterations
@@ -247,7 +262,7 @@ You can only exit the execution loop by explicitly invoking one of the following
                 {
                     "role": "user",
                     "content": self.initial_prompt(
-                        context, window, default_debug_logger
+                        context, RichReporter(window), default_debug_logger
                     ),
                 }
             ]
@@ -266,19 +281,20 @@ You can only exit the execution loop by explicitly invoking one of the following
         for i in range(self.cfg.max_iterations):
             iterations_left = self.cfg.max_iterations - i - 1
 
-            default_debug_logger.log_event(
-                "iteration_start",
-                step=self.name,
-                iteration=i + 1,
-                iterations_left=iterations_left,
-            )
+            def _log(category: str, **fields) -> None:
+                default_debug_logger.log_event(
+                    category, step=self.name, iteration=i + 1, **fields
+                )
+
+            _log("iteration_start", iterations_left=iterations_left)
 
             with RollingWindow(max_lines=8) as window:
+                reporter = RichReporter(window)
                 turn = self.llm.chat_with_tools(
                     messages,
                     tools=tools,
                     system=system,
-                    window=window,
+                    reporter=reporter,
                     step_name=self.name,
                     show_thinking=True,
                 )
@@ -296,47 +312,45 @@ You can only exit the execution loop by explicitly invoking one of the following
                     thinking_trace.append(rationale)
 
                 if not turn.tool_calls:
-                    default_debug_logger.log_event(
-                        "no_tool_call", step=self.name, iteration=i + 1, text=turn.text
-                    )
+                    _log("no_tool_call", text=turn.text)
 
                     consecutive_no_tool_call_repeats += 1
 
                     if consecutive_no_tool_call_repeats >= NO_TOOL_CALL_REPEAT_LIMIT:
-                        default_debug_logger.log_event(
+                        _log(
                             "no_tool_call_stuck",
-                            step=self.name,
-                            iteration=i + 1,
                             repeats=consecutive_no_tool_call_repeats,
                             text=turn.text,
                         )
-                        return StepResult(
-                            step_name=self.name,
-                            success=False,
-                            findings={
-                                "error": {
-                                    "message": (
-                                        "Model repeated the same text-only response "
-                                        f"{consecutive_no_tool_call_repeats} times without ever "
-                                        "producing a real tool call."
-                                    ),
-                                    "reason": (
-                                        "No native tool_calls were ever populated for this "
-                                        "provider/model — this usually means the model or provider "
-                                        "isn't emitting structured tool calls. Check the model's "
-                                        "tool-calling support."
-                                    ),
-                                }
-                            },
-                            summary=(
-                                "Step aborted early — the model never produced a real tool call, "
-                                "it only wrote text that looked like one."
+                        return self._finalize(
+                            StepResult(
+                                step_name=self.name,
+                                success=False,
+                                findings={
+                                    "error": {
+                                        "message": (
+                                            "Model repeated the same text-only response "
+                                            f"{consecutive_no_tool_call_repeats} times without ever "
+                                            "producing a real tool call."
+                                        ),
+                                        "reason": (
+                                            "No native tool_calls were ever populated for this "
+                                            "provider/model — this usually means the model or provider "
+                                            "isn't emitting structured tool calls. Check the model's "
+                                            "tool-calling support."
+                                        ),
+                                    }
+                                },
+                                summary=(
+                                    "Step aborted early — the model never produced a real tool call, "
+                                    "it only wrote text that looked like one."
+                                ),
+                                iterations_used=i + 1,
                             ),
-                            iterations_used=i + 1,
-                            messages=messages,
-                            thinking_trace=thinking_trace,
-                            blockers=blockers,
-                            plan=plan.as_dicts(),
+                            messages,
+                            thinking_trace,
+                            blockers,
+                            plan,
                         )
 
                     messages.append({"role": "user", "content": _NUDGE_FINISH_PROMPT})
@@ -357,10 +371,8 @@ You can only exit the execution loop by explicitly invoking one of the following
                                 pass
                         validation = self.validate_complete(findings)
                         if validation is None:
-                            default_debug_logger.log_event(
+                            _log(
                                 "step_complete",
-                                step=self.name,
-                                iteration=i + 1,
                                 summary=call.input.get("summary", ""),
                                 findings=findings,
                             )
@@ -375,10 +387,8 @@ You can only exit the execution loop by explicitly invoking one of the following
                                 ToolResultEntry(call.id, "Findings accepted.")
                             )
                         else:
-                            default_debug_logger.log_event(
+                            _log(
                                 "incomplete_findings",
-                                step=self.name,
-                                iteration=i + 1,
                                 validation=validation,
                                 findings=findings,
                             )
@@ -403,12 +413,7 @@ You can only exit the execution loop by explicitly invoking one of the following
                             "can_continue": bool(call.input.get("can_continue", False)),
                         }
                         blockers.append(blocker)
-                        default_debug_logger.log_event(
-                            "step_blocked",
-                            step=self.name,
-                            iteration=i + 1,
-                            blocker=blocker,
-                        )
+                        _log("step_blocked", blocker=blocker)
                         if blocker["fallback_action"] and blocker["can_continue"]:
                             tool_results.append(
                                 ToolResultEntry(
@@ -432,10 +437,8 @@ You can only exit the execution loop by explicitly invoking one of the following
                             )
 
                     elif call.name == "report_failed":
-                        default_debug_logger.log_event(
+                        _log(
                             "step_failed",
-                            step=self.name,
-                            iteration=i + 1,
                             error=call.input.get("error"),
                             reason=call.input.get("reason"),
                         )
@@ -459,17 +462,15 @@ You can only exit the execution loop by explicitly invoking one of the following
 
                     elif call.name == "update_plan":
                         plan.update(call.input.get("todos", []))
-                        window.feed(plan.render_line())
+                        reporter.feed(plan.render_line())
                         tool_results.append(ToolResultEntry(call.id, "Plan updated."))
 
                     else:
                         signature = (call.name, json.dumps(call.input, sort_keys=True))
                         if signature == last_failed_signature:
                             consecutive_repeat_blocks += 1
-                            default_debug_logger.log_event(
+                            _log(
                                 "repeat_call_blocked",
-                                step=self.name,
-                                iteration=i + 1,
                                 tool=call.name,
                                 args=call.input,
                                 repeats=consecutive_repeat_blocks,
@@ -504,10 +505,8 @@ You can only exit the execution loop by explicitly invoking one of the following
                                 )
                             continue
 
-                        default_debug_logger.log_event(
+                        _log(
                             "tool_call_issued",
-                            step=self.name,
-                            iteration=i + 1,
                             tool=call.name,
                             args=call.input,
                         )
@@ -515,12 +514,10 @@ You can only exit the execution loop by explicitly invoking one of the following
                             call.name,
                             call.input,
                             self.project_path,
-                            window=window,
+                            reporter=reporter,
                             search_state=search_state,
                         )
 
-                        # Computed fresh per call: an update_plan earlier in this
-                        # same turn's tool_calls should already be reflected here.
                         pacing_note = _pacing_note(i + 1, self.cfg.max_iterations, plan)
 
                         if result.success:
@@ -547,11 +544,9 @@ You can only exit the execution loop by explicitly invoking one of the following
                             )
 
                 if terminal_result is not None:
-                    terminal_result.messages = messages
-                    terminal_result.thinking_trace = thinking_trace
-                    terminal_result.blockers = blockers
-                    terminal_result.plan = plan.as_dicts()
-                    return terminal_result
+                    return self._finalize(
+                        terminal_result, messages, thinking_trace, blockers, plan
+                    )
 
                 messages.append({"role": "tool_results", "results": tool_results})
 
@@ -560,14 +555,16 @@ You can only exit the execution loop by explicitly invoking one of the following
             step=self.name,
             max_iterations=self.cfg.max_iterations,
         )
-        return StepResult(
-            step_name=self.name,
-            success=False,
-            findings={"warning": "max_iterations_reached"},
-            summary="Step hit the iteration limit before finishing.",
-            iterations_used=self.cfg.max_iterations,
-            messages=messages,
-            thinking_trace=thinking_trace,
-            blockers=blockers,
-            plan=plan.as_dicts(),
+        return self._finalize(
+            StepResult(
+                step_name=self.name,
+                success=False,
+                findings={"warning": "max_iterations_reached"},
+                summary="Step hit the iteration limit before finishing.",
+                iterations_used=self.cfg.max_iterations,
+            ),
+            messages,
+            thinking_trace,
+            blockers,
+            plan,
         )
