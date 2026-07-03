@@ -479,7 +479,7 @@ def _build_missions(
         knowledge = _build_knowledge(context, candidate)
 
         mission = Mission(
-            id=f"M-{uuid.uuid4().hex[:8].upper()}",
+            id=f"M-{uuid.uuid4().hex[:32].upper()}",
             contract=candidate.contract,
             vulnerability=candidate.descriptor.name,
             descriptor=candidate.descriptor,
