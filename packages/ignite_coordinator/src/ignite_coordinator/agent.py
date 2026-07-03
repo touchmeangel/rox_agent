@@ -76,10 +76,6 @@ def print_welcome_banner():
     console.print()
 
 
-def _copy_repo_to_workspace(repo_path: str, work_path: str) -> None:
-    shutil.copytree(repo_path, work_path, dirs_exist_ok=True)
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="EVM Smart Contract Audit Agent | ignite"
@@ -181,16 +177,6 @@ def main():
     repo_path = args.repo_path
     work_path = args.work_path
     output_path = args.output
-
-    console.print(f"\n[{color}]●[/{color}] [bold white]Syncing workspace[/bold white]")
-    try:
-        _copy_repo_to_workspace(repo_path, work_path)
-        console.print(
-            f"  [dim]⎿[/dim]  [green]✓[/green]  [dim]{repo_path} → {work_path}[/dim]"
-        )
-    except Exception as e:
-        console.print(f"  [dim]⎿[/dim]  [red]✗[/red]  [dim]{e}[/dim]")
-        raise SystemExit(1) from None
 
     workflow = Workflow(PIPELINE)
     results = workflow.run(repo_path, work_path)
