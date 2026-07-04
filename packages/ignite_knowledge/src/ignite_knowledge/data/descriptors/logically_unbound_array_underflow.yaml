@@ -1,0 +1,45 @@
+id: logically_unbound_array_underflow
+name: Logically Unbound Array Decrement (Storage Collision)
+granularity: contract
+tags:
+  - unsafe_math_context
+  - manual_array_length_mutation
+
+scenario: |
+  The contract decrements the length of a dynamic storage array (e.g., `array.length--`) 
+  in an unsafe math context, but more importantly, without proper logical bounds checking. 
+  For this vulnerability to be valid, the decrement operation MUST be "unchecked" in a 
+  logical sense — meaning there is no prior `require(array.length > 0)` or 
+  `if (array.length > 0)` condition guarding the operation. If an attacker can trigger 
+  this execution path when the array length is exactly 0, the length will silently wrap 
+  to the maximum uint256 value ($2^{256} - 1$), causing the array to overlap with the 
+  entire contract storage.
+
+properties:
+  - id: missing_logical_guard
+    check: |
+      Examine the control flow immediately preceding the array decrement. The vulnerability 
+      is ONLY valid if there are no conditional checks ensuring the array length is strictly 
+      greater than zero. If the code uses `if (array.length > 0) { array.length--; }` 
+      or `require(array.length > 0);`, the underflow is impossible and this hypothesis 
+      must be rejected as a false positive.
+    confirm_with: |
+      shell: rg "\.length\s*--|\.length\s*-=" src/ -B 5 -n
+      Analyze the 5 lines preceding the match. Confirm the absolute absence of bounds-checking 
+      logic for the array's length. 
+      shell: rg "function.*\{" src/ -B 2 -A 20
+      Next, trace the execution path from the function entry point to ensure no higher-level 
+      modifiers or requirements inadvertently protect the decrement.
+    severity: critical
+
+exploitation_context: |
+  If the decrement is genuinely unguarded, the exploit requires two phases in your Foundry PoC:
+  1. State Manipulation: Construct a sequence of transactions that brings the target 
+     array's length exactly to 0, followed by one final call to trigger the unguarded decrement.
+  2. Storage Collision: With the array now covering all storage, calculate the overlapping 
+     index $i$ using the formula: $i = target\_slot - keccak256(array\_slot)$. Write your 
+     malicious payload (e.g., your attacker address) to `array[i]` to hijack the contract.
+
+references:
+  - https://swcregistry.io/docs/SWC-124/
+  - https://docs.soliditylang.org/en/v0.7.6/types.html#arrays

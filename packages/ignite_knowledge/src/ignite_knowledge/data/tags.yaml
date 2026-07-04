@@ -38,12 +38,13 @@ tags:
       Contract is deployed behind a proxy pattern (UUPS, Transparent,
       Beacon) or is itself an implementation contract meant to sit behind one.
 
-  - id: weak_randomness_source
+  - id: onchain_pseudorandomness
     description: >
       Contract derives a value used for selection, allocation, ordering, or
-      reward outcomes from on-chain data that is visible or influenceable
-      before the transaction finalizes (block.timestamp, blockhash,
-      block.prevrandao/difficulty, block.number, block.coinbase).
+      reward outcomes from native on-chain global variables. Tag this if the 
+      contract uses block.timestamp, blockhash, block.prevrandao/difficulty, 
+      block.number, or block.coinbase to generate entropy or random numbers. 
+      Do NOT use this tag for external randomness oracles like Chainlink VRF.
 
   - id: external_call_after_effects
     description: >
@@ -51,7 +52,64 @@ tags:
       arbitrary/attacker-influenced address, token hooks) without an
       obvious reentrancy guard, or after mutating state rather than before.
 
-  - id: multi_contract
+  - id: unsafe_math_context
     description: >
-      Repo-level tag. The codebase spans multiple interacting contracts
-      (as opposed to a single self-contained contract).
+      Contract operates in an environment where arithmetic underflow/overflow 
+      silently wraps instead of reverting. Apply this tag if the contract uses 
+      Solidity < 0.8.0 without importing/using a SafeMath library, OR if it 
+      uses `unchecked { ... }` blocks for arithmetic operations in Solidity 0.8.0+.
+
+  - id: manual_array_length_mutation
+    description: >
+      Contract directly modifies the `.length` property of a dynamic storage array 
+      using arithmetic (e.g., `array.length--`, `array.length++`, or 
+      `array.length = newLength`) rather than exclusively using `.push()` and `.pop()`.
+
+  - id: strict_balance_dependency
+    description: >
+      Contract relies on `address(this).balance` for control flow, mathematical 
+      invariants, or phase transitions. Apply this tag if you see `address(this).balance` 
+      used with strict equality operators (`==`), used as a ceiling/threshold that 
+      can revert if exceeded, or used in unchecked subtraction where a larger-than-expected 
+      balance causes an underflow.
+
+  - id: sensitive_private_state
+    description: >
+      Contract stores sensitive data (passwords, keys, salts, seeds, answers) in 
+      state variables. Apply this tag if you see variables named with those keywords, 
+      especially if they are marked `private` or `internal`, or if a function requires 
+      a parameter to match one of these state variables to unlock functionality.
+
+  - id: sensitive_constructor_args
+    description: >
+      Contract accepts sensitive data (passwords, keys, salts, seeds) directly as 
+      arguments in its `constructor()`. Apply this tag if the constructor takes 
+      parameters meant to remain hidden from the public.
+
+  - id: upgradeable_proxy
+    description: >
+      Contract is deployed behind a proxy pattern (UUPS, Transparent,
+      Beacon), inherits `Initializable`, or is an implementation contract 
+      meant to sit behind a proxy (uses `initialize()` instead of a constructor).
+
+  - id: reorg_sensitive_logic
+    description: >
+      Contract contains economically significant logic whose outcome depends on
+      transaction ordering or immediate block inclusion. Typical examples include
+      first-come-first-served purchases, auctions, reward claims, liquidations,
+      marketplace listings, mint windows, or settlement logic where replay after
+      a short blockchain reorganization could produce a different result.
+
+  - id: unbounded_iteration
+    description: >
+      Contract iterates over a storage array, mapping-derived collection, or
+      dynamically growing data structure where the number of iterations depends
+      on user-controlled or externally growing state. Apply this tag whenever
+      execution cost grows proportionally with stored data rather than remaining
+      constant.
+
+  - id: critical_external_call
+    description: >
+      Contract performs external calls whose success is required for further
+      execution. Apply this tag when execution depends on another contract
+      successfully receiving Ether or completing a call.

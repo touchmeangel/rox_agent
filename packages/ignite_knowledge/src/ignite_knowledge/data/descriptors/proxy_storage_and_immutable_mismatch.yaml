@@ -1,0 +1,61 @@
+id: proxy_storage_and_immutable_mismatch
+name: Proxy Storage Collision & Immutable Variable Mismatch
+granularity: contract
+tags:
+  - upgradeable_proxy
+
+scenario: |
+  When a Proxy contract uses `delegatecall` to execute logic from an Implementation 
+  contract, it executes that logic within its own state/storage context. Two fatal 
+  flaws frequently occur:
+  1. Storage Collision: The Proxy and Implementation declare variables in a different 
+     order, meaning slot 0 in the logic contract overwrites slot 0 in the Proxy 
+     (often the `implementation` address or `admin` address).
+  2. Immutable Mismatch: The Implementation contract uses `immutable` variables set 
+     in its `constructor()`. Because immutables are baked directly into the deployed 
+     bytecode of the Implementation (and NOT stored in Proxy storage), all proxies 
+     pointing to this logic contract will share the exact same immutable values, 
+     breaking isolated proxy states.
+
+properties:
+  - id: upgradeability_flaws
+    check: |
+      You must check for both overlapping storage layouts and invalid use of `immutable` 
+      variables in upgradeable contracts. 
+      - If the proxy uses unstructured storage (EIP-1967) for its own variables, collisions 
+        are less likely, but you must verify.
+      - If the logic contract inherits `Initializable` but declares `immutable` variables, 
+        flag it immediately.
+    confirm_with: |
+      Run Slither's specialized upgradeability tool:
+      shell: slither-check-upgradeability . <TargetContractName>
+      
+      If Slither reports storage layout mismatches, a collision exists. Next, manually 
+      verify the immutable trap:
+      shell: rg "immutable" src/ -C 2 -n
+      shell: rg "constructor\s*\(" src/ -A 5 -n
+      
+      Look for `immutable` variables being assigned in a `constructor()` on a contract 
+      that also has an `initialize()` function.
+    severity: critical
+
+exploitation_context: |
+  Choose your exploit path based on the tool output:
+
+  PATH A: Storage Collision (Slither confirmed mismatch)
+  1. In your Foundry test, deploy the Proxy and the Implementation.
+  2. Execute a benign-looking state change on the Implementation (e.g., `setVar()`).
+  3. Use `vm.load(address(proxy), 0)` and `vm.load(address(proxy), 1)` to prove that 
+     the benign call overwrote the proxy's `admin` or `implementation` slot, allowing 
+     you to hijack the proxy or brick it.
+
+  PATH B: Immutable Mismatch (rg confirmed immutables)
+  1. Deploy the Implementation contract.
+  2. Deploy TWO separate Proxies pointing to the same Implementation.
+  3. Prove that reading the `immutable` variable from both Proxy A and Proxy B returns 
+     the exact same value, despite them being distinct instances. This proves the 
+     developer's assumption of isolated state is broken.
+
+references:
+  - https://docs.openzeppelin.com/upgrades-plugins/1.x/proxies
+  - https://github.com/crytic/slither/wiki/Upgradeability-Checks

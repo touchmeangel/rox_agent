@@ -2,7 +2,7 @@ id: weak_randomness
 name: Weak / Predictable Randomness Source
 granularity: contract
 tags:
-  - weak_randomness_source
+  - onchain_pseudorandomness
 
 scenario: |
   The contract derives a value used for selection, allocation, ordering, or

@@ -1,0 +1,67 @@
+id: unbounded_iteration_dos
+
+name: Denial of Service via Unbounded Iteration
+
+granularity: function
+
+tags:
+  - unbounded_iteration
+
+scenario: |
+  The contract performs iteration over a dynamically growing storage
+  collection whose size is influenced directly or indirectly by users.
+  As the collection grows, execution cost increases linearly (or worse)
+  until the function eventually exceeds the block gas limit.
+
+  This is particularly dangerous when:
+    • anyone can continually grow the collection,
+    • the loop executes inside commonly used functions,
+    • execution is required for normal protocol operation.
+
+properties:
+
+  - id: attacker_controlled_growth
+
+    check: |
+      Determine whether users can increase the size of the iterated
+      collection without meaningful bounds.
+
+      The vulnerability only exists if attackers can realistically
+      increase the collection size enough to make future execution
+      prohibitively expensive.
+
+      Small fixed-length arrays or owner-only maintenance arrays
+      should not be reported.
+
+    confirm_with: |
+      shell: rg "for\s*\(|while\s*\(" src/ -n
+
+      Trace every loop.
+
+      Determine:
+
+      • what storage collection is iterated
+
+      • where elements are inserted
+
+      • who may insert elements
+
+      • whether the collection has a practical upper bound
+
+      Reject if iteration remains bounded.
+
+    severity: medium
+
+exploitation_context: |
+  A realistic PoC should continuously add entries until gas usage grows
+  significantly.
+
+  The exploit succeeds only if ordinary users become unable to execute
+  the function because the required gas exceeds practical limits.
+
+  Measure gas before and after flooding the structure to demonstrate
+  monotonic growth.
+
+references:
+
+  - https://swcregistry.io/docs/SWC-128/

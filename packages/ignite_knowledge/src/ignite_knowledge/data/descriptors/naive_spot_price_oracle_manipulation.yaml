@@ -1,0 +1,61 @@
+id: naive_spot_price_oracle_manipulation
+name: Naive Spot Price / AMM Reserve Manipulation via Flash Loan
+granularity: contract
+tags:
+  - oracle_dependency
+
+scenario: |
+  The contract calculates asset prices, minting amounts, or swap outputs based on the 
+  instantaneous spot reserves of a liquidity pool (e.g., Uniswap V2) rather than a 
+  Time-Weighted Average Price (TWAP) or a decentralized oracle like Chainlink. 
+  By taking out a flash loan, an attacker can artificially inflate or deflate the 
+  target pool's reserves in a single transaction. When the vulnerable contract queries 
+  these skewed reserves, it executes its logic at a highly distorted exchange rate, 
+  allowing the attacker to drain funds.
+
+properties:
+  - id: consumer_side_spot_math
+    check: |
+      CRITICAL BOUNDARY: Do NOT investigate the code of the external oracle or AMM. 
+      Assume the external AMM works perfectly. Your sole focus is on how THIS contract 
+      consumes the data.
+      
+      Look for mathematical formulas calculating an output based on pool reserves. 
+      VULNERABLE PATTERN (Linear Spot Price): 
+      Calculates output using purely proportional math without price impact:
+      (amount * reserveOut) / reserveIn
+      
+      SECURE PATTERN (Constant Product Invariant):
+      Includes the input amount in the denominator to account for pool depth:
+      (amount * reserveOut) / (reserveIn + amount)
+      
+      If the contract uses the vulnerable pattern, or derives value straight from 
+      a live `getReserves()` or `balanceOf()` call on a pool without TWAP or 
+      slippage checks, it is exploitable.
+    confirm_with: |
+      shell: rg "getReserves\(" src/ -B 2 -A 5 -n
+      shell: rg "balanceOf\(" src/ -B 2 -A 5 -n
+      Identify the variables holding the reserves. Then trace where those variables 
+      are used in arithmetic.
+      shell: rg "\*.*\/" src/ -n
+      Manually inspect the division logic. If the denominator is just the input reserve 
+      (and does not add the input amount), flag it as highly vulnerable.
+    severity: critical
+
+exploitation_context: |
+  To build the exploit blueprint, do not overcomplicate the flash loan mechanics in 
+  the initial PoC phase. 
+  
+  1. Setup: In your Foundry test, use `deal()` to give the attacker a massive amount 
+     of the underlying token (simulating a flash loan).
+  2. Skew: Execute a massive direct swap against the AMM pool the target relies on 
+     to heavily skew the reserves.
+  3. Exploit: Call the vulnerable function on the target contract (e.g., deposit, mint, 
+     or swap). Because the target relies on the skewed spot price, it will hand out 
+     disproportionate value.
+  4. Prove the math: Show that the target contract calculated the output using the 
+     linear $\frac{x \cdot y}{z}$ formula instead of the invariant AMM formula.
+
+references:
+  - https://samczsun.com/so-you-want-to-use-a-price-oracle/
+  - https://docs.uniswap.org/contracts/v2/concepts/core-concepts/oracles

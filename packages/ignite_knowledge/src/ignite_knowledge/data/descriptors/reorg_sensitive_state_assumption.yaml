@@ -1,0 +1,140 @@
+id: reorg_sensitive_state_assumption
+
+name: Reorganization-Sensitive State Assumption
+
+granularity: contract
+
+tags:
+  - reorg_sensitive_logic
+
+scenario: |
+  The contract performs an economically critical action assuming that once a
+  transaction appears in a block, its effects are effectively permanent.
+
+  Blockchain reorganizations can temporarily remove previously accepted blocks
+  from the canonical chain. During a reorg, transactions from orphaned blocks
+  may disappear entirely or be re-executed later in a different order.
+
+  This is NOT a vulnerability by itself. The issue exists only if replaying
+  transactions after a reorganization can produce a different security outcome
+  (double execution, different winner, duplicated reward, incorrect settlement,
+  inconsistent off-chain behavior, etc.).
+
+properties:
+
+  - id: reorg_sensitive_operation
+
+    check: |
+      Look for operations where transaction ordering itself determines the
+      security outcome.
+
+      Typical examples include:
+
+      • first-come-first-served purchases
+      • auctions
+      • one-time claims
+      • airdrops
+      • reward distribution
+      • liquidation races
+      • mint windows
+      • marketplace purchases
+      • winner selection
+
+      Do NOT report this simply because the contract updates state.
+
+      The operation must rely on "who gets included first" rather than on
+      deterministic protocol state.
+
+    confirm_with: |
+      shell: rg "claim|buy|purchase|mint|auction|bid|liquidat|reward|airdrop" src/ -i -n
+
+      For every candidate function determine whether replaying the transaction
+      after a reorganization could produce a different economically meaningful
+      result.
+
+      If replay simply causes a harmless revert, reject the finding.
+
+    severity: medium
+
+  - id: missing_reorg_resilience
+
+    check: |
+      Determine whether the protocol intentionally protects users from
+      transaction replay caused by chain reorganizations.
+
+      Examples include:
+
+      • commit-reveal workflows
+      • delayed settlement
+      • waiting multiple blocks before finalization
+      • explicit challenge periods
+      • off-chain confirmation only after finalized blocks
+
+      Absence of these mechanisms is NOT automatically a vulnerability.
+
+      The issue is only valid if the protocol's security assumptions depend on
+      immediate block inclusion.
+
+    confirm_with: |
+      Inspect protocol flow rather than individual functions.
+
+      Determine whether replay after a short chain reorganization changes:
+
+      • ownership
+      • reward recipient
+      • auction winner
+      • liquidation winner
+      • claim eligibility
+
+      If the outcome is identical regardless of ordering, reject the finding.
+      
+    severity: medium
+
+exploitation_context: |
+  Do NOT investigate Ethereum consensus or validator behavior.
+  Assume a temporary reorganization has already happened.
+  Do not report theoretical reorganization risk. The finding is valid only if a realistic reorganization changes the protocol's economic outcome or violates an intended invariant. Transactions simply reverting after replay is normal blockchain behavior.
+
+  Your objective is to determine whether replaying transactions on the new
+  canonical chain changes the protocol's security outcome.
+
+  Typical proof strategy:
+
+  1. Execute an economically meaningful transaction.
+
+  2. Assume that transaction landed inside an orphaned block.
+
+  3. Before replaying it, execute a competing transaction that benefits an
+     attacker.
+
+  4. Replay the victim transaction.
+
+  The vulnerability exists only if the attacker obtains an advantage that would
+  not have existed without the reorganization.
+
+  Examples include:
+
+  • attacker receives an NFT instead of the original buyer
+
+  • attacker wins an auction after observing the victim's transaction
+
+  • attacker claims an airdrop first
+
+  • attacker performs liquidation before the replayed transaction
+
+  Merely causing the victim transaction to revert is generally expected
+  blockchain behavior and should not be reported unless it creates a protocol-
+  specific denial of service or economic exploit.
+
+  Off-chain systems require separate analysis.
+
+  If external infrastructure reacts to events emitted before finality
+  (bridges, APIs, NFT mint services, payment processors, automation),
+  verify whether it waits for finalized blocks before executing irreversible
+  actions. Event listeners acting on non-finalized events are a distinct
+  application-layer vulnerability and should not be confused with an on-chain
+  contract issue.
+
+references:
+  - https://ethereum.org/en/developers/docs/consensus-mechanisms/pos/
+  - https://docs.flashbots.net/flashbots-auction/overview

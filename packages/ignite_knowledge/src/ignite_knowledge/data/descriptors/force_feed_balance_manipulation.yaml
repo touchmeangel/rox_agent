@@ -1,0 +1,50 @@
+id: force_feed_balance_manipulation
+name: Strict Balance Manipulation via Force-Feeding
+granularity: contract
+tags:
+  - strict_balance_dependency
+
+scenario: |
+  The contract assumes its Ether balance can only be modified through its own 
+  payable functions. However, an attacker can bypass all internal accounting, 
+  `receive()`, and `fallback()` guards by forcefully sending Ether to the contract 
+  using `selfdestruct(target_address)` from an external malicious contract. 
+  If the target contract uses `address(this).balance == expected_value` to 
+  progress states, calculate rewards, or allow withdrawals, the attacker can 
+  permanently brick or manipulate the contract by force-feeding it a tiny 
+  amount of Ether (e.g., 1 wei) to break the strict equality.
+
+properties:
+  - id: strict_equality_balance_check
+    check: |
+      Examine how `address(this).balance` is used. The vulnerability is highly 
+      likely if the balance is compared using strict equality (`==`), or if an 
+      exact amount is subtracted from it without accounting for a surplus. 
+      If the contract uses `>=` (greater than or equal to) or tracks deposits 
+      with an internal `uint256 totalDeposited` variable instead of the raw 
+      EVM balance, this attack is likely mitigated and should be marked as a 
+      false positive.
+    confirm_with: |
+      shell: rg "address\(this\)\.balance\s*==" src/ -n
+      shell: rg "require\(.*address\(this\)\.balance" src/ -n
+      shell: rg "if\s*\(.*address\(this\)\.balance" src/ -n
+      Analyze the matched lines to see if an unexpected increase in the balance 
+      would cause a `require` to fail or skip a critical `if` block.
+    severity: high
+
+exploitation_context: |
+  To prove this dynamically in Foundry, you must bypass standard transfers. 
+  Do NOT use a standard `address.call{value: 1}()` because a secure contract 
+  will revert it. 
+  
+  1. Write a temporary dummy contract in your test file that accepts ETH and 
+     has a `blowUp(address target)` function containing `selfdestruct(payable(target))`.
+  2. In your test, fund the dummy contract with 1 wei using `deal()`.
+  3. Call `dummy.blowUp(address(targetContract))`. 
+  4. Finally, call the target contract's vulnerable function to prove that the 
+     force-fed wei causes a revert (Denial of Service) or a logic failure due 
+     to the broken balance assumption.
+
+references:
+  - https://swcregistry.io/docs/SWC-132/
+  - https://consensys.github.io/smart-contract-best-practices/attacks/force-feeding/
