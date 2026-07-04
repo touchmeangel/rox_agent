@@ -50,6 +50,9 @@ class Reporter(ABC):
     def thinking_end(self, char_count: int) -> None: ...
 
     @abstractmethod
+    def close_thinking_if_open(self) -> None: ...
+
+    @abstractmethod
     def model_selected(self, model: str) -> None: ...
 
     @abstractmethod
@@ -100,6 +103,9 @@ class NullReporter(Reporter):
         pass
 
     def thinking_end(self, char_count: int) -> None:
+        pass
+
+    def close_thinking_if_open(self) -> None:
         pass
 
     def model_selected(self, model: str) -> None:
@@ -173,6 +179,7 @@ class RichReporter(Reporter):
         self.window = window
         self.console = console or Console()
         self._thinking_chars = 0
+        self._thinking_open = False
 
     def feed(self, text: str) -> None:
         self.window.feed(text)
@@ -194,6 +201,7 @@ class RichReporter(Reporter):
 
     def thinking_start(self) -> None:
         self._thinking_chars = 0
+        self._thinking_open = True
         self.window.feed(_THINKING_OPEN)
 
     def thinking_delta(self, text: str) -> None:
@@ -201,9 +209,14 @@ class RichReporter(Reporter):
         self.window.feed(text.replace("\n", f"\n{_THINKING_LINE}"))
 
     def thinking_end(self, char_count: int) -> None:
+        self._thinking_open = False
         tag = f" {char_count:,} chars " if char_count > 0 else ""
         dashes = max(2, _BOX_W - 2 - len(tag))
         self.window.feed(f"{_RST}\n{_DIM_CYAN}╰{'─' * dashes}{tag}╯{_RST}\n")
+
+    def close_thinking_if_open(self) -> None:
+        if self._thinking_open:
+            self.thinking_end(self._thinking_chars)
 
     def model_selected(self, model: str) -> None:
         self.window.feed(f"{_DIM_CYAN}→ {_RST}{_DIM}{model}{_RST}\n")
