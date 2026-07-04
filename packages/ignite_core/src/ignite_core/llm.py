@@ -17,8 +17,8 @@ _INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14"
 def _draw(pool: list[ModelConfig]) -> ModelConfig:
     weights = [max(cfg.alloy_weight, 0.0) for cfg in pool]
     if not any(weights):
-        weights = None  # every weight was 0 or negative — fall back to uniform
-    return random.choices(pool, weights=weights, k=1)[0]
+        weights = None
+    return random.choices(pool, weights=weights, k=1)[0]  # noqa: S311 This is simple random selection, not security-sensitive
 
 
 def _is_transient(exc: Exception) -> bool:

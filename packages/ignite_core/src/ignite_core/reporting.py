@@ -105,7 +105,9 @@ class NullReporter(Reporter):
     def model_selected(self, model: str) -> None:
         pass
 
-    def model_fallback(self, from_model: str, to_model: str, error: Exception | None) -> None:
+    def model_fallback(
+        self, from_model: str, to_model: str, error: Exception | None
+    ) -> None:
         pass
 
     def step_started(self, name: str) -> None:
@@ -206,7 +208,9 @@ class RichReporter(Reporter):
     def model_selected(self, model: str) -> None:
         self.window.feed(f"{_DIM_CYAN}→ {_RST}{_DIM}{model}{_RST}\n")
 
-    def model_fallback(self, from_model: str, to_model: str, error: Exception | None) -> None:
+    def model_fallback(
+        self, from_model: str, to_model: str, error: Exception | None
+    ) -> None:
         self.window.stop_spinner()
         self.console.print(
             f"†  [dim]{from_model} failed "

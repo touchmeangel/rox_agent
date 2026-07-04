@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 from dataclasses import fields, is_dataclass
 from datetime import datetime
 from enum import Enum

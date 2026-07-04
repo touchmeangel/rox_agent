@@ -281,9 +281,9 @@ You can only exit the execution loop by explicitly invoking one of the following
             for i in range(self.cfg.max_iterations):
                 iterations_left = self.cfg.max_iterations - i - 1
 
-                def _log(category: str, **fields) -> None:
+                def _log(category: str, *, _iteration: int = i, **fields) -> None:
                     default_debug_logger.log_event(
-                        category, step=self.name, iteration=i + 1, **fields
+                        category, step=self.name, iteration=_iteration + 1, **fields
                     )
 
                 _log("iteration_start", iterations_left=iterations_left)

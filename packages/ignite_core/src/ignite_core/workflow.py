@@ -8,7 +8,9 @@ from ignite_core.tools import _download_store, _overflow_store
 
 
 class Workflow:
-    def __init__(self, pipeline: Sequence[BaseStep], reporter: Reporter | None = None) -> None:
+    def __init__(
+        self, pipeline: Sequence[BaseStep], reporter: Reporter | None = None
+    ) -> None:
         self.pipeline = pipeline
         self._owns_reporter = reporter is None
         self._window: RollingWindow | None = None

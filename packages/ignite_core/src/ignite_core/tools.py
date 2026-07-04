@@ -108,7 +108,9 @@ def _smart_process_output(
             f"[Full raw JSON saved to '{log_path}'. Use `shell` with `jq` to query the full file if needed.]\n"
             f"[Preview below:]\n\n{summary_str}"
         )
-        return _truncate(prompt_msg, limit, "The full file path is already noted above.")
+        return _truncate(
+            prompt_msg, limit, "The full file path is already noted above."
+        )
     except json.JSONDecodeError:
         pass
 
