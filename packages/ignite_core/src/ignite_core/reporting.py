@@ -203,7 +203,7 @@ class RichReporter(Reporter):
     def thinking_end(self, char_count: int) -> None:
         tag = f" {char_count:,} chars " if char_count > 0 else ""
         dashes = max(2, _BOX_W - 2 - len(tag))
-        self.window.feed(f"{_RST}\n{_DIM_CYAN}╰{'─' * dashes}{tag}╯{_RST}\n\n")
+        self.window.feed(f"{_RST}\n{_DIM_CYAN}╰{'─' * dashes}{tag}╯{_RST}\n")
 
     def model_selected(self, model: str) -> None:
         self.window.feed(f"{_DIM_CYAN}→ {_RST}{_DIM}{model}{_RST}\n")
@@ -243,4 +243,4 @@ class RichReporter(Reporter):
             parts.append(f"[red]✗ {failed} failed[/red]")
         if not parts:
             parts.append("[dim]no steps ran[/dim]")
-        self.console.print("\n" + "   ".join(parts) + "\n")
+        self.console.print("\n" + "   ".join(parts))
