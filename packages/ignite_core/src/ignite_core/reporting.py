@@ -50,6 +50,9 @@ class Reporter(ABC):
     def thinking_end(self, char_count: int) -> None: ...
 
     @abstractmethod
+    def model_selected(self, model: str) -> None: ...
+
+    @abstractmethod
     def model_fallback(
         self, from_model: str, to_model: str, error: Exception | None
     ) -> None: ...
@@ -97,6 +100,9 @@ class NullReporter(Reporter):
         pass
 
     def thinking_end(self, char_count: int) -> None:
+        pass
+
+    def model_selected(self, model: str) -> None:
         pass
 
     def model_fallback(self, from_model: str, to_model: str, error: Exception | None) -> None:
@@ -196,6 +202,9 @@ class RichReporter(Reporter):
         tag = f" {char_count:,} chars " if char_count > 0 else ""
         dashes = max(2, _BOX_W - 2 - len(tag))
         self.window.feed(f"{_RST}\n{_DIM_CYAN}╰{'─' * dashes}{tag}╯{_RST}\n\n")
+
+    def model_selected(self, model: str) -> None:
+        self.window.feed(f"{_DIM_CYAN}→ {_RST}{_DIM}{model}{_RST}\n")
 
     def model_fallback(self, from_model: str, to_model: str, error: Exception | None) -> None:
         self.window.stop_spinner()

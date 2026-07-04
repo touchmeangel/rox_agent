@@ -11,3 +11,4 @@ class ModelConfig:
     thinking_budget: int | None = None
     base_url: str | None = None
     api_key_env: str | None = None
+    alloy_weight: float = 1.0

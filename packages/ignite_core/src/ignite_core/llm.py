@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import time
 from dataclasses import dataclass, field
 
@@ -11,6 +12,13 @@ from ignite_core.reporting import NullReporter, Reporter
 from ignite_core.tool_call_parser import ToolCall, parse_text_tool_calls
 
 _INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14"
+
+
+def _draw(pool: list[ModelConfig]) -> ModelConfig:
+    weights = [max(cfg.alloy_weight, 0.0) for cfg in pool]
+    if not any(weights):
+        weights = None  # every weight was 0 or negative — fall back to uniform
+    return random.choices(pool, weights=weights, k=1)[0]
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -80,12 +88,18 @@ class LLMClient:
         reporter = reporter or NullReporter()
         debug_logger = debug_logger or default_debug_logger
         last_exc: Exception | None = None
+        remaining = list(self.chain)
+        previous_model: str | None = None
 
-        for attempt, cfg in enumerate(self.chain):
-            if attempt > 0:
-                reporter.model_fallback(
-                    self.chain[attempt - 1].model, cfg.model, last_exc
-                )
+        while remaining:
+            cfg = _draw(remaining)
+            remaining.remove(cfg)
+
+            if previous_model is not None:
+                reporter.model_fallback(previous_model, cfg.model, last_exc)
+            else:
+                reporter.model_selected(cfg.model)
+            previous_model = cfg.model
 
             thinking_enabled = bool(getattr(cfg, "thinking_budget", None))
             spinner_msg = "Extended thinking…" if thinking_enabled else "Thinking…"
@@ -143,11 +157,11 @@ class LLMClient:
                     error=str(exc),
                 )
                 last_exc = exc
-                if _is_transient(exc) and attempt < len(self.chain) - 1:
+                if _is_transient(exc) and remaining:
                     continue
                 raise
 
-        raise RuntimeError("Fallback chain exhausted") from last_exc
+        raise RuntimeError("Alloy pool exhausted") from last_exc
 
     @staticmethod
     def _resolve_api_key(cfg: ModelConfig) -> str:
