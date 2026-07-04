@@ -195,7 +195,9 @@ class KnownIssuesStep(BaseStep):
 
         search_state = SearchState(max_calls=len(targets) * 2)
         for t in targets:
-            _prefetch_protocol(t, self.project_path, reporter, debug_logger, search_state)
+            _prefetch_protocol(
+                t, self.project_path, reporter, debug_logger, search_state
+            )
 
         targets_section = "\n\n────────────────────────────────────\n\n".join(
             _fmt_target(t) for t in targets

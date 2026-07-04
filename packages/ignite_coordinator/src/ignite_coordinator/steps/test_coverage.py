@@ -8,6 +8,7 @@ from ignite_core.debug_logger import DebugLogger
 from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep, StepResult
 
+
 @dataclass
 class TestSuitePrescan:
     has_foundry_toml: bool = False

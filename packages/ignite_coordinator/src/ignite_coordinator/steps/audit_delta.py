@@ -4,7 +4,6 @@ from dataclasses import dataclass
 
 from ignite_core.debug_logger import DebugLogger
 from ignite_core.reporting import Reporter
-from ignite_core.rolling_window import RollingWindow
 from ignite_core.search_state import SearchState
 from ignite_core.steps.base import BaseStep, StepResult
 from ignite_core.tools import dispatch
@@ -248,7 +247,9 @@ class AuditDeltaStep(BaseStep):
             else "This appears to be an original protocol."
         )
 
-        scan = _prescan(self.github_repo_path, self.project_path, reporter, debug_logger)
+        scan = _prescan(
+            self.github_repo_path, self.project_path, reporter, debug_logger
+        )
         prescan_section = _fmt_prescan(scan)
 
         prefetch_results = _prefetch_audit(
