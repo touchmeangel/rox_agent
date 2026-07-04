@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 from dataclasses import fields, is_dataclass
 from datetime import datetime
 from enum import Enum
@@ -51,11 +52,11 @@ def print_welcome_banner():
             f"[{color}]{key}[/{color}]", primary.model, f"({primary.provider})"
         )
 
-        for fallback in cfg_list[1:]:
+        for model in cfg_list[1:]:
             models_table.add_row(
                 "",
-                f"[dim]⎿  {fallback.model}[/dim]",
-                f"[dim]({fallback.provider})[/dim]",
+                f"[dim]{model.model}[/dim]",
+                f"[dim]({model.provider})[/dim]",
             )
 
     footer = Text.from_markup(
