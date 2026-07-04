@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from ignite_core.debug_logger import DebugLogger
-from ignite_core.rolling_window import RollingWindow
+from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep, StepResult
 from ignite_core.tools import dispatch
 
@@ -33,7 +33,7 @@ class ForkSignals:
 def _shell_prescan(
     command: str,
     project_path: str,
-    window: RollingWindow,
+    reporter: Reporter,
     debug_logger: DebugLogger,
     max_chars: int = 2_000,
 ) -> str:
@@ -41,7 +41,7 @@ def _shell_prescan(
         "shell",
         {"command": command},
         project_path,
-        window=window,
+        reporter=reporter,
         search_state=None,
         debug_logger=debug_logger,
     )
@@ -56,14 +56,14 @@ def _shell_prescan(
 def _detect_fork_signals(
     github_repo_path: str,
     project_path: str,
-    window: RollingWindow,
+    reporter: Reporter,
     debug_logger: DebugLogger,
     doc_summary: str,
 ) -> ForkSignals:
     remote_output = _shell_prescan(
         f"cd '{github_repo_path}' && git remote -v 2>/dev/null || echo '(no remotes)'",
         project_path,
-        window,
+        reporter,
         debug_logger,
     )
     has_upstream_remote = "upstream" in remote_output.lower()
@@ -71,7 +71,7 @@ def _detect_fork_signals(
     git_log_output = _shell_prescan(
         f"cd '{github_repo_path}' && git log --oneline -15 2>/dev/null || echo '(no history)'",
         project_path,
-        window,
+        reporter,
         debug_logger,
     )
     log_hints = [
@@ -175,7 +175,7 @@ class ForkAnalysisStep(BaseStep):
   Do NOT reference /work — it is irrelevant to fork detection."""
 
     def initial_prompt(
-        self, context: dict, window: RollingWindow, debug_logger: DebugLogger
+        self, context: dict, reporter: Reporter, debug_logger: DebugLogger
     ) -> str:
         doc_findings = context.get("documentation", {}).get("findings", {})
         doc_summary = "\n".join(
@@ -191,7 +191,7 @@ class ForkAnalysisStep(BaseStep):
         signals = _detect_fork_signals(
             self.github_repo_path,
             self.project_path,
-            window,
+            reporter,
             debug_logger,
             doc_summary,
         )

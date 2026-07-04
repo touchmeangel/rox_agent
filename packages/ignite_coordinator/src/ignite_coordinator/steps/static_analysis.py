@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ignite_core.debug_logger import DebugLogger
-from ignite_core.rolling_window import RollingWindow
+from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep
 from ignite_core.tools import dispatch
 
@@ -125,14 +125,14 @@ def _run_prescan_tool(
     tool_name: str,
     flags: str,
     parse_fn: Callable[[str, str, int], PreScanResult],
-    window: RollingWindow,
+    reporter: Reporter,
     debug_logger: DebugLogger,
 ) -> PreScanResult:
     result = dispatch(
         tool_name,
         {"flags": flags},
         project_path,
-        window=window,
+        reporter=reporter,
         search_state=None,
         debug_logger=debug_logger,
     )
@@ -185,14 +185,14 @@ def _parse_slither(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
 
 
 def _run_slither(
-    project_path: str, window: RollingWindow, debug_logger: DebugLogger
+    project_path: str, reporter: Reporter, debug_logger: DebugLogger
 ) -> PreScanResult:
     return _run_prescan_tool(
         project_path,
         "slither",
         _SLITHER_FLAGS,
         _parse_slither,
-        window=window,
+        reporter=reporter,
         debug_logger=debug_logger,
     )
 
@@ -201,7 +201,7 @@ _ADERYN_FLAGS = "-o {report_path}"
 
 
 def _run_aderyn(
-    project_path: str, window: RollingWindow, debug_logger: DebugLogger
+    project_path: str, reporter: Reporter, debug_logger: DebugLogger
 ) -> PreScanResult:
     report_path = Path(project_path) / "aderyn_report.json"
 
@@ -272,7 +272,7 @@ def _run_aderyn(
         "aderyn",
         _ADERYN_FLAGS.format(report_path=str(report_path)),
         parse_aderyn_file,
-        window=window,
+        reporter=reporter,
         debug_logger=debug_logger,
     )
 
@@ -344,7 +344,7 @@ def _parse_mythril(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
 
 
 def _run_mythril(
-    project_path: str, window: RollingWindow, debug_logger: DebugLogger
+    project_path: str, reporter: Reporter, debug_logger: DebugLogger
 ) -> PreScanResult:
     src_dir = Path(project_path) / "src"
     if not src_dir.exists():
@@ -370,7 +370,7 @@ def _run_mythril(
         "myth",
         flags,
         _parse_mythril,
-        window=window,
+        reporter=reporter,
         debug_logger=debug_logger,
     )
 
@@ -473,12 +473,12 @@ def _fmt_detectors(detectors: list[dict]) -> str:
 
 
 def _pre_scan_project(
-    project_path: str, window: RollingWindow, debug_logger: DebugLogger
+    project_path: str, reporter: Reporter, debug_logger: DebugLogger
 ) -> dict[str, PreScanResult]:
     return {
-        "slither": _run_slither(project_path, window, debug_logger),
-        "aderyn": _run_aderyn(project_path, window, debug_logger),
-        "mythril": _run_mythril(project_path, window, debug_logger),
+        "slither": _run_slither(project_path, reporter, debug_logger),
+        "aderyn": _run_aderyn(project_path, reporter, debug_logger),
+        "mythril": _run_mythril(project_path, reporter, debug_logger),
     }
 
 
@@ -612,9 +612,9 @@ class StaticAnalysisStep(BaseStep):
         }
 
     def initial_prompt(
-        self, context: dict, window: RollingWindow, debug_logger: DebugLogger
+        self, context: dict, reporter: Reporter, debug_logger: DebugLogger
     ) -> str:
-        pre_scan = _pre_scan_project(self.project_path, window, debug_logger)
+        pre_scan = _pre_scan_project(self.project_path, reporter, debug_logger)
 
         slither_result = pre_scan["slither"]
         aderyn_result = pre_scan["aderyn"]

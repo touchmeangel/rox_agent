@@ -7,6 +7,7 @@ from typing import Any
 
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
 from ignite_core.mission import Mission
+from ignite_core.reporting import Reporter, RichReporter
 from ignite_core.repository_knowlage import RepositoryKnowledge
 from ignite_core.rolling_window import RollingWindow
 from ignite_core.steps.base import BaseStep, StepResult
@@ -342,11 +343,12 @@ class CoordinatorStep(BaseStep):
 
         with RollingWindow(max_lines=8) as window:
             prompt = self.initial_prompt_with_candidates(context, candidates)
+            reporter = RichReporter(window)
             turn = self.llm.chat_with_tools(
                 messages=[{"role": "user", "content": prompt}],
                 tools=[_SUBMIT_SPEC],
                 system=self.system_prompt(),
-                window=window,
+                reporter=reporter,
                 step_name=self.name,
                 show_thinking=True,
             )
@@ -398,7 +400,7 @@ class CoordinatorStep(BaseStep):
         )
 
     def initial_prompt(
-        self, context: dict, window: RollingWindow, debug_logger: DebugLogger
+        self, context: dict, reporter: Reporter, debug_logger: DebugLogger
     ) -> str:
         return self.initial_prompt_with_candidates(context, [])
 

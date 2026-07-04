@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ignite_core.debug_logger import DebugLogger
-from ignite_core.rolling_window import RollingWindow
+from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep
 from ignite_core.tools import dispatch
 
@@ -64,7 +64,7 @@ def _slither_print(
     project_path: str,
     printer: str,
     label: str,
-    window: RollingWindow,
+    reporter: Reporter,
     debug_logger: DebugLogger,
     max_chars: int = 3_000,
 ) -> PrintResult:
@@ -72,7 +72,7 @@ def _slither_print(
         "slither",
         {"flags": f". --print {printer} --exclude-dependencies"},
         project_path,
-        window=window,
+        reporter=reporter,
         search_state=None,
         debug_logger=debug_logger,
     )
@@ -100,11 +100,11 @@ _SLITHER_PRINTERS: list[tuple[str, str]] = [
 
 def _run_all_prints(
     project_path: str,
-    window: RollingWindow,
+    reporter: Reporter,
     debug_logger: DebugLogger,
 ) -> list[PrintResult]:
     return [
-        _slither_print(project_path, printer, label, window, debug_logger)
+        _slither_print(project_path, printer, label, reporter, debug_logger)
         for printer, label in _SLITHER_PRINTERS
     ]
 
@@ -115,7 +115,7 @@ def _strip_ansi(text: str) -> str:
 
 def _run_surya_describe(
     project_path: str,
-    window: RollingWindow,
+    reporter: Reporter,
     debug_logger: DebugLogger,
     max_chars: int = 4_000,
 ) -> str:
@@ -129,7 +129,7 @@ def _run_surya_describe(
             )
         },
         project_path,
-        window=window,
+        reporter=reporter,
         search_state=None,
         debug_logger=debug_logger,
     )
@@ -298,11 +298,11 @@ class DocumentationStep(BaseStep):
         return None
 
     def initial_prompt(
-        self, context: dict, window: RollingWindow, debug_logger: DebugLogger
+        self, context: dict, reporter: Reporter, debug_logger: DebugLogger
     ) -> str:
         repo_map = _generate_repo_tree(self.github_repo_path)
-        surya_table = _run_surya_describe(self.project_path, window, debug_logger)
-        prints = _run_all_prints(self.project_path, window, debug_logger)
+        surya_table = _run_surya_describe(self.project_path, reporter, debug_logger)
+        prints = _run_all_prints(self.project_path, reporter, debug_logger)
         prints_section = "\n\n".join(r.render() for r in prints)
 
         return f"""You are running the documentation and architecture step of a security audit.

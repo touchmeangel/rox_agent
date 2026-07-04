@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ignite_core.debug_logger import DebugLogger
-from ignite_core.rolling_window import RollingWindow
+from ignite_core.reporting import Reporter
 from ignite_core.search_state import SearchState
 from ignite_core.steps.base import BaseStep, StepResult
 from ignite_core.tools import dispatch
@@ -55,7 +55,7 @@ def _build_targets(context: dict) -> list[ProtocolTarget]:
 def _prefetch_protocol(
     target: ProtocolTarget,
     project_path: str,
-    window: RollingWindow,
+    reporter: Reporter,
     debug_logger: DebugLogger,
     search_state: SearchState,
     max_chars_per_result: int = 1_500,
@@ -69,7 +69,7 @@ def _prefetch_protocol(
             "web_search",
             {"query": query},
             project_path,
-            window=window,
+            reporter=reporter,
             search_state=search_state,
             debug_logger=debug_logger,
         )
@@ -186,7 +186,7 @@ class KnownIssuesStep(BaseStep):
         return None
 
     def initial_prompt(
-        self, context: dict, window: RollingWindow, debug_logger: DebugLogger
+        self, context: dict, reporter: Reporter, debug_logger: DebugLogger
     ) -> str:
         doc_findings = context.get("documentation", {}).get("findings", {})
         protocol_summary = doc_findings.get("protocol_summary", "(none)")
@@ -195,7 +195,7 @@ class KnownIssuesStep(BaseStep):
 
         search_state = SearchState(max_calls=len(targets) * 2)
         for t in targets:
-            _prefetch_protocol(t, self.project_path, window, debug_logger, search_state)
+            _prefetch_protocol(t, self.project_path, reporter, debug_logger, search_state)
 
         targets_section = "\n\n────────────────────────────────────\n\n".join(
             _fmt_target(t) for t in targets

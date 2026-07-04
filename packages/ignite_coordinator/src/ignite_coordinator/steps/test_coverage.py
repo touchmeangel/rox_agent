@@ -5,31 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ignite_core.debug_logger import DebugLogger
-from ignite_core.rolling_window import RollingWindow
+from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep, StepResult
-from ignite_core.tools import dispatch
-
-
-def _sh(
-    command: str,
-    project_path: str,
-    window: RollingWindow,
-    debug_logger: DebugLogger,
-    max_chars: int = 3_000,
-) -> str:
-    result = dispatch(
-        "shell",
-        {"command": command},
-        project_path,
-        window=window,
-        search_state=None,
-        debug_logger=debug_logger,
-    )
-    out = (result.stdout or "").strip()
-    if len(out) > max_chars:
-        return out[:max_chars] + "\n…(truncated)"
-    return out or "(no output)"
-
 
 @dataclass
 class TestSuitePrescan:
@@ -201,7 +178,7 @@ class TestCoverageStep(BaseStep):
         return None
 
     def initial_prompt(
-        self, context: dict, window: RollingWindow, debug_logger: DebugLogger
+        self, context: dict, reporter: Reporter, debug_logger: DebugLogger
     ) -> str:
         doc_findings = context.get("documentation", {}).get("findings", {})
         protocol_name = doc_findings.get("protocol_name") or ""

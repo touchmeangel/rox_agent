@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ignite_core.debug_logger import DebugLogger
-from ignite_core.rolling_window import RollingWindow
+from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep
 from ignite_knowledge.tags import load_tag_registry
 
@@ -72,7 +72,7 @@ class TaggingStep(BaseStep):
         )
 
     def initial_prompt(
-        self, context: dict, window: RollingWindow, debug_logger: DebugLogger
+        self, context: dict, reporter: Reporter, debug_logger: DebugLogger
     ) -> str:
         registry = load_tag_registry()
         tag_list = "\n".join(

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from ignite_core.debug_logger import DebugLogger
-from ignite_core.rolling_window import RollingWindow
+from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep
 
 _CONTEXT_KEYS = (
@@ -187,7 +187,7 @@ forge scoping \u2014 ALWAYS use one of these exact forms, never bare `forge test
         return None
 
     def initial_prompt(
-        self, context: dict, window: RollingWindow, debug_logger: DebugLogger
+        self, context: dict, reporter: Reporter, debug_logger: DebugLogger
     ) -> str:
         def _fmt(key: str) -> str:
             step = context.get(key, {})
