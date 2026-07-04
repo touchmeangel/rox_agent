@@ -256,11 +256,18 @@ def forge(
         f"forge {args}", cwd=project_path, timeout=180, reporter=reporter
     )
 
+
 def evm_decode_constructor(
-    project_path: str, creation_input: str, constructor_types: str, reporter: Reporter | None = None
+    project_path: str,
+    creation_input: str,
+    constructor_types: str,
+    reporter: Reporter | None = None,
 ) -> ToolResult:
     return run_command(
-        f"evm_decode_constructor {creation_input} {constructor_types}", cwd=project_path, timeout=180, reporter=reporter
+        f"evm_decode_constructor {creation_input} {constructor_types}",
+        cwd=project_path,
+        timeout=180,
+        reporter=reporter,
     )
 
 
@@ -900,7 +907,7 @@ TOOL_SPECS: list[dict] = [
                 "constructor_types": {
                     "type": "string",
                     "description": (
-                        'Comma-separated Solidity constructor parameter types, e.g. '
+                        "Comma-separated Solidity constructor parameter types, e.g. "
                         '"bytes32", "address,uint256", or "address,uint256,bool".'
                     ),
                 },
