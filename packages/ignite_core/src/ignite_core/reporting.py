@@ -174,10 +174,8 @@ def _format_tool_summary(result: ToolResult, elapsed: float) -> str:
 
 class RichReporter(Reporter):
     def __init__(self, window: RollingWindow, console: Console | None = None):
-        from rich.console import Console
-
         self.window = window
-        self.console = console or Console()
+        self.console = console or window.console
         self._thinking_chars = 0
         self._thinking_open = False
 
