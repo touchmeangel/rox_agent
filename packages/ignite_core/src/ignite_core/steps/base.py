@@ -147,9 +147,7 @@ You can only exit the execution loop by explicitly invoking one of the following
 3. `report_failed`: Use as an absolute last resort when all engineering pathways, debugging strategies, and alternative tools have been completely exhausted.
 </TERMINATION_CRITERIA>"""
 
-    def initial_prompt(
-        self, context: dict, reporter, debug_logger: DebugLogger
-    ) -> str:
+    def initial_prompt(self, context: dict, reporter, debug_logger: DebugLogger) -> str:
         raise NotImplementedError(
             f"{self.__class__.__name__} must implement initial_prompt()"
         )
