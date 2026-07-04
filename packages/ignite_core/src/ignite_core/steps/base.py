@@ -267,28 +267,27 @@ You can only exit the execution loop by explicitly invoking one of the following
                 }
             ]
 
-        thinking_trace: list[str] = []
-        blockers: list[dict] = []
-        plan = Plan()
+            thinking_trace: list[str] = []
+            blockers: list[dict] = []
+            plan = Plan()
 
-        last_failed_signature: tuple[str, str] | None = None
-        consecutive_repeat_blocks = 0
-        search_state = SearchState(max_calls=self.cfg.max_web_calls)
+            last_failed_signature: tuple[str, str] | None = None
+            consecutive_repeat_blocks = 0
+            search_state = SearchState(max_calls=self.cfg.max_web_calls)
 
-        consecutive_no_tool_call_repeats = 0
-        NO_TOOL_CALL_REPEAT_LIMIT = 3
+            consecutive_no_tool_call_repeats = 0
+            NO_TOOL_CALL_REPEAT_LIMIT = 3
 
-        for i in range(self.cfg.max_iterations):
-            iterations_left = self.cfg.max_iterations - i - 1
+            for i in range(self.cfg.max_iterations):
+                iterations_left = self.cfg.max_iterations - i - 1
 
-            def _log(category: str, **fields) -> None:
-                default_debug_logger.log_event(
-                    category, step=self.name, iteration=i + 1, **fields
-                )
+                def _log(category: str, **fields) -> None:
+                    default_debug_logger.log_event(
+                        category, step=self.name, iteration=i + 1, **fields
+                    )
 
-            _log("iteration_start", iterations_left=iterations_left)
+                _log("iteration_start", iterations_left=iterations_left)
 
-            with RollingWindow(max_lines=8) as window:
                 reporter = RichReporter(window)
                 turn = self.llm.chat_with_tools(
                     messages,
@@ -550,21 +549,21 @@ You can only exit the execution loop by explicitly invoking one of the following
 
                 messages.append({"role": "tool_results", "results": tool_results})
 
-        default_debug_logger.log_event(
-            "step_iteration_limit",
-            step=self.name,
-            max_iterations=self.cfg.max_iterations,
-        )
-        return self._finalize(
-            StepResult(
-                step_name=self.name,
-                success=False,
-                findings={"warning": "max_iterations_reached"},
-                summary="Step hit the iteration limit before finishing.",
-                iterations_used=self.cfg.max_iterations,
-            ),
-            messages,
-            thinking_trace,
-            blockers,
-            plan,
-        )
+            default_debug_logger.log_event(
+                "step_iteration_limit",
+                step=self.name,
+                max_iterations=self.cfg.max_iterations,
+            )
+            return self._finalize(
+                StepResult(
+                    step_name=self.name,
+                    success=False,
+                    findings={"warning": "max_iterations_reached"},
+                    summary="Step hit the iteration limit before finishing.",
+                    iterations_used=self.cfg.max_iterations,
+                ),
+                messages,
+                thinking_trace,
+                blockers,
+                plan,
+            )
