@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
 from ignite_core.llm import LLMClient, ToolResultEntry, get_llm
 from ignite_core.planning import UPDATE_PLAN_SPEC, Plan
-from ignite_core.reporting import RichReporter
+from ignite_core.reporting import Reporter, RichReporter
 from ignite_core.rolling_window import RollingWindow
 from ignite_core.search_state import SearchState
 from ignite_core.steps.config import StepConfig
@@ -147,7 +147,9 @@ You can only exit the execution loop by explicitly invoking one of the following
 3. `report_failed`: Use as an absolute last resort when all engineering pathways, debugging strategies, and alternative tools have been completely exhausted.
 </TERMINATION_CRITERIA>"""
 
-    def initial_prompt(self, context: dict, reporter, debug_logger: DebugLogger) -> str:
+    def initial_prompt(
+        self, context: dict, reporter: Reporter, debug_logger: DebugLogger
+    ) -> str:
         raise NotImplementedError(
             f"{self.__class__.__name__} must implement initial_prompt()"
         )
@@ -255,41 +257,37 @@ You can only exit the execution loop by explicitly invoking one of the following
         system = self.system_prompt()
         tools = TOOL_SPECS + [UPDATE_PLAN_SPEC] + self._terminal_tool_specs()
 
-        # Own short-lived window just for building the initial prompt — kept
-        # separate from the per-iteration windows below, matching how it's
-        # never part of the same live-rendering session as any LLM turn.
-        with RollingWindow(max_lines=8) as init_window:
+        with RollingWindow(max_lines=8) as window:
             messages: list[dict] = [
                 {
                     "role": "user",
                     "content": self.initial_prompt(
-                        context, RichReporter(init_window), default_debug_logger
+                        context, RichReporter(window), default_debug_logger
                     ),
                 }
             ]
 
-        thinking_trace: list[str] = []
-        blockers: list[dict] = []
-        plan = Plan()
+            thinking_trace: list[str] = []
+            blockers: list[dict] = []
+            plan = Plan()
 
-        last_failed_signature: tuple[str, str] | None = None
-        consecutive_repeat_blocks = 0
-        search_state = SearchState(max_calls=self.cfg.max_web_calls)
+            last_failed_signature: tuple[str, str] | None = None
+            consecutive_repeat_blocks = 0
+            search_state = SearchState(max_calls=self.cfg.max_web_calls)
 
-        consecutive_no_tool_call_repeats = 0
-        NO_TOOL_CALL_REPEAT_LIMIT = 3
+            consecutive_no_tool_call_repeats = 0
+            NO_TOOL_CALL_REPEAT_LIMIT = 3
 
-        for i in range(self.cfg.max_iterations):
-            iterations_left = self.cfg.max_iterations - i - 1
+            for i in range(self.cfg.max_iterations):
+                iterations_left = self.cfg.max_iterations - i - 1
 
-            def _log(category: str, *, _iteration: int = i, **fields) -> None:
-                default_debug_logger.log_event(
-                    category, step=self.name, iteration=_iteration + 1, **fields
-                )
+                def _log(category: str, *, _iteration: int = i, **fields) -> None:
+                    default_debug_logger.log_event(
+                        category, step=self.name, iteration=_iteration + 1, **fields
+                    )
 
-            _log("iteration_start", iterations_left=iterations_left)
+                _log("iteration_start", iterations_left=iterations_left)
 
-            with RollingWindow(max_lines=8) as window:
                 reporter = RichReporter(window)
                 turn = self.llm.chat_with_tools(
                     messages,
@@ -544,28 +542,28 @@ You can only exit the execution loop by explicitly invoking one of the following
                                 )
                             )
 
-            if terminal_result is not None:
-                return self._finalize(
-                    terminal_result, messages, thinking_trace, blockers, plan
-                )
+                if terminal_result is not None:
+                    return self._finalize(
+                        terminal_result, messages, thinking_trace, blockers, plan
+                    )
 
-            messages.append({"role": "tool_results", "results": tool_results})
+                messages.append({"role": "tool_results", "results": tool_results})
 
-        default_debug_logger.log_event(
-            "step_iteration_limit",
-            step=self.name,
-            max_iterations=self.cfg.max_iterations,
-        )
-        return self._finalize(
-            StepResult(
-                step_name=self.name,
-                success=False,
-                findings={"warning": "max_iterations_reached"},
-                summary="Step hit the iteration limit before finishing.",
-                iterations_used=self.cfg.max_iterations,
-            ),
-            messages,
-            thinking_trace,
-            blockers,
-            plan,
-        )
+            default_debug_logger.log_event(
+                "step_iteration_limit",
+                step=self.name,
+                max_iterations=self.cfg.max_iterations,
+            )
+            return self._finalize(
+                StepResult(
+                    step_name=self.name,
+                    success=False,
+                    findings={"warning": "max_iterations_reached"},
+                    summary="Step hit the iteration limit before finishing.",
+                    iterations_used=self.cfg.max_iterations,
+                ),
+                messages,
+                thinking_trace,
+                blockers,
+                plan,
+            )
