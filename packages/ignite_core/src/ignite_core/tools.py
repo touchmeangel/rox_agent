@@ -256,6 +256,13 @@ def forge(
         f"forge {args}", cwd=project_path, timeout=180, reporter=reporter
     )
 
+def evm_decode_constructor(
+    project_path: str, creation_input: str, constructor_types: str, reporter: Reporter | None = None
+) -> ToolResult:
+    return run_command(
+        f"evm_decode_constructor {creation_input} {constructor_types}", cwd=project_path, timeout=180, reporter=reporter
+    )
+
 
 def git(
     project_path: str,
@@ -867,6 +874,41 @@ TOOL_SPECS: list[dict] = [
         },
     },
     {
+        "name": "evm_decode_constructor",
+        "description": (
+            "Decode Solidity constructor arguments from EVM contract creation bytecode. "
+            "Useful when auditing deployed contracts whose constructor parameters are not "
+            "available in the verified source or when recovering secrets passed to constructors.\n\n"
+            "Usage:\n"
+            "  evm_decode_constructor <creation_input> <constructor_types>\n\n"
+            "Example:\n"
+            '  evm_decode_constructor "0x6080604..." "address,uint256"\n\n'
+            "Supported ABI types include address, bool, string, bytes, bytes32, "
+            "uint/int variants, fixed-size arrays, dynamic arrays, and tuples. "
+            "The constructor type list must exactly match the original Solidity constructor signature."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "creation_input": {
+                    "type": "string",
+                    "description": (
+                        "Full contract creation bytecode (deployment transaction input), "
+                        "with or without the 0x prefix."
+                    ),
+                },
+                "constructor_types": {
+                    "type": "string",
+                    "description": (
+                        'Comma-separated Solidity constructor parameter types, e.g. '
+                        '"bytes32", "address,uint256", or "address,uint256,bool".'
+                    ),
+                },
+            },
+            "required": ["creation_input", "constructor_types"],
+        },
+    },
+    {
         "name": "git",
         "description": (
             "Run read-only git commands to understand project history — when a suspicious "
@@ -1150,6 +1192,13 @@ def dispatch(
                     cast(project_path, subcommand, reporter=reporter)
                     if subcommand
                     else ToolResult("cast", "", "Missing required 'subcommand'.", 1)
+                )
+            case "evm_decode_constructor":
+                result = evm_decode_constructor(
+                    project_path,
+                    tool_input.get("creation_input", ""),
+                    tool_input.get("constructor_types", ""),
+                    reporter=reporter,
                 )
             case "git":
                 result = git(

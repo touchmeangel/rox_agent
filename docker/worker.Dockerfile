@@ -58,7 +58,8 @@ RUN pip install --no-cache-dir \
     pyevmasm \
     web3 \
     eth-abi \
-    crytic-compile
+    crytic-compile \
+    git+https://github.com/touchmeangel/evm_decode_constructor
 
 RUN pip install --no-cache-dir "mythril>=0.23.25"
 
