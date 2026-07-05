@@ -208,63 +208,61 @@ class KnownIssuesStep(BaseStep):
             "Use web_fetch on any URLs that look promising."
         )
 
-        return f"""You are running the known-issues research step of a security audit.
-Project: {self.project_path}
+        return f"""<audit_step name="known_issues">
 
-════════════════════════════════════════
-PROTOCOL CONTEXT
-════════════════════════════════════════
+<scope>
+Research publicly disclosed audit findings for the external protocols and fork-upstream
+this codebase depends on. This step does NOT read the project source and does NOT judge
+whether a known issue actually applies to how this specific code is written — it only
+compiles a checklist of relevant, previously disclosed issues for a later step to verify
+against the code. Do not write or reference exploit code in this step.
+</scope>
 
-What this protocol does:
+<project_path>{self.project_path}</project_path>
+
+<protocol_context>
 {protocol_summary}
+</protocol_context>
 
-════════════════════════════════════════
-RESEARCH TARGETS  ({prefetch_note})
-════════════════════════════════════════
-
+<research_targets note="{prefetch_note}">
 {targets_section}
+</research_targets>
 
-════════════════════════════════════════
-YOUR TASK
-════════════════════════════════════════
+<task>
+For each protocol listed above, find every known audit finding or disclosed vulnerability
+that is relevant to HOW that protocol is used here. The "Usage" field tells you the
+integration context — use it to decide which findings actually apply.
 
-For each protocol listed above, find every known audit finding or disclosed
-vulnerability that is relevant to HOW that protocol is used here.
-The "Usage" field tells you the integration context — use it to decide
-which findings actually apply.
+<step id="1" title="Extract from pre-fetched results">
+For any URL in the results above that looks like an audit report or finding list, call
+web_fetch to read the full content. Prioritise: Cantina, Trail of Bits, OpenZeppelin,
+Spearbit, Code4rena, Sherlock, Immunefi, and the protocol's own GitHub /audits folder.
+</step>
 
-This step does NOT read the project source. It only researches external sources.
-The audit step will verify each checklist item against the code.
+<step id="2" title="Fill gaps with additional searches">
+If pre-fetched results are thin for a protocol, run at most 1 additional targeted search per
+protocol: web_search "protocol version audit cantina OR spearbit OR trail-of-bits".
+Once you have findings from a credible source, stop searching that protocol. If nothing
+surfaces after the additional search, record empty known_issues and move on — do not keep
+rephrasing the same query.
+</step>
 
-STEP 1 — EXTRACT FROM PRE-FETCHED RESULTS
-  For any URL in the results above that looks like an audit report or
-  finding list, call web_fetch to read the full content.
-  Prioritise: Cantina, Trail of Bits, OpenZeppelin, Spearbit, Code4rena,
-  Sherlock, Immunefi, and the protocol's own GitHub /audits folder.
+<step id="3" title="Filter by usage connection">
+For each finding ask: does the Usage description create the conditions for this
+vulnerability?
+  - "Used for swapping tokens" → share inflation from market creation does NOT apply
+  - "Creates new lending markets" → share inflation DOES apply
+Exclude findings that cannot apply — do not include them with a caveat.
+</step>
 
-STEP 2 — FILL GAPS WITH ADDITIONAL SEARCHES
-  If pre-fetched results are thin for a protocol, run at most 1 additional
-  targeted search per protocol:
-    web_search: "<protocol> <version> audit cantina OR spearbit OR trail-of-bits"
-  Once you have findings from a credible source, stop searching that protocol.
-  If nothing surfaces after the additional search, record empty known_issues
-  and move on — do not keep rephrasing the same query.
+<step id="4" title="Write actionable checks">
+Each finding needs a concrete check — not "review X" but "verify that function Y enforces
+invariant Z before calling into protocol". This check is a task for the later step that
+reads the source, not something to verify yourself here.
+</step>
+</task>
 
-STEP 3 — FILTER BY USAGE CONSECTION
-  For each finding ask: does the Usage description create the conditions
-  for this vulnerability?
-    • "Used for swapping tokens" → share inflation from market creation does NOT apply
-    • "Creates new lending markets" → share inflation DOES apply
-  Exclude findings that cannot apply — do not include them with a caveat.
-
-STEP 4 — WRITE ACTIONABLE CHECKS
-  Each finding needs a concrete check — not "review X" but
-  "verify that function Y enforces invariant Z before calling into protocol".
-
-════════════════════════════════════════
-FINDINGS FORMAT
-════════════════════════════════════════
-
+<output_format>
 {{
   "protocol_checklists": [
     {{
@@ -285,14 +283,15 @@ FINDINGS FORMAT
   ],
   "summary": "Researched 3 protocols. Found 7 relevant known issues: 2 high, 3 medium, 2 low."
 }}
+</output_format>
 
-════════════════════════════════════════
-RULES
-════════════════════════════════════════
+<rules>
+<rule>Maximum 1 additional search per protocol beyond the pre-fetch.</rule>
+<rule>Source must be specific: firm + report name + section, not just a URL.</rule>
+<rule>check must be a concrete thing for a later step to verify in code — not something you verify yourself here.</rule>
+<rule>If a protocol has no relevant public findings, record empty known_issues.</rule>
+<rule>Do not read project source files — that is a later step's job.</rule>
+<rule>Do not write or reference exploit code in this step.</rule>
+</rules>
 
-• Maximum 1 additional search per protocol beyond the pre-fetch.
-• Source must be specific: firm + report name + section, not just a URL.
-• check must be executable: a concrete thing to verify in code.
-• If a protocol has no relevant public findings, record empty known_issues.
-• Do not read project source files — that is the audit step's job.
-"""
+</audit_step>"""

@@ -3,6 +3,7 @@ from __future__ import annotations
 from ignite_core.debug_logger import DebugLogger
 from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep
+from ignite_core.tools import list_sol_files
 from ignite_knowledge.tags import load_tag_registry
 
 _CONTEXT_KEYS = ("documentation", "static_analysis", "test_coverage")
@@ -32,6 +33,14 @@ class TaggingStep(BaseStep):
                         "items": {"type": "string", "enum": tag_ids},
                     },
                 },
+                "repo_tags": {
+                    "type": "array",
+                    "description": (
+                        "Tags that apply at the whole-codebase level rather than to a "
+                        "single contract. Use [] if none apply."
+                    ),
+                    "items": {"type": "string", "enum": tag_ids},
+                },
             },
         }
 
@@ -57,6 +66,22 @@ class TaggingStep(BaseStep):
                         "fit, omit tagging for that property rather than making "
                         "one up."
                     )
+
+        repo_tags = findings.get("repo_tags")
+        if repo_tags is None:
+            return (
+                "findings.repo_tags must be present "
+                "(use [] if nothing applies at the whole-codebase level)"
+            )
+        if not isinstance(repo_tags, list):
+            return "repo_tags must be a list of tag ids"
+        for tag in repo_tags:
+            if tag not in registry:
+                return (
+                    f"Unknown tag '{tag}' in repo_tags. "
+                    f"Valid tags: {sorted(registry.keys())}. "
+                    "Do not invent new tags."
+                )
 
         return None
 
@@ -86,46 +111,62 @@ class TaggingStep(BaseStep):
                 return "(not available)"
             return step.get("summary") or "(no summary)"
 
-        return f"""# Tagging Step
+        contract_files = list_sol_files(self.project_path).stdout
 
-Classify every contract in this repository against a FIXED vocabulary of
-tags. These tags decide which vulnerability checks are even relevant to each
-contract in a later step — get this wrong and real checks get skipped, or
-irrelevant checks get run against contracts they don't apply to. Getting
-tagging RIGHT is more valuable here than finding anything yourself.
+        return f"""<audit_step name="tagging">
 
-## Fixed tag vocabulary — use ONLY these, do not invent new ones
+<scope>
+Classify every contract in this repository against a fixed vocabulary of tags. These tags
+decide which vulnerability checks are even relevant to each contract in a later step — get
+this wrong and real checks get skipped, or irrelevant checks get run against contracts they
+don't apply to. Getting tagging right is more valuable here than finding anything yourself.
 
+You are a classification step, not an investigator: do not attempt to find, confirm, or
+rule out vulnerabilities, and never write or reference exploit code. That happens
+downstream, with more context than you have here.
+</scope>
+
+<tag_vocabulary note="use ONLY these ids, do not invent new ones">
 {tag_list}
+</tag_vocabulary>
 
-## Context from prior steps
+<prior_context>
+<documentation>{_summary("documentation")}</documentation>
+<static_analysis>{_summary("static_analysis")}</static_analysis>
+<test_coverage>{_summary("test_coverage")}</test_coverage>
+</prior_context>
 
-Documentation: {_summary("documentation")}
-Static analysis: {_summary("static_analysis")}
-Test coverage: {_summary("test_coverage")}
+<pre_scan>
+<contract_files note="already enumerated — no need to call list_sol_files yourself">
+{contract_files}
+</contract_files>
+</pre_scan>
 
-## Workflow
+<task>
+<step id="1" title="Read and classify each contract">
+For each contract listed above, read it and decide which tags from the vocabulary above
+apply. A contract can have zero, one, or several tags. Only tag what you can directly
+observe in the code (an interface being implemented, a specific pattern being present) —
+not what you suspect or guess might be true.
+</step>
 
-1. list_sol_files to enumerate every contract in the project.
-2. For each contract, read it and decide which tags from the vocabulary
-   above apply. A contract can have zero, one, or several tags. Only tag
-   what you can directly observe in the code (an interface being
-   implemented, a specific pattern being present) — not what you suspect
-   or guess might be true.
-3. Identify any repo_tags that apply at the whole-codebase level rather
-   than to one file.
-4. Call submit_findings with contract_tags (map of relative file path to
-   tag list) and repo_tags (list). Use {{}} / [] if genuinely nothing applies
-   — do not force tags onto a contract to have something to report.
+<step id="2" title="Identify repo-level tags">
+Identify any repo_tags that apply at the whole-codebase level rather than to one file.
+</step>
 
-## Hard rules
+<step id="3" title="Submit">
+Call submit_findings with contract_tags (map of relative file path to tag list) and
+repo_tags (list). Use {{}} / [] if genuinely nothing applies — do not force tags onto a
+contract to have something to report.
+</step>
+</task>
 
-- Only use tag ids from the vocabulary above, verbatim. Any tag not in
-  that exact list will be rejected and you'll need to resubmit.
-- Be conservative: a tag reflects something you directly observed, not a
-  hunch. Under-tagging means a later step won't investigate something that
-  turned out to be safe anyway. Over-tagging wastes real downstream
-  investigation work on contracts that don't actually need it.
-- Never state or imply that something IS vulnerable. That is not this
-  step's job and you do not have the context to judge it reliably — you
-  are marking the presence of a pattern, nothing more."""
+<rules>
+<rule>Only use tag ids from the vocabulary above, verbatim. Any tag not in that exact list will be rejected and you'll need to resubmit.</rule>
+<rule>Be conservative: a tag reflects something you directly observed, not a hunch. Under-tagging means a later step won't investigate something that turned out to be safe anyway. Over-tagging wastes real downstream investigation work on contracts that don't actually need it.</rule>
+<rule>Never state or imply that something IS vulnerable. That is not this step's job and you do not have the context to judge it reliably — you are marking the presence of a pattern, nothing more.</rule>
+<rule>Do not write, run, or reference exploit code, PoCs, or attack sequences in this step under any circumstance.</rule>
+<rule>repo_tags is required in the output — submit [] rather than omitting it if nothing applies.</rule>
+</rules>
+
+</audit_step>"""

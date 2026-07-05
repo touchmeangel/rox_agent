@@ -199,65 +199,68 @@ class ForkAnalysisStep(BaseStep):
         signals_section = _fmt_signals(signals)
 
         if signals.confidence == "none":
-            strategy_block = """\
-No fork signals detected. Spend at most 1-2 iterations checking the git
-history and README. If nothing contradicts this, submit with is_fork=false."""
+            strategy_block = (
+                "No fork signals detected. Spend at most 1-2 iterations checking the git "
+                "history and README. If nothing contradicts this, submit with is_fork=false."
+            )
         elif signals.confidence == "possible":
-            strategy_block = """\
-Soft signals found. Spend at most 4-5 iterations confirming. Check git log
-and README for any explicit fork mention, make some web_search requests. If you cannot confirm it is a fork,
-submit with is_fork=false — do not guess."""
+            strategy_block = (
+                "Soft signals found. Spend at most 4-5 iterations confirming. Check git log "
+                "and README for any explicit fork mention, make some web_search requests. If "
+                "you cannot confirm it is a fork, submit with is_fork=false — do not guess."
+            )
         else:
-            strategy_block = """\
-An upstream remote was detected, which is a strong signal. Verify it is a
-meaningful fork (not a personal mirror or template) before proceeding to the
-diff. If it turns out to be a mirror or boilerplate, submit with is_fork=false."""
+            strategy_block = (
+                "An upstream remote was detected, which is a strong signal. Verify it is a "
+                "meaningful fork (not a personal mirror or template) before proceeding to the "
+                "diff. If it turns out to be a mirror or boilerplate, submit with is_fork=false."
+            )
 
-        return f"""You are running the fork detection step of a security audit.
-Repository: {self.github_repo_path}
-Project:    {self.project_path}
+        return f"""<audit_step name="fork_analysis">
 
-════════════════════════════════════════
-PRE-SCAN SIGNALS
-════════════════════════════════════════
+<scope>
+Determine whether this repository is a fork of a known protocol. This step does NOT
+analyse vulnerabilities or confirm anything is exploitable — it only identifies what
+changed relative to upstream. A later step and worker missions examine the diff for
+issues. Do not write or reference exploit code in this step.
+</scope>
 
+<repository>
+<repo_location>{self.github_repo_path}</repo_location>
+<project_path>{self.project_path}</project_path>
+</repository>
+
+<pre_scan>
 {signals_section}
+</pre_scan>
 
-════════════════════════════════════════
-STRATEGY
-════════════════════════════════════════
-
+<strategy>
 {strategy_block}
+</strategy>
 
-════════════════════════════════════════
-YOUR TASK
-════════════════════════════════════════
+<task>
+<if_not_fork>
+Confirm with a quick check and submit; web_search if the project's origin is unknown.
+Two or three tool calls maximum.
+</if_not_fork>
 
-Determine whether this repository is a fork of a known protocol.
-This step does NOT analyse vulnerabilities — it only identifies what changed.
-A later audit step will examine the diff for issues.
+<if_fork>
+<step id="1" title="Find the divergence point">
+git log --oneline --all | tail -20
+git tag --sort=-version:refname | head
+</step>
+<step id="2" title="Diff against that commit">
+git diff base-commit HEAD -- src/
+</step>
+<step id="3" title="Collect and submit">
+Collect the list of modified files and submit. Do not analyse the changes for
+vulnerabilities. Do not search for audits. Do not read individual functions in
+depth — that is scoped to later steps and worker missions. Just produce the file list.
+</step>
+</if_fork>
+</task>
 
-IF NOT A FORK
-  Confirm with a quick check and submit, web_search if unknown forked project. Two or three tool calls maximum.
-
-IF A FORK
-  STEP 1 — Find the upstream commit this repo diverged from:
-    git log --oneline --all | tail -20
-    git tag --sort=-version:refname | head
-
-  STEP 2 — Diff against that commit to list what changed:
-    git diff <base-commit> HEAD -- src/
-
-  STEP 3 — Collect the list of modified files and submit.
-    Do not analyse the changes for vulnerabilities.
-    Do not search for audits.
-    Do not read individual functions.
-    Just produce the file list — the audit step handles the rest.
-
-════════════════════════════════════════
-FINDINGS FORMAT
-════════════════════════════════════════
-
+<output_format>
 Not a fork:
 {{
   "is_fork": false,
@@ -280,14 +283,13 @@ Is a fork:
   ],
   "summary": "Fork of Uniswap V2 @ abc1234. Two files modified: Pair.sol, Router.sol."
 }}
+</output_format>
 
-════════════════════════════════════════
-RULES
-════════════════════════════════════════
+<rules>
+<rule>Stop after producing the modified file list. Do not read file contents in depth.</rule>
+<rule>Do not flag vulnerabilities or write exploit code — that is out of scope for this step.</rule>
+<rule>If you cannot confirm a fork after 3 attempts, submit with is_fork=false and note the ambiguity in the summary.</rule>
+<rule>A personal mirror, template repo, or boilerplate is NOT a fork.</rule>
+</rules>
 
-• Stop after producing the modified file list. Do not read file contents.
-• Do not flag vulnerabilities — that is the audit step's job.
-• If you cannot confirm a fork after 3 attempts, submit with is_fork=false
-  and note the ambiguity in the summary.
-• A personal mirror, template repo, or boilerplate is NOT a fork.
-"""
+</audit_step>"""

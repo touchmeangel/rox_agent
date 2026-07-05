@@ -189,54 +189,67 @@ class TestCoverageStep(BaseStep):
             c.get("contract", "") for c in contract_risk_matrix if c.get("contract")
         ]
 
-        return f"""You are running the test coverage evaluation step of a security pipeline.
-Repository Location: {self.github_repo_path}
+        return f"""<audit_step name="test_coverage">
 
-════════════════════════════════════════
-EXPECTED CODELINE PRODUCTION TARGETS
-════════════════════════════════════════
-Protocol Name: {protocol_name or "(unknown)"}
-Expected target files to review for coverage mapping: {json.dumps(expected_files)}
+<scope>
+Evaluate the existing test suite's coverage — which lines, functions, and branches are
+exercised and which are not. This step is a code-execution metrics exercise, not a
+vulnerability hunt: do not investigate whether an uncovered line is exploitable, and do not
+write or reference exploit or PoC code. Flag gaps as coverage gaps; a later step decides
+what, if anything, they mean for security.
+</scope>
 
-════════════════════════════════════════
-INITIAL TEST DETECTION SIGNALS
-════════════════════════════════════════
-Found foundry.toml: {self.scan.has_foundry_toml}
-Total test source files detected matching patterns: {self.scan.test_files_count}
+<repository>{self.github_repo_path}</repository>
 
---- [foundry.toml snippet] ---
+<expected_targets>
+<protocol_name>{protocol_name or "(unknown)"}</protocol_name>
+<expected_files>{json.dumps(expected_files)}</expected_files>
+</expected_targets>
+
+<pre_scan>
+<foundry_toml_found>{self.scan.has_foundry_toml}</foundry_toml_found>
+<test_files_detected>{self.scan.test_files_count}</test_files_detected>
+
+<foundry_toml_snippet>
 {self.scan.foundry_toml_content}
+</foundry_toml_snippet>
 
---- [Detected test files layout (Max 30 listed)] ---
+<test_files_layout note="max 30 listed">
 {self.scan.test_files_list}
+</test_files_layout>
+</pre_scan>
 
-════════════════════════════════════════
-YOUR STRICTLY SCOPED TASK (IF TESTS EXIST)
-════════════════════════════════════════
-Your singular goal is to extract, calculate, and audit the code test coverage of this project.
-CRITICAL MANDATE: Do NOT perform protocol research. Do NOT hunt for vulnerabilities, security flaws, or bugs. Focus purely on code execution metrics, compilation outputs, test paths, and test logs.
+<task>
+<phase id="1" title="Locate and inspect the test suite paths">
+1. Parse the foundry.toml provided above to identify configuration directory properties
+   (like `test = '...'` or `src = '...'`). If not specified explicitly, assume the standard
+   default directory structure (test/ or contracts/test/).
+2. Confirm whether functional test assertions exist.
+</phase>
 
-PHASE 1 — LOCATE AND INSPECT THE TEST SUITE PATHS
-  1. Parse the `foundry.toml` provided above to identify configuration directory properties (like `test = '...'` or `src = '...'`). If not specified explicitly, assume the standard default directory structure (`test/` or `contracts/test/`).
-  2. Confirm whether functional test assertions exist.
+<phase id="2" title="Run generative coverage profiling">
+1. Execute a structural analysis run using your available tooling via terminal interactions:
+   forge coverage --no-cache --out /tmp/out
+2. If forge coverage fails due to compilation flags or library dependency configurations,
+   execute manual standard test commands to deduce baseline behavior:
+   forge test -vvv --no-cache --out /tmp/out
+</phase>
 
-PHASE 2 — RUN GENERATIVE COVERAGE PROFILING
-  1. Execute a structural analysis run using your available tooling via terminal interactions:
-     `forge coverage --no-cache --out /tmp/out`
-  2. If `forge coverage` fails due to compilation flags or library dependency configurations, execute manual standard test commands to deduce baseline behavior:
-     `forge test -vvv --no-cache --out /tmp/out`
+<phase id="3" title="Cross-check for silent runner crashes">
+1. Review standard trace files or standard error logs to inspect that each target production
+   contract was actually targeted.
+2. Cross-reference the final breakdown table lines directly against the expected targets
+   listed above.
+3. Ensure that compilation warnings or truncated logs are caught and cataloged in the
+   suite_anomalies list field.
+</phase>
+</task>
 
-PHASE 3 — MANUALLY CROSS-CHECK FOR SILENT RUNNER CRASHES
-  1. Review standard trace files or standard error logs to inspect that each target production contract was actually targeted.
-  2. Cross-reference the final breakdown table lines directly against the "Expected target files" matrix listed above.
-  3. Ensure that compilation warnings or truncated logs are caught and cataloged in the `suite_anomalies` list field.
+<output_format>
+If "has_tests" is false, set "global_metrics" to null, "per_file_coverage" to [], and
+summarize the lack of tests in the summary field.
 
-════════════════════════════════════════
-FINDINGS FORMAT SPECIFICATIONS
-════════════════════════════════════════
-If "has_tests" is false, set "global_metrics" to null, "per_file_coverage" to [], and summarize the lack of tests in the summary field.
-
-Example structure for a project with verified test coverages:
+Example structure for a project with verified test coverage:
 {{
   "has_tests": true,
   "coverage_run_success": true,
@@ -258,10 +271,12 @@ Example structure for a project with verified test coverages:
   "suite_anomalies": [],
   "summary": "Foundry test suite was successfully evaluated across the production codebases."
 }}
+</output_format>
 
-════════════════════════════════════════
-STRICT OPERATIONAL RULES
-════════════════════════════════════════
-• Filter out test files and helper libraries from `per_file_coverage`—only assess actual production logic files.
-• Do not look for reentrancy, overflow bugs, or logic errors. If you find an uncovered line, log it as an uncovered range, nothing more.
-"""
+<rules>
+<rule>Filter out test files and helper libraries from per_file_coverage — only assess actual production logic files.</rule>
+<rule>Do not investigate reentrancy, overflow bugs, or logic errors. If you find an uncovered line, log it as an uncovered range, nothing more.</rule>
+<rule>Do not write or reference exploit or PoC code in this step, even to explain why an uncovered branch might matter.</rule>
+</rules>
+
+</audit_step>"""

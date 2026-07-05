@@ -257,67 +257,79 @@ class AuditDeltaStep(BaseStep):
         )
         prefetch_section = _fmt_prefetch(prefetch_results, protocol_name)
 
-        return f"""You are running the audit delta step of a security audit.
-Repository: {self.github_repo_path}
+        return f"""<audit_step name="audit_delta">
 
-════════════════════════════════════════
-PROTOCOL CONTEXT
-════════════════════════════════════════
-Protocol name: {protocol_name or "(unknown)"}
-Summary: {protocol_summary}
-Fork status: {fork_context}
+<scope>
+Find any prior audit of this protocol (or its fork upstream) and build a diff between the
+audited state and the current HEAD. This step identifies what changed since the last known
+review — it does not itself judge whether the changes are vulnerable. That assessment
+happens in later steps and worker missions, using the diff you produce here. Do not write
+or reference exploit code in this step.
+</scope>
 
-════════════════════════════════════════
-REPOSITORY SIGNALS
-════════════════════════════════════════
+<repository>{self.github_repo_path}</repository>
+
+<protocol_context>
+<protocol_name>{protocol_name or "(unknown)"}</protocol_name>
+<summary>{protocol_summary}</summary>
+<fork_status>{fork_context}</fork_status>
+</protocol_context>
+
+<pre_scan>
 {prescan_section}
+</pre_scan>
 
-════════════════════════════════════════
-AUDIT PRE-FETCH RESULTS
-════════════════════════════════════════
+<audit_prefetch>
 {prefetch_section}
+</audit_prefetch>
 
-════════════════════════════════════════
-YOUR MANDATORY TASK STRATEGY
-════════════════════════════════════════
+<task>
+You MUST execute BOTH tracks below to find historical security records. Do not stop at track 1.
 
-You MUST execute BOTH tracks of verification to find historical security records. Do not stop at Track 1.
+<track id="1" title="Examine the repository internals">
+1. Inspect any files matching audit keywords listed in the pre-scan above.
+2. Use read_file on the README.md, documentation directories, or configuration folders to
+   discover mentions of previous audits or fixed commit targets.
+</track>
 
-TRACK 1 — EXAMINE THE REPOSITORY INTERNALS
-  1. Inspect any files matching audit keywords listed in REPOSITORY SIGNALS.
-  2. Use `read_file` on the README.md, documentation directories, or configuration folders to discover mentions of previous audits or fixed commit targets.
+<track id="2" title="Examine external web sources">
+1. Actively parse the pre-fetched search results above. Use web_fetch to crawl any links
+   that point to public markdown summaries, GitHub security publications, or audit registries.
+2. If the pre-fetch data falls short, execute explicit custom web_search queries targeting
+   major platforms: code4rena.com, audits.sherlock.xyz, spearbit.xyz, or
+   github.com/trailofbits/publications.
+</track>
 
-TRACK 2 — EXAMINE EXTERNAL WEB SOURCES
-  1. Actively parse the pre-fetched search results above. Use `web_fetch` to crawl any links that point to public markdown summaries, GitHub security publications, or audit registries.
-  2. If the pre-fetch data falls short, execute explicit custom `web_search` queries targeting major platforms:
-     - code4rena.com, audits.sherlock.xyz, spearbit.xyz, or github.com/trailofbits/publications
+<determining_the_baseline_diff note="critical">
+Once you discover details of an audit, your primary objective is to build a git diff
+comparing that audited state against the current HEAD.
 
-════════════════════════════════════════
-DETERMINING THE BASELINE DIFF (CRITICAL)
-════════════════════════════════════════
+<scenario id="A" title="You found the exact commit hash or tag">
+Generate the diff restricted strictly to source directories:
+  git diff audited-commit HEAD -- src/
+</scenario>
 
-Once you discover details of an audit, your primary objective is to build a `git diff` comparing that audited state against the current `HEAD`. Run your analysis based on the quality of data found:
+<scenario id="B" title="You only found an audit date (no commit hash)">
+If the audit report only states a completion date (e.g., "Ended March 15, 2024"), calculate
+the closest historical commit matching that timestamp:
+  1. git log --before="2024-03-15" -n 1 --format="%H"
+  2. Use that returned hash as your baseline: git diff returned-hash HEAD -- src/
+  3. Populate audited_commit with that hash, and explain your date-based derivation in summary.
+</scenario>
 
-SCENARIO A: YOU FOUND THE EXACT COMMIT HASH OR TAG
-  1. Generate the diff restricted strictly to source directories:
-     `git diff <audited-commit> HEAD -- src/`
+<scenario id="C" title="No audit records exist">
+If absolutely no audit context is uncovered across web queries or repository checks, use the
+root initialization commit as your fallback baseline:
+  git log --oneline | tail -1
+</scenario>
+</determining_the_baseline_diff>
+</task>
 
-SCENARIO B: YOU ONLY FOUND AN AUDIT DATE / TIME PERIOD (NO COMMIT HASH)
-  If the audit report only states a completion date (e.g., "Ended March 15, 2024"), calculate the closest historical commit matching that timestamp:
-  1. Find the final commit before or on that date:
-     `git log --before="2024-03-15" -n 1 --format="%H"`
-  2. Use that returned hash as your baseline reference commit for your diff:
-     `git diff <returned-hash> HEAD -- src/`
-  3. Populate the `audited_commit` JSON field with that hash, and explain your date-based derivation in your `summary`.
+<rules>
+<rule>diff_excerpt must feature raw code diff snippets (max ~3000 characters), not conversational text summaries.</rule>
+<rule>Focus entirely on core protocol code inside production directories (e.g., src/, contracts/). Disregard testing scripts, environment variables, or lockfiles.</rule>
+<rule>Do not invent data points. If a parameter cannot be accurately verified or derived via timestamp mapping, mark it as "unknown".</rule>
+<rule>Do not assess whether the diffed changes are vulnerable, and do not write or reference exploit code — that is out of scope for this step.</rule>
+</rules>
 
-SCENARIO C: NO AUDIT RECORDS EXIST
-  If absolutely no audit context is uncovered across web queries or repository checks, use the root initialization commit as your fallback baseline:
-  `git log --oneline | tail -1`
-
-════════════════════════════════════════
-RULES
-════════════════════════════════════════
-• `diff_excerpt` must feature raw code diff snippets (max ~3000 characters), not conversational text summaries.
-• Focus entirely on core protocol code inside production directories (e.g., `src/`, `contracts/`). Disregard testing scripts, environment variables, or lockfiles.
-• Do not invent data points. If a parameter cannot be accurately verified or derived via timestamp mapping, mark it as "unknown".
-"""
+</audit_step>"""

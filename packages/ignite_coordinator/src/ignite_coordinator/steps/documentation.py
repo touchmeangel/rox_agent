@@ -305,109 +305,118 @@ class DocumentationStep(BaseStep):
         prints = _run_all_prints(self.project_path, reporter, debug_logger)
         prints_section = "\n\n".join(r.render() for r in prints)
 
-        return f"""You are running the documentation and architecture step of a security audit.
+        return f"""<audit_step name="documentation">
 
-Repository Location:                      {self.github_repo_path}
-Project (Tooling setup executes here):    {self.project_path}
+<scope>
+You are running the documentation and architecture step of a security audit. This step
+builds the map every later step and worker mission relies on: what the protocol does, who
+the actors are, what it touches externally, and a first-pass risk triage per contract. It
+does not confirm vulnerabilities or produce proof-of-concept code — that happens later,
+per-candidate, in the worker phase.
+</scope>
 
-════════════════════════════════════════
-REPOSITORY STRUCTURE MAP
-════════════════════════════════════════
-Use this map to discover documentation files, build configs, and source directories.
-You must use your tools (`read_file` or `shell`) to read files directly.
+<repository>
+<repo_location>{self.github_repo_path}</repo_location>
+<project_path note="tooling executes here">{self.project_path}</project_path>
 
+<repo_map note="use this to find documentation, build configs, and source directories; you must still read_file/shell into anything of interest">
 {repo_map}
+</repo_map>
+</repository>
 
-════════════════════════════════════════
-SURYA — FUNCTION VISIBILITY TABLE
-════════════════════════════════════════
+<pre_scan>
+<tool name="surya" output="function visibility table">
 Contract-level breakdown of every function: name, visibility, mutability, and modifiers.
 Use this to quickly identify privileged entry-points and state-mutating functions.
 
 {surya_table}
+</tool>
 
-════════════════════════════════════════
-SLITHER ARCHITECTURE ANALYSIS  (pre-run)
-════════════════════════════════════════
-
+<tool name="slither" output="architecture printers">
 {prints_section}
+</tool>
+</pre_scan>
 
-════════════════════════════════════════
-YOUR TASK
-════════════════════════════════════════
+<task>
+You are completely responsible for exploring this repository. Analyze the repository map
+above. Identify relevant documentation files (READMEs, specs, or docs directories),
+configuration settings (foundry.toml, hardhat.config.js, remappings.txt), and target source
+folders. Execute read_file or relevant shell commands sequentially to read files of
+interest. Do not guess. Work through the steps below in order.
 
-You are completely responsible for exploring this repository. Analyze the Repository Map above.
-Identify relevant documentation files (READMEs, specs, or docs directories), configuration settings (foundry.toml, hardhat.config.js, remappings.txt), and target source folders.
+<step id="0" title="Identify the protocol name">
+Determine the public-facing name of this protocol. Check in this order:
+  1. README.md or docs/ — look for a project title in the first heading or introduction.
+  2. package.json → "name" field (strip scope prefixes like "@scope/").
+  3. foundry.toml → [profile.default] name or the repo root folder name.
+  4. NatSpec @title tags in the entry-point contracts.
+  5. If nothing explicit is found, run web_search using the GitHub repo URL or a
+     distinctive contract/token name to locate an official docs site or audit scope page.
+If a name is found, set protocol_name to that string (e.g. "Morpho Blue"). If after all
+checks no name can be determined, set protocol_name to "" (empty string). Do NOT guess or
+invent a name.
+</step>
 
-Execute `read_file` or relevant `shell` commands sequentially to read files of interest. Do not guess.
+<step id="1" title="Understand the protocol">
+Locate and read the documentation files from the directory tree. If documentation is
+absent, sparse, or ambiguous:
+  - Use read_file to scan main entry-points or look for NatSpec @notice / @dev comments.
+  - Use web_search with the project name or GitHub URL to find external docs sites, audit
+    scopes, or blog posts.
+Deliverable: a clear 2-4 sentence description of what the protocol does.
+</step>
 
-Work through the seven steps below in order.
+<step id="2" title="Map the roles">
+Identify every actor in the system from docs AND from access-control patterns in the source
+(modifiers, require(msg.sender == ...), role constants, etc.). Cross-reference the Surya
+visibility table above to find privileged functions (onlyOwner, onlyRole, etc.) that confirm
+or extend what docs describe. For each role document:
+  - What they can do (powers)
+  - What they are prevented from doing (restrictions)
+  - Who they are trusted by and to what degree
+</step>
 
-STEP 0 — IDENTIFY THE PROTOCOL NAME  (new)
-  Determine the public-facing name of this protocol. Check in this order:
-    1. README.md or docs/ — look for a project title in the first heading or introduction.
-    2. package.json → "name" field (strip scope prefixes like "@scope/").
-    3. foundry.toml → [profile.default] name or the repo root folder name.
-    4. NatSpec @title tags in the entry-point contracts.
-    5. If nothing explicit is found, run `web_search` using the GitHub repo URL or a
-       distinctive contract/token name to locate an official docs site or audit scope page.
-  • If a name is found, set protocol_name to that string (e.g. "Morpho Blue").
-  • If after all checks no name can be determined, set protocol_name to "" (empty string).
-  • Do NOT guess or invent a name.
+<step id="3" title="External protocols">
+For each protocol: specify which interface is called, what data flows across that boundary,
+AND the version in use (check import paths, git modules in ./lib or foundry.toml
+dependencies for pinned versions).
+</step>
 
-STEP 1 — UNDERSTAND THE PROTOCOL
-  Locate and read the documentation files from the directory tree.
-  If documentation is absent, sparse, or ambiguous:
-    • Use `read_file` to scan main entry-points or look for NatSpec @notice / @dev comments.
-    • Use `web_search` with the project name or GitHub URL to find external docs sites, audit scopes, or blog posts.
-  Deliverable: a clear 2–4 sentence description of what the protocol does.
+<step id="4" title="Tokens">
+List every token standard and every named token the protocol handles (ERC20, ERC721, native
+ETH). Note any token assumptions (decimals, rebase, fee-on-transfer, permit support).
+</step>
 
-STEP 2 — MAP THE ROLES
-  Identify every actor in the system from docs AND from access-control patterns
-  in the source (modifiers, require(msg.sender == …), role constants, etc.).
-  Cross-reference the Surya visibility table above to find privileged functions (onlyOwner,
-  onlyRole, etc.) that confirm or extend what docs describe.
-  For each role document:
-    • What they can do  (powers)
-    • What they are prevented from doing  (restrictions)
-    • Who they are trusted by and to what degree
+<step id="5" title="Solc version">
+Determine the exact compiler version. Use read_file to check configuration files:
+  1. foundry.toml → [profile.default] solc = "..."
+  2. hardhat.config → solidity: {{ version: "..." }}
+  3. pragma statements in the entry-point contracts
+solc_version must be a concrete string like "0.8.24", not "unknown".
+</step>
 
-STEP 3 — EXTERNAL PROTOCOLS
-  For each protocol: specify which interface is called, what data flows
-  across that boundary, AND the version in use (check import paths,
-  git modules in ./lib or foundry.toml dependencies for pinned versions).
+<step id="6" title="Contract risk matrix">
+For every in-scope contract produce one row. Base it on everything gathered in steps 0-5
+plus the Slither function-summary and surya table above. This is a triage/priority signal
+for downstream steps — not a vulnerability finding. For each contract determine:
+  - sloc — count non-blank, non-comment lines (use shell with wc/grep if needed)
+  - external_calls — which protocols it calls into, or "None"
+  - function_count — total number of functions (public + external + internal)
+  - holds_funds — does it hold ETH or ERC20 balances? (check payable functions, token mappings)
+  - upgradeable — does it use a proxy pattern or UUPSUpgradeable / TransparentUpgradeableProxy?
+  - risk_level — Low / Medium / High / Critical
+  - risk_reason — one sentence. Weight: holds_funds and external_calls push risk up; pure
+    view/library contracts push risk down.
+</step>
+</task>
 
-STEP 4 — TOKENS
-  List every token standard and every named token the protocol handles (ERC20, ERC721, native ETH).
-  Note any token assumptions (decimals, rebase, fee-on-transfer, permit support).
-
-STEP 5 — SOLC VERSION
-  Determine the exact compiler version. Use `read_file` to check configuration files:
-    1. foundry.toml  →  [profile.default] solc = "…"
-    2. hardhat.config  →  solidity: {{ version: "…" }}
-    3. pragma statements in the entry-point contracts
-  solc_version must be a concrete string like "0.8.24", not "unknown".
-
-STEP 6 — CONTRACT RISK MATRIX
-  For every in-scope contract produce one row. Base it on everything gathered in steps 0–5
-  plus the Slither function-summary and surya table above. For each contract determine:
-    • sloc         — count non-blank, non-comment lines (use `shell` with wc/grep if needed)
-    • external_calls — which protocols it calls into, or "None"
-    • function_count — total number of functions (public + external + internal)
-    • holds_funds  — does it hold ETH or ERC20 balances? (check payable functions, token mappings)
-    • upgradeable  — does it use a proxy pattern or UUPSUpgradeable / TransparentUpgradeableProxy?
-    • risk_level   — Low / Medium / High / Critical
-    • risk_reason  — one sentence. Weight: holds_funds and external_calls push risk up;
-                     pure view/library contracts push risk down.
-
-════════════════════════════════════════
-FINDINGS FORMAT  (pass to submit_findings)
-════════════════════════════════════════
+<output_format>
+Pass this to submit_findings:
 
 {{
   "protocol_name": "Morpho Blue",
 
-  "protocol_summary": "2–4 sentences describing what the protocol does.",
+  "protocol_summary": "2-4 sentences describing what the protocol does.",
 
   "roles": [
     {{
@@ -467,19 +476,19 @@ FINDINGS FORMAT  (pass to submit_findings)
     }}
   ]
 }}
+</output_format>
 
-════════════════════════════════════════
-RULES
-════════════════════════════════════════
+<rules>
+<rule>Run STEP 0 before anything else — protocol_name must be actively searched for, not guessed.</rule>
+<rule>protocol_name may be "" if genuinely undiscoverable, but you must have checked all five sources listed in STEP 0 before setting it to empty.</rule>
+<rule>If documentation is missing, use web_search before guessing.</rule>
+<rule>Read source files before submitting — do not rely solely on docs.</rule>
+<rule>Every role needs at least one power.</rule>
+<rule>solc_version must be a concrete version string — "unknown" will be rejected.</rule>
+<rule>external_protocols and tokens may be empty arrays [] if truly none exist, but you must have checked the source before concluding that.</rule>
+<rule>contract_risk_matrix must have one entry per in-scope contract — do not skip contracts, even simple ones.</rule>
+<rule>risk_level is a triage signal for prioritization, not a vulnerability claim — do not describe specific exploits or attack paths in risk_reason, just why the contract matters.</rule>
+<rule>Do not submit until all seven steps are complete.</rule>
+</rules>
 
-• Run STEP 0 before anything else — protocol_name must be actively searched for, not guessed.
-• protocol_name may be "" if genuinely undiscoverable, but you must have checked all five
-  sources listed in STEP 0 before setting it to empty.
-• If documentation is missing, use web_search before guessing.
-• Read source files before submitting — do not rely solely on docs.
-• Every role needs at least one power.
-• solc_version must be a concrete version string — "unknown" will be rejected.
-• external_protocols and tokens may be empty arrays [] if truly none exist, but you must have checked the source before concluding that.
-• contract_risk_matrix must have one entry per in-scope contract — do not skip contracts, even simple ones.
-• Do not submit until all seven steps are complete.
-"""
+</audit_step>"""

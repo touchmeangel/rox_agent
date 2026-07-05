@@ -494,7 +494,13 @@ class StaticAnalysisStep(BaseStep):
             "properties": {
                 "confirmed": {
                     "type": "array",
-                    "description": "Vulnerabilities completely verified by tracing the exploit path in source.",
+                    "description": (
+                        "High-confidence findings: you read the actual flagged source and it "
+                        "clearly matches a real, plausibly exploitable pattern. This is a "
+                        "strong escalation candidate, not a final verified verdict — the "
+                        "worker phase performs the deep, per-candidate exploit verification "
+                        "(and any proof-of-concept work)."
+                    ),
                     "items": {
                         "type": "object",
                         "properties": {
@@ -541,7 +547,7 @@ class StaticAnalysisStep(BaseStep):
                 },
                 "suspected": {
                     "type": "array",
-                    "description": "Suspicious patterns or flaws requiring secondary verification or human eyeballs.",
+                    "description": "Suspicious patterns or flaws requiring secondary verification by a worker.",
                     "items": {
                         "type": "object",
                         "properties": {
@@ -652,44 +658,51 @@ class StaticAnalysisStep(BaseStep):
 
         tool_instructions = "\n".join(instructions)
 
-        return f"""You are running the static analysis step of a security audit.
-Project: {self.project_path}
+        return f"""<audit_step name="static_analysis">
 
-════════════════════════════════════════
-SLITHER OUTPUT (pre-run)
-════════════════════════════════════════
+<scope>
+You are running the static analysis triage step of a security audit. Your job is to sort
+raw analyzer output (Slither, Aderyn, Mythril) into signal and noise — not to fully verify
+exploitability or produce proof-of-concept code. "Confirmed" in this step means "I read the
+flagged source and this pattern clearly holds," not "I traced and proved a working
+exploit." Everything you flag here is a candidate that a worker mission will later
+investigate in depth, with a narrower scope and dedicated iterations to actually verify
+and, if needed, demonstrate impact.
+</scope>
 
+<project_path>{self.project_path}</project_path>
+
+<pre_scan>
+<tool name="slither">
 {slither_section}
+</tool>
 
-════════════════════════════════════════
-ADERYN OUTPUT (pre-run)
-════════════════════════════════════════
-
+<tool name="aderyn">
 {aderyn_section}
+</tool>
 
-════════════════════════════════════════
-MYTHRIL OUTPUT (pre-run)
-════════════════════════════════════════
-
+<tool name="mythril">
 {mythril_section}
+</tool>
 
+<notes>
 {tool_instructions}
+</notes>
+</pre_scan>
 
-════════════════════════════════════════
-YOUR TASK
-════════════════════════════════════════
+<task>
+<step id="1" title="Triage static scan findings">
+For each Critical, High and Medium finding above:
+  - Read the flagged code if it is not already inlined.
+  - Decide: CONFIRMED, SUSPECTED, or FALSE_POSITIVE.
+  - Write a short evidence note for your decision.
+Low / Informational / Optimization findings go straight to the informational bucket unless
+something looks genuinely exploitable, in which case treat it as SUSPECTED instead.
+</step>
+</task>
 
-TRIAGE STATIC SCAN FINDINGS
-   For each Critical, High and Medium finding above:
-   • Read the flagged code if it is not already inlined.
-   • Decide: CONFIRMED, SUSPECTED, or FALSE_POSITIVE.
-   • Write a short evidence note for your decision.
-   Low / Informational / Optimization findings go straight to the
-   informational bucket unless something looks genuinely exploitable.
-
-════════════════════════════════════════
-FINDINGS FORMAT  (pass this to submit_findings)
-════════════════════════════════════════
+<output_format>
+Pass this to submit_findings:
 
 {{
   "confirmed": [
@@ -704,9 +717,9 @@ FINDINGS FORMAT  (pass this to submit_findings)
         "function": "withdraw",
         "lines": "45-67"
       }},
-      "description": "What the vulnerability is and why it is exploitable",
+      "description": "What the pattern is and why it looks exploitable",
       "evidence": "// paste the key code snippet or the slither description",
-      "impact": "What an attacker can achieve and the blast radius",
+      "impact": "What an attacker could plausibly achieve, in your best assessment",
       "recommendation": "Concrete fix (omit if not obvious)"
     }}
   ],
@@ -723,7 +736,7 @@ FINDINGS FORMAT  (pass this to submit_findings)
         "lines": "23-30"
       }},
       "why_uncertain": "What you would need to confirm to be sure this is exploitable",
-      "what_to_check": "Specific question for the human reviewer",
+      "what_to_check": "Specific question for the worker who investigates this next",
       "estimated_severity": "high | medium | low"
     }}
   ],
@@ -746,15 +759,16 @@ FINDINGS FORMAT  (pass this to submit_findings)
     }}
   ]
 }}
+</output_format>
 
-════════════════════════════════════════
-RULES
-════════════════════════════════════════
+<rules>
+<rule>CONFIRMED means you read the actual flagged code and it clearly matches the pattern the detector describes — not that you have proven it exploitable end-to-end. Full exploit-path verification is the worker phase's job.</rule>
+<rule>Do not write, run, or describe any test, script, or Foundry test aimed at demonstrating reachability or exploitability of a finding in this step, even a minimal one. Reading source is enough here.</rule>
+<rule>Never write, simulate, or outline exploit code, attack sequences, or proof-of-concept logic in this step, for any bucket.</rule>
+<rule>"what_to_check" for SUSPECTED items is a hint for the downstream worker, not a task for you to complete now.</rule>
+</rules>
 
-- CONFIRMED means you traced the full exploit path through source code. Do NOT write PoC exploits or simulate attacker behaviour — that is a separate downstream step.
-- For SUSPECTED findings only: you may write a minimal Foundry test to check whether the code path is reachable. Limit it to calling the relevant function(s) and asserting on state/reverts — no attack logic (no computing predictable values, no re-entry callbacks, no adversarial chain state manipulation).
-- Never build a working exploit in this step.
-"""
+</audit_step>"""
 
     def validate_complete(self, findings: dict) -> str | None:
         if not isinstance(findings, dict):

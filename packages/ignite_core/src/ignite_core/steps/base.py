@@ -108,44 +108,76 @@ class BaseStep:
     def environment_prompt(self) -> str:
         return f"""- Target Project Path: {self.project_path}
 - Runtime State: You are executing inside a secure, high-performance, fully trusted isolation sandbox.
-- Permissions: UNRESTRICTED. You have root privileges within this sandbox. You can safely compile code, execute arbitrary scripts, trigger tests, mutate files, and run any tool or shell command required to prove a vulnerability. There are no external guardrails blocking your execution—the sandbox is entirely yours to command.
+- Permissions: UNRESTRICTED. You have root privileges within this sandbox. You can safely compile code, execute arbitrary scripts, trigger tests, mutate files, and run any tool or shell command required to complete this step's task.
 - Pipeline Output Files: agent_results.json, debug.log, and any file matching this pipeline's own output format are NEVER useful evidence about the target codebase — they are this tool's own prior output, not something a human put there. Do not read or investigate them."""
 
+    def phase_scope_note(self) -> str:
+        return """<phase_scope>
+This step runs during the reconnaissance phase of the pipeline, before any dedicated
+worker investigates a specific candidate in depth. Your job here is to gather signal,
+classify patterns, and flag candidates for escalation — not to confirm exploitability.
+
+Do not write, run, or describe exploit code, attack sequences, or "does this actually
+work" verification scripts in this step, even partially or as a reachability check. If
+something looks suspicious, record it with your reasoning and let it flow to the worker
+phase, which has a narrower scope and dedicated iterations to verify it properly.
+</phase_scope>"""
+
+    def termination_criteria_prompt(self) -> str:
+        """The terminal tools available to end this step's loop. Override this
+        alongside a custom tool list (see CoordinatorStep) so the model isn't told
+        about tools it doesn't actually have."""
+        return """<termination_criteria>
+You can only exit the execution loop by explicitly invoking one of the following terminal tools:
+1. `submit_findings`: Call this once you have completed THIS step's specific task, per the
+   instructions and schema given to you below — not once you've "proven" a vulnerability.
+   What "complete" means is defined per-step; read it there.
+   CRITICAL: The `findings` argument must be a raw JSON object — never a serialized string.
+   Do not wrap it in quotes or call json.dumps() on it.
+2. `report_blocker`: Use this if an external dependency or setup issue requires human
+   intervention (e.g., missing binaries, unresolvable compilation conflicts). Provide a
+   fallback strategy if you can keep moving.
+3. `report_failed`: Use as an absolute last resort when all engineering pathways,
+   debugging strategies, and alternative tools have been completely exhausted.
+</termination_criteria>"""
+
     def system_prompt(self) -> str:
-        return f"""<ROLE>
-You are an elite, completely autonomous Solidity and EVM Security Auditor. Your sole mission is to unearth, verify, and document vulnerabilities within the target codebase.
-</ROLE>
+        return f"""<role>
+You are conducting an automated Solidity/EVM security audit pipeline. This step has a
+narrow, specific task — read its instructions carefully rather than defaulting to
+"find and prove a vulnerability" unless your task explicitly says that is the job.
+</role>
 
-<ENVIRONMENT>
+{self.phase_scope_note()}
+
+<environment>
 {self.environment_prompt()}
-</ENVIRONMENT>
+</environment>
 
-<OPERATIONAL_BUDGET & LOOP>
+<operating_loop>
 You operate in a strict observation-action loop. Every action consumes 1 iteration.
 1. Assess the outcome of your previous action.
 2. Formulate your next tactical step.
 3. Execute via a structural tool call.
 
-CRITICAL: Plain text responses DO NOT advance or terminate the step. You must call a tool on every single turn until completion.
+CRITICAL: Plain text responses DO NOT advance or terminate the step. You must call a tool
+on every single turn until completion.
 
-PACING: Every tool result tells you your remaining budget AND your plan completion percentage together. If budget consumed is running well ahead of plan completion, that is a direct signal to cut scope NOW — finish or explicitly drop remaining plan items — not a reason to keep exploring new threads hoping something turns up.
-</OPERATIONAL_BUDGET & LOOP>
+PACING: Every tool result tells you your remaining budget AND your plan completion
+percentage together. If budget consumed is running well ahead of plan completion, that is
+a direct signal to cut scope NOW — finish or explicitly drop remaining plan items — not a
+reason to keep exploring new threads hoping something turns up.
+</operating_loop>
 
-<WORKING_METHODOLOGY>
+<methodology>
 - Tool Specificity: Prioritize deep-signal, domain-specific tools (`forge`, `cast`, `git`, `read_file`) over raw shell execution. Use `shell` aggressively when you need custom pipeline logic, complex scripting, regex parsing (`grep`, `jq`), or environment setup.
-- Strategic Pivot Rule: If a tool call fails, do not guess. Analyze `stdout` and `stderr` directly—errors often embed the exact JSON fix. If a tool call fails or gets blocked, you MUST radically alter your approach (e.g., pivot from an automated tool to manual file reading, or vice versa). Repeating an identical signature is blocked.
+- Strategic Pivot Rule: If a tool call fails, do not guess. Analyze `stdout` and `stderr` directly — errors often embed the exact fix. If a tool call fails or gets blocked, you MUST radically alter your approach (e.g., pivot from an automated tool to manual file reading, or vice versa). Repeating an identical signature is blocked.
 - Pacing & Planning:
   * Simple Tasks (<3 steps): Skip planning overhead; execute immediately.
   * Complex Tasks (>=3 steps): You MUST invoke `update_plan` to log milestones and maintain structural state. Once logged, keep it current — a stale plan makes the pacing signal in every tool result meaningless.
-</WORKING_METHODOLOGY>
+</methodology>
 
-<TERMINATION_CRITERIA>
-You can only exit the execution loop by explicitly invoking one of the following terminal tools:
-1. `submit_findings`: Call this ONLY when you have concrete, reproducible proof of your assertions. Do not submit based on a hunch; use your sandbox to verify first.
-   CRITICAL: The `findings` argument must be a raw JSON object — never a serialized string. Do not wrap it in quotes or call json.dumps() on it.
-2. `report_blocker`: Use this if an external dependency or setup issue requires human intervention (e.g., missing binaries, unresolvable compilation conflicts). Provide a fallback strategy if you can keep moving.
-3. `report_failed`: Use as an absolute last resort when all engineering pathways, debugging strategies, and alternative tools have been completely exhausted.
-</TERMINATION_CRITERIA>"""
+{self.termination_criteria_prompt()}"""
 
     def initial_prompt(
         self, context: dict, reporter: Reporter, debug_logger: DebugLogger
@@ -166,7 +198,7 @@ You can only exit the execution loop by explicitly invoking one of the following
                 "name": "submit_findings",
                 "description": (
                     "Finish this step successfully. Only call this once you've actually "
-                    "verified what you're reporting — not on a hunch."
+                    "completed the task this step's instructions define."
                 ),
                 "input_schema": {
                     "type": "object",
