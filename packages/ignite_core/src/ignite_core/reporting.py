@@ -222,8 +222,7 @@ class RichReporter(Reporter):
     def model_fallback(
         self, from_model: str, to_model: str, error: Exception | None
     ) -> None:
-        self.window.stop_spinner()
-        self.console.print(
+        self.window.feed(
             f"†  [dim]{from_model} failed "
             f"({type(error).__name__}) → trying {to_model}[/dim]"
         )

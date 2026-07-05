@@ -289,7 +289,7 @@ reason to keep exploring new threads hoping something turns up.
         system = self.system_prompt()
         tools = TOOL_SPECS + [UPDATE_PLAN_SPEC] + self._terminal_tool_specs()
 
-        with RollingWindow(max_lines=8) as window:
+        with RollingWindow(max_lines=16) as window:
             messages: list[dict] = [
                 {
                     "role": "user",
