@@ -33,11 +33,6 @@ tags:
       Contract reads an external price or data feed (Chainlink, a TWAP,
       a custom oracle contract) to make decisions.
 
-  - id: upgradeable_proxy
-    description: >
-      Contract is deployed behind a proxy pattern (UUPS, Transparent,
-      Beacon) or is itself an implementation contract meant to sit behind one.
-
   - id: onchain_pseudorandomness
     description: >
       Contract derives a value used for selection, allocation, ordering, or
