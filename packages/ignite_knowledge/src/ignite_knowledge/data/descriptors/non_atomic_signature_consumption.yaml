@@ -1,0 +1,72 @@
+id: non_atomic_signature_consumption
+
+name: Non-Atomic Signature Consumption
+
+granularity: contract
+
+tags:
+  - signature_based_authorization
+
+scenario: |
+  The protocol separates signature consumption from the action that the
+  signature authorizes.
+
+  A user signs an authorization (for example an ERC-2612 permit) expecting
+  it to be immediately followed by another protocol action such as
+  deposit(), mint(), stake(), borrow(), repay(), or redeem().
+
+  If these operations occur in different transactions, another transaction
+  may consume or otherwise act upon the authorization before the intended
+  protocol action executes.
+
+  The issue is not whether the signature itself is cryptographically
+  correct. The issue is whether the protocol requires multiple independent
+  transactions for what should be one atomic operation.
+
+properties:
+  - id: separated_signature_flow
+    check: |
+      Identify whether the intended workflow requires:
+
+        Transaction A:
+            permit / signature authorization
+
+        Transaction B:
+            protocol action
+
+      If the protocol exposes an API where users are expected to perform
+      authorization first and protocol interaction later, treat this as a
+      vulnerability hypothesis.
+
+      A helper multicall() or permitAndDeposit() wrapper that executes both
+      steps atomically mitigates this issue.
+
+    confirm_with: |
+      shell: rg "permit\(" src/ -n
+
+      shell: rg "deposit|mint|stake|borrow|redeem" src/ -n
+
+      Determine whether users are expected to invoke these functions in
+      separate transactions.
+
+    severity: medium
+
+exploitation_context: |
+  Do not focus on breaking EIP-2612.
+
+  Instead prove that another transaction can legally consume the signed
+  authorization before the protocol action executes.
+
+  If the protocol requires:
+
+  permit()
+
+  followed later by
+
+  deposit()
+
+  the authorization is not atomic.
+
+  Demonstrate that another transaction may execute between those two
+  operations and alter the expected protocol state before the user reaches
+  the intended action.

@@ -1,0 +1,36 @@
+id: missing_merkle_claim_tracking
+
+name: Missing Merkle Claim Tracking
+
+granularity: contract
+
+tags:
+  - merkle_membership_verification
+
+scenario: |
+  The contract successfully verifies Merkle membership but never records
+  that a claim has already been consumed. As a result, the same proof may
+  be reused indefinitely whenever no other state transition prevents
+  repeated execution.
+
+properties:
+  - id: reusable_claim
+    check: |
+      After successful verification, determine whether the contract records
+      permanent claim consumption using a bitmap, mapping, nonce, or another
+      equivalent mechanism.
+
+      Reject this finding if each verified leaf can only succeed once.
+    confirm_with: |
+      shell: rg "claimed|bitmap|BitMap|claimedBitMap|setClaimed" src/ -n
+      shell: rg "MerkleProof\.(verify|verifyCalldata)" src/ -A15 -n
+      Trace execution after successful verification and confirm whether the
+      proof becomes permanently unusable.
+    severity: critical
+
+exploitation_context: |
+  Execute a successful claim twice using identical parameters and identical
+  proof. Demonstrate that both transactions succeed.
+
+references:
+  - https://docs.openzeppelin.com/contracts/utils#MerkleProof

@@ -1,0 +1,68 @@
+id: storage_namespace_collision
+
+name: Manual Storage Namespace Collision
+
+granularity: contract
+
+tags:
+  - manual_storage_slot_access
+
+scenario: |
+  The contract combines manually assigned storage slots (inline assembly,
+  StorageSlot libraries, fixed bytes32 slot constants, ERC-7201 namespaces,
+  Diamond Storage, or similar techniques) with Solidity's compiler-managed
+  storage layout. This vulnerability is ONLY valid if two independent pieces
+  of state resolve to the same physical storage slot, causing writes through
+  one abstraction to silently modify another unrelated variable.
+
+  Storage namespace isolation is the core invariant. Merely using manual
+  storage slots is not a vulnerability. The issue exists only when two
+  storage mechanisms unintentionally alias the same slot.
+
+properties:
+  - id: overlapping_storage_slots
+    check: |
+      Identify every manually assigned storage slot used by the contract or
+      inherited libraries.
+
+      Determine the storage slot occupied by every compiler-managed state
+      variable using the compiled storage layout.
+
+      Confirm that at least one manually assigned slot resolves to the same
+      physical storage location as another mutable state variable or reserved
+      storage namespace.
+
+      Reject this finding if all manually assigned storage slots occupy unique
+      namespaces and do not overlap compiler-managed storage.
+
+    confirm_with: |
+      shell: forge inspect <ContractName> storage-layout --json
+
+      shell: rg "assembly|StorageSlot|bytes32 constant|sstore\(|sload\(|keccak256\(.*storage|ERC7201|diamond storage" src/ -n
+
+      Compare every manually reserved slot against the compiled storage
+      layout. Verify that writes through one interface are observable when
+      reading through the other interface.
+
+    severity: critical
+
+exploitation_context: |
+  Build a Foundry PoC demonstrating bidirectional aliasing between the two
+  storage abstractions.
+
+  1. Identify the colliding storage slot.
+  2. Write to the slot using one abstraction (for example a reentrancy guard,
+     StorageSlot helper, or assembly storage pointer).
+  3. Read the corresponding compiler-managed state variable and demonstrate
+     that it changed unexpectedly.
+  4. If the collision affects balances, ownership, permissions, accounting,
+     initialization flags, or security guards, demonstrate the resulting
+     privilege escalation or fund manipulation.
+
+  Do not report collisions that are purely theoretical. Confirm that the
+  overlapping slot participates in reachable protocol logic and that an
+  attacker can influence at least one side of the collision.
+
+references:
+  - https://eips.ethereum.org/EIPS/eip-1967
+  - https://eips.ethereum.org/EIPS/eip-7201

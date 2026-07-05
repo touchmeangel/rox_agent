@@ -1,0 +1,71 @@
+id: permit_front_running_dos
+
+name: Permit Front-Running Denial of Service
+
+granularity: contract
+
+tags:
+  - signature_based_authorization
+
+scenario: |
+  The contract performs permit() immediately before another protocol
+  operation within the same transaction but assumes permit() must always
+  succeed.
+
+  An attacker observing the mempool may extract the signature and submit
+  permit() first.
+
+  Because ERC-2612 signatures are single-use, the nonce becomes consumed.
+
+  When the victim's transaction later reaches permit(), it reverts despite
+  the allowance already being correctly established.
+
+  If the protocol does not tolerate an already-consumed permit, the entire
+  user transaction fails.
+
+properties:
+  - id: permit_must_succeed
+    check: |
+      Look for execution paths equivalent to:
+
+          token.permit(...);
+
+          protocolAction(...);
+
+      where permit() is expected to succeed unconditionally.
+
+      Verify whether protocolAction() actually only requires sufficient
+      allowance.
+
+      If allowance is already sufficient but permit() still causes the
+      transaction to revert, the protocol is vulnerable to permit
+      front-running griefing.
+
+      A valid mitigation is checking allowance before calling permit(), or
+      otherwise making permit optional when approval already exists.
+
+    confirm_with: |
+      shell: rg "permit\(" src/ -A8 -B3 -n
+
+      shell: rg "allowance\(" src/ -n
+
+      Confirm whether allowance is verified before permit is executed.
+
+    severity: medium
+
+exploitation_context: |
+  Do not attempt to forge signatures.
+
+  Instead simulate mempool ordering.
+
+  Transaction 1:
+      attacker calls permit() using the victim's signature.
+
+  Transaction 2:
+      victim submits permit()+deposit().
+
+  If permit() always executes first inside the protocol, the second
+  transaction reverts because the permit nonce has already been consumed.
+
+  Demonstrate that deposit() would have succeeded if the contract had
+  recognized the already-established allowance instead of requiring

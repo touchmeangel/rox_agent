@@ -1,0 +1,39 @@
+id: mutable_merkle_root_without_authorization
+
+name: Unauthorized Merkle Root Modification
+
+granularity: contract
+
+tags:
+  - merkle_membership_verification
+  - access_control
+
+scenario: |
+  The contract allows the stored Merkle root to be replaced without
+  sufficient authorization. Since the root defines the entire membership
+  set, replacing it effectively changes every valid proof accepted by the
+  contract.
+
+properties:
+  - id: unrestricted_root_update
+    check: |
+      Locate every function capable of modifying the stored Merkle root.
+
+      This vulnerability is ONLY valid if unauthorized users can replace
+      the root or if insufficient authorization protects root updates.
+
+      Reject this finding if the root is immutable or protected by
+      appropriate governance.
+    confirm_with: |
+      shell: rg "root\s*=" src/ -n
+      shell: rg "setRoot|updateRoot|changeRoot" src/ -n
+      Verify every execution path capable of modifying the root.
+    severity: critical
+
+exploitation_context: |
+  Demonstrate that an unauthorized account can replace the Merkle root with
+  attacker-controlled data and subsequently satisfy proof verification for
+  arbitrary leaves.
+
+references:
+  - https://docs.openzeppelin.com/contracts/utils#MerkleProof

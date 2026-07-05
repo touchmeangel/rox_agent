@@ -1,0 +1,40 @@
+id: merkle_leaf_not_bound_to_caller
+
+name: Merkle Leaf Missing Caller Binding
+
+granularity: contract
+
+tags:
+  - merkle_membership_verification
+  - priority_dependent_outcome
+
+scenario: |
+  The Merkle leaf omits the claimant identity (`msg.sender`) or another
+  equivalent ownership identifier. A valid proof therefore authorizes the
+  data itself rather than a particular user. Anyone observing a legitimate
+  claim can reuse the same proof for themselves whenever the claimed action
+  is not otherwise bound to the original recipient.
+
+properties:
+  - id: missing_identity_binding
+    check: |
+      Inspect the leaf construction. Determine whether the contract hashes
+      the claimant identity together with the remaining claim data.
+
+      Reject this finding if the leaf includes `msg.sender`, the intended
+      recipient address, or another unique identity that is verified during
+      execution.
+    confirm_with: |
+      shell: rg "abi\.encodePacked|abi\.encode" src/ -A4 -B2 -n
+      shell: rg "MerkleProof\.(verify|verifyCalldata)" src/ -B5 -A5 -n
+      Confirm whether the address participating in authorization is part of
+      the hashed leaf.
+    severity: critical
+
+exploitation_context: |
+  Simulate two independent users. Generate a valid proof for one user, then
+  submit the identical proof from another address. Demonstrate that the
+  second caller receives the same authorization.
+
+references:
+  - https://docs.openzeppelin.com/contracts/utils#MerkleProof

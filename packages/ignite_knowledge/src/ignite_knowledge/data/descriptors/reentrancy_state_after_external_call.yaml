@@ -1,0 +1,90 @@
+id: reentrancy_state_after_external_call
+name: Reentrancy via State Update After External Call
+granularity: contract
+tags:
+  - makes_untrusted_calls
+  - token_hook_interaction
+
+scenario: |
+  Solidity executes imperatively: an external call pauses the caller's
+  execution until it returns, handing control to the callee in the meantime.
+  If the caller updates its own accounting state AFTER that external call
+  instead of before it, the callee can re-enter while state still reflects
+  the pre-call world — most often to repeat a withdrawal, mint, or claim
+  before the balance or flag that should have blocked it has been written.
+
+  The call handing over control is not always an obvious raw `.call{value: ...}()`.
+  Any of these do it just as effectively:
+    - receive() / fallback()             — fires on any ETH send
+    - onERC721Received / onERC1155Received — fire on the recipient during safeTransferFrom
+    - ERC777 tokensToSend / tokensReceived — fire via the ERC1820 registry on ANY
+      transfer/transferFrom/send/burn/operatorSend of that token, including a
+      completely ordinary-looking `token.transferFrom(msg.sender, address(this), amount)`.
+      The reentrant call happens inside the TOKEN's code, not this contract's —
+      this is the exact mechanism behind the imBTC/Uniswap V1 hack. If this
+      contract moves a token whose implementation it doesn't control, treat that
+      transfer call as an external call to attacker-influenced code, full stop.
+
+properties:
+  - id: single_function_reentrancy
+    check: |
+      Find a function making an external call (any surface above) that still has
+      state-changing statements AFTER that call returns — a balance decrement, a
+      hasClaimed/hasWithdrawn flip, a supply update. Reject as false positive if
+      every such write happens strictly before the call (correct checks-effects-
+      interactions ordering) — but don't stop there, check cross-function below
+      before ruling the contract out entirely.
+    confirm_with: |
+      shell: rg "\.call\{value|\.call\(|\.transfer\(|\.send\(|safeTransferFrom|transferFrom\(" src/ -n
+      Read the enclosing function fully for each match; note what's written
+      before vs. after the call.
+      shell: rg "nonReentrant|ReentrancyGuard" src/ -n
+      A guard imported but not applied to the actual vulnerable function
+      protects nothing — confirm it's really on this function.
+    severity: critical
+
+  - id: cross_function_reentrancy
+    check: |
+      Even with a guard present, check whether every function reading or writing
+      the SAME state as the vulnerable function shares the exact same guard.
+      withdraw() being nonReentrant doesn't stop reentrancy if the attacker can
+      reach transfer()/mint()/a second withdrawal path during the external call,
+      and that second function reads the balance withdraw() hasn't zeroed yet.
+    confirm_with: |
+      shell: rg "function \w+\(" src/ -n
+      List every function touching the same state variable identified above;
+      check each individually for the guard rather than assuming one protects
+      the contract.
+    severity: critical
+
+  - id: cross_contract_reentrancy
+    check: |
+      Applies when the repo has multiple contracts sharing accounting (a Vault +
+      a Rewards/Controller, a pool + a periphery router). A guard local to one
+      contract doesn't protect state a SECOND contract also depends on — the
+      attacker reenters through the second contract, whose own guard is unlocked.
+    confirm_with: |
+      shell: rg "interface I\w+|import.*\.sol" src/ -n
+      Map which contracts call into each other and which state each one is
+      responsible for updating on the other's behalf.
+    severity: high
+
+exploitation_context: |
+  Shared Foundry PoC shape for all three forms:
+  1. Deploy and fund the target the way a real user would.
+  2. Write a minimal attacker contract whose callback (receive/onERC721Received/
+     onERC1155Received/tokensReceived — match whichever surface applies) calls
+     back into the target: the same function for single-function, a different
+     one sharing state for cross-function, a second contract for cross-contract.
+  3. Trigger the call, then assert the attacker extracted more than a single
+     correct call should allow.
+  4. If a guard is present, prove your reentrant call actually reverts through
+     it before concluding the contract is safe — an assumed guard isn't evidence.
+
+  ERC777 callback specifically: register your attacker as an ERC1820 implementer
+  for tokensToSend/tokensReceived in setUp() against a real ERC1820 registry
+  deployment — this won't work against a plain ERC20 mock.
+
+references:
+  - https://swcregistry.io/docs/SWC-107/
+  - https://github.com/pcaversaccio/reentrancy-attacks

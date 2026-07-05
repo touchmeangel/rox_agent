@@ -1,0 +1,48 @@
+id: sandwich_attack_missing_slippage_bound
+name: Sandwich Attack via Missing Slippage/Deadline Protection
+granularity: contract
+tags:
+  - priority_dependent_outcome
+  - unbounded_price_impact_call
+
+scenario: |
+  Distinct from naive_spot_price_oracle_manipulation — that one is about the
+  CONSUMING contract's math being wrong (linear spot price instead of the
+  invariant formula). This applies even when the pricing math is entirely
+  correct. The bug is that the caller has no way to bound their own execution
+  price. An attacker sandwiches the victim's pending trade: buys immediately
+  before it (moving price against the victim), lets the victim execute at the
+  now-worse price, then sells immediately after at a profit — extracting the
+  difference purely because the victim's call had no floor on acceptable
+  output.
+
+properties:
+  - id: missing_min_out_or_deadline
+    check: |
+      Find swap/deposit/mint/redeem functions computing output from live pool
+      state. Confirm whether the signature accepts a minAmountOut/maxAmountIn/
+      deadline parameter AND the body actually requires against it — an
+      accepted-but-unchecked parameter is equivalent to not having one.
+    confirm_with: |
+      shell: rg "function (swap|deposit|mint|redeem|withdraw)\w*\(" src/ -A 20 -n
+      shell: rg "minAmountOut|minOut|maxSlippage|deadline" src/ -n
+      Confirm any match is actually enforced via require(), not just accepted.
+    severity: high
+
+exploitation_context: |
+  1. Set up the pool/vault with realistic liquidity.
+  2. Record the victim's expected output at current, unperturbed state.
+  3. Attacker trades in the same direction immediately before the victim's call.
+  4. Execute the victim's call, record actual output received.
+  5. Attacker reverses their position immediately after.
+  6. Assert the victim received materially less than expected AND the
+     attacker's combined trades were profitable — that combination is the
+     sandwich, not just "price moved."
+
+  If a real minAmountOut/deadline check is enforced, reject this specific
+  descriptor even if naive_spot_price_oracle_manipulation might still apply
+  to the underlying math — the two are independent checks.
+
+references:
+  - https://www.mev.wiki/attacks/sandwich-attack
+  - https://consensys.github.io/smart-contract-best-practices/attacks/front-running/

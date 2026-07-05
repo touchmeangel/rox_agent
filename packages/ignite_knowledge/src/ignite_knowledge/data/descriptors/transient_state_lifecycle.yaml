@@ -1,0 +1,80 @@
+id: transient_state_lifecycle
+name: Incorrect Transient State Lifecycle
+granularity: contract
+
+tags:
+  - transient_storage
+
+scenario: |
+  The contract uses transient storage (TSTORE/TLOAD or Solidity `transient`
+  variables) to maintain state that exists for the duration of a transaction.
+
+  Unlike memory, transient storage persists across every call frame executed
+  during the same transaction, including nested external calls, delegatecalls,
+  callbacks, and reentrancy. The state is cleared only when the entire
+  transaction finishes.
+
+  The vulnerability exists if transient state from one logical operation can
+  influence another operation executed later in the same transaction because
+  the contract assumes the values disappear earlier or fails to reset them.
+
+properties:
+
+  - id: transaction_scoped_state
+    check: |
+      Identify every transient variable.
+
+      Determine:
+      - where it is written,
+      - where it is read,
+      - where it is cleared.
+
+      Verify that every execution path restoring control after writing
+      transient state either explicitly resets it or intentionally leaves it
+      until transaction completion.
+
+    severity: high
+
+  - id: stale_transient_values
+    check: |
+      Determine whether a later function executed in the SAME transaction can
+      observe transient values left behind by an earlier function.
+
+      The vulnerability is valid if the later function assumes a clean state
+      but actually inherits transaction-local state from previous execution.
+
+    severity: critical
+
+  - id: external_call_before_cleanup
+    check: |
+      If transient state is used as temporary context, verify whether the
+      contract performs external calls before restoring the expected state.
+
+      Because external calls may invoke arbitrary execution (callbacks,
+      multicall, reentrancy), stale transient values may be observed before
+      cleanup occurs.
+
+    severity: high
+
+  - id: partial_cleanup
+    check: |
+      Verify that all transient variables participating in an invariant are
+      reset together.
+
+      Clearing only part of the transient state may leave inconsistent
+      transaction-local context for subsequent execution.
+
+    severity: medium
+
+exploitation_context: |
+  Exploitation typically requires executing multiple contract calls within a
+  single transaction (Multicall, callbacks, router execution, flash loans,
+  account abstraction, etc.).
+
+  The attacker first establishes favorable transient state, then invokes a
+  second code path that incorrectly assumes transient storage starts empty.
+  Because transient storage survives for the entire transaction, the second
+  operation executes using attacker-controlled leftover state.
+
+references:
+  - https://eips.ethereum.org/EIPS/eip-1153

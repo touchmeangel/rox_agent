@@ -1,0 +1,44 @@
+id: ecrecover_zero_address_authorization
+name: Unchecked ecrecover Returning Zero Address
+granularity: contract
+tags:
+  - signature_authorized_action
+
+scenario: |
+  The EVM `ecrecover` precompile returns `address(0)` when provided with an 
+  invalid or malformed signature, rather than reverting the transaction. If a 
+  contract compares the output of `ecrecover` to a stored `signer` or `owner` 
+  variable without first strictly ensuring the recovered address is NOT zero, 
+  a critical vulnerability exists. If that stored variable is ever uninitialized 
+  (or intentionally set to zero to "revoke" access), an attacker can pass a 
+  garbage signature, `ecrecover` will yield `address(0)`, the comparison will 
+  match, and the attacker will bypass the authorization check completely.
+
+properties:
+  - id: unchecked_ecrecover_output
+    check: |
+      Find any direct use of the `ecrecover` function. Verify if the returned 
+      address is explicitly checked against `address(0)` before it is compared 
+      to the target signer. If the contract uses `require(ecrecover(...) == owner)`, 
+      it is vulnerable if `owner` can ever be `address(0)`.
+      NOTE: OpenZeppelin's `ECDSA.recover` handles this internally and reverts 
+      on zero. Only flag raw `ecrecover` usage or custom inline assembly.
+    confirm_with: |
+      shell: rg "ecrecover\s*\(" src/ -A 5 -n
+      Analyze the matched lines to see where the returned value goes.
+      shell: rg "require\(\w+\s*!=\s*address\(0\)" src/ -n
+      Check if the required zero-address validation is missing for the recovered signer.
+    severity: critical
+
+exploitation_context: |
+  1. In your Foundry test, ensure the expected `signer` state variable in the target 
+     contract is `address(0)` (either by finding an uninitialized state or a flow 
+     that resets it).
+  2. Create a deliberately invalid signature in your test (e.g., `v = 0`, `r = 0`, 
+     `s = 0`).
+  3. Call the vulnerable function with this invalid signature.
+  4. Assert that the function succeeds and the state changes, proving that the 
+     garbage signature successfully authorized the action.
+
+references:
+  - https://swcregistry.io/docs/SWC-122/

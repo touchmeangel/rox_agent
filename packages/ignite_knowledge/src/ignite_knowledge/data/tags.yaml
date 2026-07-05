@@ -46,12 +46,6 @@ tags:
       block.number, or block.coinbase to generate entropy or random numbers. 
       Do NOT use this tag for external randomness oracles like Chainlink VRF.
 
-  - id: external_call_after_effects
-    description: >
-      Contract makes an external call (raw .call, token transfer to an
-      arbitrary/attacker-influenced address, token hooks) without an
-      obvious reentrancy guard, or after mutating state rather than before.
-
   - id: unsafe_math_context
     description: >
       Contract operates in an environment where arithmetic underflow/overflow 
@@ -92,13 +86,17 @@ tags:
       Beacon), inherits `Initializable`, or is an implementation contract 
       meant to sit behind a proxy (uses `initialize()` instead of a constructor).
 
-  - id: reorg_sensitive_logic
+  - id: priority_dependent_outcome
     description: >
-      Contract contains economically significant logic whose outcome depends on
-      transaction ordering or immediate block inclusion. Typical examples include
-      first-come-first-served purchases, auctions, reward claims, liquidations,
-      marketplace listings, mint windows, or settlement logic where replay after
-      a short blockchain reorganization could produce a different result.
+      Contract contains economically significant logic whose result depends on
+      WHO gets included first or WHAT ORDER transactions execute in — not on
+      deterministic protocol state. Applies whether the ordering advantage comes
+      from ordinary mempool visibility and gas bidding (frontrunning), private
+      relay/searcher access, or transaction replay after a chain reorganization
+      reshuffles already-confirmed blocks. Typical examples: first-come-first-
+      served purchases, auctions, reward claims, liquidations, marketplace
+      listings, mint windows, or settlement logic where the outcome would differ
+      under a different execution order.
 
   - id: unbounded_iteration
     description: >
@@ -113,3 +111,70 @@ tags:
       Contract performs external calls whose success is required for further
       execution. Apply this tag when execution depends on another contract
       successfully receiving Ether or completing a call.
+
+  - id: makes_untrusted_calls
+    description: >
+      Contract executes .call{value: ...}(), .delegatecall(), .transfer(),
+      .send(), or calls a function on an address that is a parameter, storage
+      variable, or otherwise not a compile-time-fixed, protocol-owned address.
+
+  - id: token_hook_interaction
+    description: >
+      Contract calls transfer/transferFrom/send/burn/operatorSend on an
+      external token contract, calls safeTransferFrom on an NFT, implements
+      IERC777Recipient/IERC777Sender/IERC721Receiver/IERC1155Receiver, or has
+      a receive()/fallback() that can accept ETH. Applies regardless of
+      whether a reentrancy guard is present anywhere in the contract.
+
+  - id: secret_gated_public_call
+    description: >
+      Contract has an external/public function that accepts a caller-supplied
+      value as a parameter and compares it (directly, or via keccak256/hash)
+      against a stored secret, answer, commitment, or password to authorize a
+      state-changing action (withdrawal, mint, unlock, claim) within that SAME
+      call. Apply this tag whenever the proof-of-knowledge and the authorized
+      action happen in one transaction, with no earlier separate transaction
+      that committed to a hash of (value + msg.sender + a fresh salt/nonce)
+      before the value itself is ever submitted in plaintext.
+
+  - id: unbounded_price_impact_call
+    description: >
+      Contract exposes a swap, deposit, mint, or redeem function executing
+      against a live, moveable price (an AMM pool, a live exchange rate) but
+      does not require the caller to supply a minimum-output, maximum-input,
+      or deadline parameter bounding their acceptable execution price. Applies
+      regardless of whether the underlying pricing math itself is correct.
+
+  - id: signature_authorized_action
+    description: >
+      Contract authorizes one or more state-changing operations using an
+      off-chain cryptographic signature. Apply this tag if the contract
+      verifies signatures directly (e.g. `ecrecover`, OpenZeppelin `ECDSA`,
+      EIP-712/EIP-191), consumes ERC-2612/Permit2/EIP-3009 permits or
+      authorizations, or accepts signature parameters such as
+      `bytes signature` or `(uint8 v, bytes32 r, bytes32 s)` to approve,
+      execute, mint, claim, transfer, or otherwise authorize actions.
+
+  - id: merkle_membership_verification
+    description: >
+      Contract verifies Merkle proofs to authorize state-changing operations
+      such as claims, minting, withdrawals, whitelisting, or access control.
+      Apply this tag if the contract imports or calls OpenZeppelin's
+      `MerkleProof` library (including `verify`, `verifyCalldata`,
+      `processProof`, or `multiProofVerify`) or implements equivalent
+      Merkle proof verification logic.
+
+  - id: manual_storage_slot_access
+    description: >
+      Contract manually reads or writes EVM storage slots outside Solidity's
+      default storage layout. Apply this tag if the contract uses inline
+      assembly (`sload`/`sstore`), fixed `bytes32` storage slot constants,
+      OpenZeppelin `StorageSlot`, ERC-7201 namespaces, Diamond Storage,
+      Solady storage helpers, or equivalent manual storage access patterns.
+
+  - id: transient_storage
+    description: >
+      Contract uses EIP-1153 transient storage, either via Solidity `transient`
+      state variables or inline assembly `tstore` / `tload`. Transient storage
+      persists across every call executed within the same transaction and is
+      automatically cleared only after the transaction completes.

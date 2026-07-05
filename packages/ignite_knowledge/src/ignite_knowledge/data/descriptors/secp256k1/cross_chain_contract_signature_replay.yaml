@@ -1,0 +1,45 @@
+id: cross_chain_contract_signature_replay
+name: Signature Replay via Missing Domain Separator Binding
+granularity: contract
+tags:
+  - signature_authorized_action
+
+scenario: |
+  When users sign data, that signature should only be valid for one specific 
+  contract on one specific blockchain. EIP-712 solves this using a Domain 
+  Separator that includes `chainId` and `verifyingContract`. If a developer 
+  implements custom signature verification but omits `address(this)` or `block.chainid` 
+  from the signed message hash, a signature used on Ethereum Mainnet can be 
+  maliciously replayed by an attacker on a fork, a Layer 2, or a parallel deployed 
+  version of the same contract, draining the user's funds on the second network.
+
+properties:
+  - id: weak_message_hashing
+    check: |
+      Examine the payload being hashed via `keccak256` before it is passed to 
+      `ecrecover`. If the hashed payload does not firmly include the current 
+      contract's address (`address(this)`) and the current network's chain ID 
+      (`block.chainid`), it is vulnerable to cross-contract or cross-chain replay.
+    confirm_with: |
+      shell: rg "keccak256\(abi\.encode" src/ -A 10 -n
+      Review the encoded parameters. 
+      shell: rg "block\.chainid|address\(this\)" src/ -n
+      If the hashing logic lacks these two specific bindings, flag it. Be careful 
+      with cached `DOMAIN_SEPARATOR` variables in `constructor()` — if the chain 
+      forks, the cached `chainId` becomes stale, which is also a vulnerability.
+    severity: critical
+
+exploitation_context: |
+  Proving cross-chain replay in a single Foundry test requires simulating the 
+  absence of context binding.
+  1. Deploy two separate instances of the target contract (Target A and Target B) 
+     in the same test.
+  2. Have a legitimate user sign a payload intended explicitly for Target A.
+  3. Execute the payload on Target A successfully.
+  4. As an attacker, take that exact same signature and payload and submit it 
+     to Target B.
+  5. Assert that Target B accepts the signature, proving that the lack of 
+     `address(this)` in the signed hash allows cross-contract replay.
+
+references:
+  - https://eips.ethereum.org/EIPS/eip-712

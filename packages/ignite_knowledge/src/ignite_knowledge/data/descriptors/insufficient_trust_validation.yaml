@@ -1,0 +1,82 @@
+id: insufficient_trust_validation
+name: Insufficient Trust Validation
+granularity: function
+
+tags:
+  - has_require_guards
+  - makes_untrusted_calls
+
+scenario: |
+  The contract performs a security validation before executing a privileged
+  action, but the validation does not actually establish the trust property
+  the protocol relies upon. The check verifies an easily forgeable attribute
+  (interface support, returned address, metadata, symbol, name, factory()
+  response, etc.) rather than proving the object was legitimately created or
+  authorized.
+
+  The presence of a require() alone is NOT sufficient. The audited property
+  must logically imply the intended security guarantee. If an attacker can
+  construct an arbitrary contract that satisfies the checked condition while
+  remaining malicious, the validation is insufficient.
+
+properties:
+
+  - id: forged_identity
+    check: |
+      Determine whether an attacker can deploy an arbitrary contract that
+      returns values satisfying every validation performed by the function.
+
+      Examples include:
+        - returning an approved factory address
+        - returning a trusted token symbol/name
+        - implementing the expected interface
+        - exposing expected getter functions
+
+      If the contract can simply "pretend" to be trusted, this property holds.
+
+    confirm_with: |
+      Trace every external call used inside require() statements.
+      Ask whether each returned value is attacker-controlled.
+
+      If yes, determine whether additional verification binds the object to
+      the claimed authority.
+
+    severity: high
+
+  - id: missing_reverse_verification
+    check: |
+      Verify that trust is established from the trusted authority outward,
+      rather than from the untrusted object inward.
+
+      Example:
+
+      Vulnerable:
+          require(pool.factory() == trustedFactory);
+
+      Secure:
+          require(
+              trustedFactory.getPool(token0, token1, fee) == pool
+          );
+
+      The trusted registry/factory should authenticate the object rather than
+      the object authenticating itself.
+
+    confirm_with: |
+      Identify the authoritative contract (factory, registry, governance,
+      whitelist, manager, bridge, etc.).
+
+      Confirm the audited contract queries that authority to verify ownership,
+      registration, or provenance instead of trusting values returned by the
+      candidate contract.
+
+    severity: critical
+
+exploitation_context: |
+  Exploitation typically consists of deploying a malicious contract that
+  faithfully mimics every checked interface while returning attacker-chosen
+  values. Because the audited contract validates only self-reported
+  properties, the attacker satisfies all require() statements and gains
+  access to functionality intended for trusted contracts.
+
+references:
+  - https://consensys.github.io/smart-contract-best-practices/

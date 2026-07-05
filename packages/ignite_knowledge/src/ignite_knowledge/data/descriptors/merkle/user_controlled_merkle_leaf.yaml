@@ -1,0 +1,43 @@
+id: user_controlled_merkle_leaf
+
+name: User-Controlled Merkle Leaf
+
+granularity: contract
+
+tags:
+  - merkle_membership_verification
+
+scenario: |
+  The contract accepts a precomputed Merkle leaf (`bytes32 leaf`) directly
+  from user input instead of deriving the leaf internally from trusted,
+  typed parameters (such as `msg.sender`, amount, token, nonce, etc.).
+  Merkle verification only proves that the supplied leaf exists in the tree;
+  it does NOT prove that the leaf corresponds to the caller or the intended
+  operation. Whenever the caller controls the leaf itself, they control what
+  is being proven.
+
+properties:
+  - id: externally_supplied_leaf
+    check: |
+      Determine how the leaf passed into Merkle verification is constructed.
+      This vulnerability is ONLY valid if the contract accepts a leaf from
+      calldata or memory and forwards it directly into the verification
+      routine.
+
+      Reject this finding if the contract derives the leaf itself from typed
+      values immediately before verification.
+    confirm_with: |
+      shell: rg "MerkleProof\.(verify|verifyCalldata|processProof)" src/ -n
+      shell: rg "bytes32\s+leaf" src/ -n
+      Trace the origin of the leaf argument. Confirm whether it originates
+      directly from user input or is recomputed inside the contract.
+    severity: critical
+
+exploitation_context: |
+  Construct a proof using an existing valid leaf while supplying arbitrary
+  parameters expected by the vulnerable function. Demonstrate that proof
+  validity depends only on the attacker-controlled leaf rather than on the
+  semantic meaning of the claimed operation.
+
+references:
+  - https://docs.openzeppelin.com/contracts/utils#MerkleProof

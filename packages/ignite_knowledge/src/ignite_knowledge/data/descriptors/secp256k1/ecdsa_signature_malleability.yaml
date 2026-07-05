@@ -1,0 +1,47 @@
+id: ecdsa_signature_malleability
+name: ECDSA Signature Malleability
+granularity: contract
+tags:
+  - signature_authorized_action
+
+scenario: |
+  Secp256k1 elliptic curve signatures are inherently malleable. For any valid 
+  signature $(r, s)$ with recovery identifier $v$, there exists a second valid 
+  signature $(r, n - s)$ with a flipped $v$ (where $n$ is the curve order). 
+  If a contract uses raw `ecrecover` without restricting the $s$ value to the 
+  lower half of the curve, an attacker can intercept a valid transaction, compute 
+  the twin signature, and submit it. If the contract tracks "used signatures" by 
+  saving the signature bytes themselves (instead of the hashed payload), the 
+  attacker can replay the action because the twin signature looks entirely new 
+  to the contract's tracking mapping.
+
+properties:
+  - id: raw_ecrecover_and_signature_tracking
+    check: |
+      First, confirm the contract uses raw `ecrecover` (without OpenZeppelin's 
+      $s$-value bounds check). Second, confirm the contract tracks replay protection 
+      using the signature itself (e.g., `mapping(bytes => bool) executedSignatures`) 
+      rather than the message hash. Both conditions MUST be met for this to be a 
+      viable attack vector.
+    confirm_with: |
+      shell: rg "ecrecover" src/ -n
+      shell: rg "mapping.*=>\s*bool" src/ -n
+      Check if the mapping key is the signature bytes or the message hash.
+      shell: rg "0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0" src/ -n
+      If you see this magic number (half the curve order), the developer bounded 
+      the $s$ value and the contract is safe from malleability.
+    severity: high
+
+exploitation_context: |
+  1. In Foundry, sign a legitimate payload to get a valid `v, r, s`.
+  2. Calculate the twin signature: $s' = n - s$, where $n$ is 
+     `115792089237316195423570985008687907852837564279074904382605163141518161494337`.
+  3. Flip the $v$ value (if $27$, make it $28$; if $28$, make it $27$).
+  4. Submit the original signature to the target contract to process the action.
+  5. Submit the newly computed twin signature.
+  6. Assert that the second call also succeeds, proving the replay protection 
+     was bypassed.
+
+references:
+  - https://swcregistry.io/docs/SWC-117/
+  - https://github.com/OpenZeppelin/openzeppelin-contracts/security/advisories/GHSA-4h98-2769-gh6h

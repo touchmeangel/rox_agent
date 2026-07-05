@@ -5,7 +5,7 @@ name: Reorganization-Sensitive State Assumption
 granularity: contract
 
 tags:
-  - reorg_sensitive_logic
+  - priority_dependent_outcome
 
 scenario: |
   The contract performs an economically critical action assuming that once a
