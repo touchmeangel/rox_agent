@@ -78,7 +78,10 @@ def _static_hints_for(
         for finding in static_findings.get(bucket, []):
             loc = finding.get("location", {})
             finding_file = loc.get("file", "").lower()
-            if contract_name not in finding_file and contract.lower() not in finding_file:
+            if (
+                contract_name not in finding_file
+                and contract.lower() not in finding_file
+            ):
                 continue
 
             check = finding.get("check", "")
@@ -186,7 +189,7 @@ def _fmt_candidate(i: int, c: _Candidate) -> str:
     ]
     for prop in getattr(c.descriptor, "properties", []):
         lines.append(
-            f"    <property id=\"{prop['id']}\">{prop.get('check', '').strip()[:300]}</property>"
+            f'    <property id="{prop["id"]}">{prop.get("check", "").strip()[:300]}</property>'
         )
     lines.append("  </properties>")
 
@@ -537,7 +540,11 @@ def _build_missions(
             hints=[
                 *candidate.static_hints,
                 *candidate.known_issue_hints,
-                *([] if not candidate.audit_delta_hint else [candidate.audit_delta_hint]),
+                *(
+                    []
+                    if not candidate.audit_delta_hint
+                    else [candidate.audit_delta_hint]
+                ),
                 *raw.get("hints", []),
             ],
         )
