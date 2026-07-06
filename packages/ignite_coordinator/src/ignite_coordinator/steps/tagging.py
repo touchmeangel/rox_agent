@@ -19,7 +19,7 @@ class TaggingStep(BaseStep):
         tag_ids = sorted(load_tag_registry().keys())
         return {
             "type": "object",
-            "required": ["contract_tags", "repo_tags"],
+            "required": ["contract_tags"],
             "properties": {
                 "contract_tags": {
                     "type": "object",
@@ -32,14 +32,6 @@ class TaggingStep(BaseStep):
                         "type": "array",
                         "items": {"type": "string", "enum": tag_ids},
                     },
-                },
-                "repo_tags": {
-                    "type": "array",
-                    "description": (
-                        "Tags that apply at the whole-codebase level rather than to a "
-                        "single contract. Use [] if none apply."
-                    ),
-                    "items": {"type": "string", "enum": tag_ids},
                 },
             },
         }
@@ -67,21 +59,6 @@ class TaggingStep(BaseStep):
                         "one up."
                     )
 
-        repo_tags = findings.get("repo_tags")
-        if repo_tags is None:
-            return (
-                "findings.repo_tags must be present "
-                "(use [] if nothing applies at the whole-codebase level)"
-            )
-        if not isinstance(repo_tags, list):
-            return "repo_tags must be a list of tag ids"
-        for tag in repo_tags:
-            if tag not in registry:
-                return (
-                    f"Unknown tag '{tag}' in repo_tags. "
-                    f"Valid tags: {sorted(registry.keys())}. "
-                    "Do not invent new tags."
-                )
 
         return None
 
@@ -150,13 +127,8 @@ observe in the code (an interface being implemented, a specific pattern being pr
 not what you suspect or guess might be true.
 </step>
 
-<step id="2" title="Identify repo-level tags">
-Identify any repo_tags that apply at the whole-codebase level rather than to one file.
-</step>
-
-<step id="3" title="Submit">
-Call submit_findings with contract_tags (map of relative file path to tag list) and
-repo_tags (list). Use {{}} / [] if genuinely nothing applies — do not force tags onto a
+<step id="2" title="Submit">
+Call submit_findings with contract_tags (map of relative file path to tag list). Use {{}} / [] if genuinely nothing applies — do not force tags onto a
 contract to have something to report.
 </step>
 </task>
@@ -166,7 +138,6 @@ contract to have something to report.
 <rule>Be conservative: a tag reflects something you directly observed, not a hunch. Under-tagging means a later step won't investigate something that turned out to be safe anyway. Over-tagging wastes real downstream investigation work on contracts that don't actually need it.</rule>
 <rule>Never state or imply that something IS vulnerable. That is not this step's job and you do not have the context to judge it reliably — you are marking the presence of a pattern, nothing more.</rule>
 <rule>Do not write, run, or reference exploit code, PoCs, or attack sequences in this step under any circumstance.</rule>
-<rule>repo_tags is required in the output — submit [] rather than omitting it if nothing applies.</rule>
 </rules>
 
 </audit_step>"""
