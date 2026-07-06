@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from ignite_knowledge.descriptor import Descriptor
+from ignite_knowledge.protocol_tags import is_valid_protocol_tag
 from ignite_knowledge.tags import is_valid_tag
 
 _DESCRIPTORS_DIR = Path(__file__).parent / "data" / "descriptors"
@@ -26,10 +27,10 @@ def load_descriptors() -> list[Descriptor]:
 
         tags = raw.get("tags", [])
         for tag in tags:
-            if not is_valid_tag(tag):
+            if not is_valid_tag(tag) and not is_valid_protocol_tag(tag):
                 raise ValueError(
                     f"Descriptor {descriptor_id!r} ({path}) references unknown tag "
-                    f"{tag!r} — add it to tags.yaml first."
+                    f"{tag!r} — add it to tags.yaml or protocol_tags.yaml first."
                 )
 
         granularity = raw.get("granularity", "contract")

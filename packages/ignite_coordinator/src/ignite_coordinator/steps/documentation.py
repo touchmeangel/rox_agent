@@ -181,19 +181,6 @@ class DocumentationStep(BaseStep):
                         "required": ["name", "description", "powers", "restrictions"],
                     },
                 },
-                "external_protocols": {
-                    "type": "array",
-                    "description": "Third-party protocols this codebase integrates with.",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "name": {"type": "string"},
-                            "purpose": {"type": "string"},
-                            "version": {"type": "string"},
-                        },
-                        "required": ["name", "purpose"],
-                    },
-                },
                 "tokens": {
                     "type": "array",
                     "description": "Token standards and specific tokens the protocol handles.",
@@ -261,7 +248,6 @@ class DocumentationStep(BaseStep):
             "required": [
                 "protocol_summary",
                 "roles",
-                "external_protocols",
                 "tokens",
                 "solc_version",
                 "architecture_notes",
@@ -275,7 +261,6 @@ class DocumentationStep(BaseStep):
         required = {
             "protocol_summary",
             "roles",
-            "external_protocols",
             "tokens",
             "solc_version",
             "architecture_notes",
@@ -310,9 +295,9 @@ class DocumentationStep(BaseStep):
 <scope>
 You are running the documentation and architecture step of a security audit. This step
 builds the map every later step and worker mission relies on: what the protocol does, who
-the actors are, what it touches externally, and a first-pass risk triage per contract. It
-does not confirm vulnerabilities or produce proof-of-concept code — that happens later,
-per-candidate, in the worker phase.
+the actors are, and a first-pass risk triage per contract. It does not confirm 
+vulnerabilities or produce proof-of-concept code — that happens later, per-candidate, 
+in the worker phase.
 </scope>
 
 <repository>
@@ -376,18 +361,12 @@ or extend what docs describe. For each role document:
   - Who they are trusted by and to what degree
 </step>
 
-<step id="3" title="External protocols">
-For each protocol: specify which interface is called, what data flows across that boundary,
-AND the version in use (check import paths, git modules in ./lib or foundry.toml
-dependencies for pinned versions).
-</step>
-
-<step id="4" title="Tokens">
+<step id="3" title="Tokens">
 List every token standard and every named token the protocol handles (ERC20, ERC721, native
 ETH). Note any token assumptions (decimals, rebase, fee-on-transfer, permit support).
 </step>
 
-<step id="5" title="Solc version">
+<step id="4" title="Solc version">
 Determine the exact compiler version. Use read_file to check configuration files:
   1. foundry.toml → [profile.default] solc = "..."
   2. hardhat.config → solidity: {{ version: "..." }}
@@ -395,8 +374,8 @@ Determine the exact compiler version. Use read_file to check configuration files
 solc_version must be a concrete string like "0.8.24", not "unknown".
 </step>
 
-<step id="6" title="Contract risk matrix">
-For every in-scope contract produce one row. Base it on everything gathered in steps 0-5
+<step id="5" title="Contract risk matrix">
+For every in-scope contract produce one row. Base it on everything gathered in steps 0-4
 plus the Slither function-summary and surya table above. This is a triage/priority signal
 for downstream steps — not a vulnerability finding. For each contract determine:
   - sloc — count non-blank, non-comment lines (use shell with wc/grep if needed)
@@ -430,14 +409,6 @@ Pass this to submit_findings:
         "Cannot withdraw funds unilaterally before the timeout expires",
         "Cannot act as arbiter in their own trade"
       ]
-    }}
-  ],
-
-  "external_protocols": [
-    {{
-      "name": "Uniswap",
-      "version": "v3",
-      "purpose": "Used to swap collateral token for USDC during liquidations via ISwapRouter"
     }}
   ],
 
@@ -485,10 +456,10 @@ Pass this to submit_findings:
 <rule>Read source files before submitting — do not rely solely on docs.</rule>
 <rule>Every role needs at least one power.</rule>
 <rule>solc_version must be a concrete version string — "unknown" will be rejected.</rule>
-<rule>external_protocols and tokens may be empty arrays [] if truly none exist, but you must have checked the source before concluding that.</rule>
+<rule>tokens may be empty arrays [] if truly none exist, but you must have checked the source before concluding that.</rule>
 <rule>contract_risk_matrix must have one entry per in-scope contract — do not skip contracts, even simple ones.</rule>
 <rule>risk_level is a triage signal for prioritization, not a vulnerability claim — do not describe specific exploits or attack paths in risk_reason, just why the contract matters.</rule>
-<rule>Do not submit until all seven steps are complete.</rule>
+<rule>Do not submit until all six steps are complete.</rule>
 </rules>
 
 </audit_step>"""

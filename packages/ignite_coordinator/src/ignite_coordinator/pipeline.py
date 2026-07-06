@@ -20,7 +20,7 @@ PIPELINE: list[BaseStep] = [
     TestCoverageStep(
         StepConfig(
             models=MODELS["reasoning"],
-            max_iterations=64,
+            max_iterations=48,
         )
     ),
     StaticAnalysisStep(
@@ -32,9 +32,6 @@ PIPELINE: list[BaseStep] = [
     ForkAnalysisStep(
         StepConfig(models=MODELS["reasoning"], max_iterations=16, max_web_calls=12)
     ),
-    KnownIssuesStep(
-        StepConfig(models=MODELS["reasoning"], max_iterations=32, max_web_calls=16)
-    ),
     AuditDeltaStep(
         StepConfig(models=MODELS["reasoning"], max_iterations=32, max_web_calls=16)
     ),
@@ -45,6 +42,9 @@ PIPELINE: list[BaseStep] = [
     # ), # Needs to be moved to POC step
     TaggingStep(
         StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=12)
+    ),
+    KnownIssuesStep(
+        StepConfig(models=MODELS["reasoning"], max_iterations=48, max_web_calls=16)
     ),
     CoordinatorStep(
         StepConfig(

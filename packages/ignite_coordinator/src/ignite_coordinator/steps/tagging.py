@@ -4,9 +4,14 @@ from ignite_core.debug_logger import DebugLogger
 from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep
 from ignite_core.tools import list_sol_files
+from ignite_knowledge.protocol_tags import load_protocol_tag_registry
 from ignite_knowledge.tags import load_tag_registry
 
 _CONTEXT_KEYS = ("documentation", "static_analysis", "test_coverage")
+
+
+def _vuln_tag_ids() -> list[str]:
+    return sorted(load_tag_registry().keys())
 
 
 class TaggingStep(BaseStep):
@@ -16,28 +21,40 @@ class TaggingStep(BaseStep):
         return {k: v for k, v in global_context.items() if k in _CONTEXT_KEYS}
 
     def findings_schema(self) -> dict:
-        tag_ids = sorted(load_tag_registry().keys())
+        vuln_ids = _vuln_tag_ids()
         return {
             "type": "object",
-            "required": ["contract_tags"],
+            "required": ["contract_tags", "detected_protocols"],
             "properties": {
                 "contract_tags": {
                     "type": "object",
                     "description": (
                         "Map of contract path (relative to project root) to the "
-                        "list of tags that apply to it. Use {} if no contract "
-                        "matches anything in the vocabulary."
+                        "list of vulnerability tags that apply to it. Use {} if no "
+                        "contract matches anything in the vocabulary."
                     ),
                     "additionalProperties": {
                         "type": "array",
-                        "items": {"type": "string", "enum": tag_ids},
+                        "items": {"type": "string", "enum": vuln_ids},
+                    },
+                },
+                "detected_protocols": {
+                    "type": "object",
+                    "description": (
+                        "Map of contract path (relative to project root) to the "
+                        "list of external protocols identified directly in its "
+                        "source code (via imports, interfaces, or inheritance)."
+                    ),
+                    "additionalProperties": {
+                        "type": "array",
+                        "items": {"type": "string"},
                     },
                 },
             },
         }
 
     def validate_complete(self, findings: dict) -> str | None:
-        registry = load_tag_registry()
+        valid_vuln_ids = set(_vuln_tag_ids())
 
         contract_tags = findings.get("contract_tags")
         if contract_tags is None:
@@ -46,19 +63,27 @@ class TaggingStep(BaseStep):
                 "(use {} if no contract matches any tag)"
             )
 
+        detected_protocols = findings.get("detected_protocols")
+        if detected_protocols is None:
+            return (
+                "findings.detected_protocols must be present "
+                "(use {} if no external protocols are found)"
+            )
+
         for contract, tags in contract_tags.items():
             if not isinstance(tags, list):
                 return f"contract_tags['{contract}'] must be a list of tag ids"
             for tag in tags:
-                if tag not in registry:
+                if tag not in valid_vuln_ids:
                     return (
-                        f"Unknown tag '{tag}' for contract '{contract}'. "
-                        f"Valid tags: {sorted(registry.keys())}. "
-                        "Do not invent new tags — if none of the existing tags "
-                        "fit, omit tagging for that property rather than making "
-                        "one up."
+                        f"Unknown vulnerability tag '{tag}' for contract '{contract}'. "
+                        f"Valid structural tags: {sorted(valid_vuln_ids)}. "
+                        "Do not invent new vulnerability tags — if none fit, omit it."
                     )
 
+        for contract, protocols in detected_protocols.items():
+            if not isinstance(protocols, list):
+                return f"detected_protocols['{contract}'] must be a list of strings"
 
         return None
 
@@ -66,52 +91,48 @@ class TaggingStep(BaseStep):
         base = super().environment_prompt()
         return base + (
             "\n\n- Objective Focus: You are a classification step, not an "
-            "investigator. For each contract, decide which tags from the "
-            "fixed vocabulary apply. Do NOT attempt to find, confirm, or rule "
-            "out vulnerabilities — that happens in a later step with more "
-            "context than you have here. Your only job is accurate, "
-            "conservative tagging."
+            "investigator. For each contract, decide which vulnerability tags apply "
+            "and list the external protocols it interacts with. Do NOT attempt to "
+            "find, confirm, or rule out vulnerabilities — that happens in a later step."
         )
 
     def initial_prompt(
         self, context: dict, reporter: Reporter, debug_logger: DebugLogger
     ) -> str:
-        registry = load_tag_registry()
-        tag_list = "\n".join(
-            f"  - {tag_id}: {defn.description}"
-            for tag_id, defn in sorted(registry.items())
-        )
+        vuln_registry = load_tag_registry()
+        protocol_registry = load_protocol_tag_registry()
 
-        def _summary(key: str) -> str:
-            step = context.get(key, {})
-            if not step or not step.get("success"):
-                return "(not available)"
-            return step.get("summary") or "(no summary)"
+        vuln_tag_list = "\n".join(
+            f"  - {tag_id}: {defn.description}"
+            for tag_id, defn in sorted(vuln_registry.items())
+        )
+        protocol_tag_list = "\n".join(
+            f"  - {tag_id}: {defn.description}"
+            for tag_id, defn in sorted(protocol_registry.items())
+        )
 
         contract_files = list_sol_files(self.project_path).stdout
 
         return f"""<audit_step name="tagging">
 
 <scope>
-Classify every contract in this repository against a fixed vocabulary of tags. These tags
-decide which vulnerability checks are even relevant to each contract in a later step — get
-this wrong and real checks get skipped, or irrelevant checks get run against contracts they
-don't apply to. Getting tagging right is more valuable here than finding anything yourself.
+Classify every contract in this repository against a fixed vocabulary of structural tags, 
+and extract external protocol dependencies directly from the source code. These signals 
+decide which downstream vulnerability checks are executed against each contract.
 
 You are a classification step, not an investigator: do not attempt to find, confirm, or
-rule out vulnerabilities, and never write or reference exploit code. That happens
-downstream, with more context than you have here.
+rule out vulnerabilities, and never write or reference exploit code.
 </scope>
 
-<tag_vocabulary note="use ONLY these ids, do not invent new ones">
-{tag_list}
-</tag_vocabulary>
+<tag_vocabulary note="use ONLY these ids for contract_tags, do not invent new ones">
+<vulnerability_pattern_tags note="a structural code pattern, not a judgment about severity or exploitability">
+{vuln_tag_list}
+</vulnerability_pattern_tags>
 
-<prior_context>
-<documentation>{_summary("documentation")}</documentation>
-<static_analysis>{_summary("static_analysis")}</static_analysis>
-<test_coverage>{_summary("test_coverage")}</test_coverage>
-</prior_context>
+<suggested_protocol_names note="Use these standard names in detected_protocols if you match them, otherwise type the name of the protocol found in the imports">
+{protocol_tag_list}
+</suggested_protocol_names>
+</tag_vocabulary>
 
 <pre_scan>
 <contract_files note="already enumerated — no need to call list_sol_files yourself">
@@ -121,22 +142,21 @@ downstream, with more context than you have here.
 
 <task>
 <step id="1" title="Read and classify each contract">
-For each contract listed above, read it and decide which tags from the vocabulary above
-apply. A contract can have zero, one, or several tags. Only tag what you can directly
-observe in the code (an interface being implemented, a specific pattern being present) —
-not what you suspect or guess might be true.
+For each contract listed above, open and read its source code to extract two sets of metadata:
+
+1. **Vulnerability Tags (`contract_tags`)**: Identify matching structural code patterns from the `<vulnerability_pattern_tags>` vocabulary. Do NOT invent new tags here.
+2. **External Protocols (`detected_protocols`)**: Identify every external protocol this contract interacts with by reading its `import` statements, contract inheritance, or interface usage (e.g., Uniswap, Chainlink, Aave, Compound). You may use names from `<suggested_protocol_names>` or type the name directly if it's missing from the vocabulary.
 </step>
 
 <step id="2" title="Submit">
-Call submit_findings with contract_tags (map of relative file path to tag list). Use {{}} / [] if genuinely nothing applies — do not force tags onto a
-contract to have something to report.
+Call submit_findings with both `contract_tags` and `detected_protocols`. Use empty objects if nothing applies.
 </step>
 </task>
 
 <rules>
-<rule>Only use tag ids from the vocabulary above, verbatim. Any tag not in that exact list will be rejected and you'll need to resubmit.</rule>
-<rule>Be conservative: a tag reflects something you directly observed, not a hunch. Under-tagging means a later step won't investigate something that turned out to be safe anyway. Over-tagging wastes real downstream investigation work on contracts that don't actually need it.</rule>
-<rule>Never state or imply that something IS vulnerable. That is not this step's job and you do not have the context to judge it reliably — you are marking the presence of a pattern, nothing more.</rule>
+<rule>Vulnerability tags inside contract_tags must strictly match the vocabulary provided. Custom or invented vulnerability tags will be rejected.</rule>
+<rule>detected_protocols is open-ended. Identify third-party systems directly via imports or interfaces in the code. Do NOT rely on documentation or READMEs; read the source files.</rule>
+<rule>Never state or imply that something IS vulnerable. You are marking the presence of a pattern/integration, nothing more.</rule>
 <rule>Do not write, run, or reference exploit code, PoCs, or attack sequences in this step under any circumstance.</rule>
 </rules>
 
