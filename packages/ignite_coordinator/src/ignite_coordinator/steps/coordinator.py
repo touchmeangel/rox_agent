@@ -224,72 +224,6 @@ def _fmt_candidate(i: int, c: _Candidate) -> str:
 
     return "\n".join(lines)
 
-
-def _fmt_context_summary(context: dict) -> str:
-    sections: list[str] = []
-
-    doc = context.get("documentation", {})
-    if doc.get("success"):
-        findings = doc.get("findings", {})
-        sections.append(
-            "<documentation>\n"
-            f"  <summary>{findings.get('protocol_summary', '(none)')}</summary>\n"
-            f"  <solc_version>{findings.get('solc_version', '?')}</solc_version>\n"
-            f"  <contract_count>{len(findings.get('contract_risk_matrix', []))}</contract_count>\n"
-            "</documentation>"
-        )
-
-    semantic = context.get("semantic_tagging", {})
-    if semantic.get("success"):
-        sf = semantic.get("findings", {})
-        tagged = sf.get("semantic_tags", {})
-        total_tags = sum(len(v) for v in tagged.values())
-        sections.append(
-            "<semantic_tagging>\n"
-            f"  <tagged_contract_count>{len(tagged)}</tagged_contract_count>\n"
-            f"  <total_tag_assignments>{total_tags}</total_tag_assignments>\n"
-            "</semantic_tagging>"
-        )
-
-    fork = context.get("fork_analysis", {})
-    if fork.get("success"):
-        f = fork.get("findings", {})
-        if f.get("is_fork"):
-            up = f.get("upstream") or {}
-            sections.append(
-                "<fork_analysis>\n"
-                f"  <upstream_protocol>{up.get('protocol', '?')}</upstream_protocol>\n"
-                f"  <base_commit>{up.get('base_commit', '?')}</base_commit>\n"
-                f"  <modified_file_count>{len(f.get('modified_files', []))}</modified_file_count>\n"
-                "</fork_analysis>"
-            )
-
-    audit_delta = context.get("audit_delta", {})
-    if audit_delta.get("success"):
-        a = audit_delta.get("findings", {})
-        if a.get("audit_found"):
-            sections.append(
-                "<audit_delta>\n"
-                f"  <firm>{a['audit']['firm']}</firm>\n"
-                f"  <risk_level>{a['risk_level']}</risk_level>\n"
-                f"  <lines_changed_since_audit>+{a['insertions']}/-{a['deletions']}</lines_changed_since_audit>\n"
-                "</audit_delta>"
-            )
-
-    ki = context.get("known_issues", {})
-    if ki.get("success"):
-        checklists = ki.get("findings", {}).get("protocol_checklists", [])
-        total = sum(len(c["known_issues"]) for c in checklists)
-        sections.append(
-            "<known_issues>\n"
-            f"  <relevant_issue_count>{total}</relevant_issue_count>\n"
-            f"  <protocol_count>{len(checklists)}</protocol_count>\n"
-            "</known_issues>"
-        )
-
-    return "\n\n".join(sections) if sections else "<no_prior_context_available/>"
-
-
 _CONTEXT_KEYS = (
     "documentation",
     "static_analysis",
@@ -458,8 +392,6 @@ report_blocker, no report_failed, and no follow-up turn to add anything afterwar
     def initial_prompt_with_candidates(
         self, context: dict, candidates: list[_Candidate]
     ) -> str:
-        context_summary = _fmt_context_summary(context)
-
         candidates_section = "\n\n".join(
             _fmt_candidate(i, c) for i, c in enumerate(candidates)
         )
@@ -478,12 +410,6 @@ You do NOT confirm or reject findings.
 Your only responsibility is allocating worker time efficiently.
 
 </scope>
-
-<prior_step_context>
-
-{context_summary}
-
-</prior_step_context>
 
 <candidates
     total="{len(candidates)}"
@@ -649,35 +575,30 @@ def _build_missions(
         candidate = candidates[idx]
         knowledge = _build_knowledge(context, candidate)
 
-        semantic_hints: list[str] = []
-        for tag in candidate.matching_tags:
-            semantic_hints.extend(candidate.tag_evidence.get(tag, []))
-
         hints = list(
             dict.fromkeys(
                 [
-                    *semantic_hints,
                     *candidate.static_hints,
                     *candidate.known_issue_hints,
                     *(
-                        []
-                        if not candidate.audit_delta_hint
-                        else [candidate.audit_delta_hint]
+                        [candidate.audit_delta_hint]
+                        if candidate.audit_delta_hint
+                        else []
                     ),
                     *raw.get("hints", []),
                 ]
             )
         )
 
-        mission = Mission(
-            id=f"M-{uuid.uuid4().hex[:32].upper()}",
-            contract=candidate.contract,
-            vulnerability=candidate.descriptor.name,
-            descriptor=candidate.descriptor,
-            knowledge=knowledge,
-            hints=hints,
+        missions.append(
+            Mission(
+                id=f"M-{uuid.uuid4().hex[:32].upper()}",
+                contract=candidate.contract,
+                vulnerability=candidate.descriptor.name,
+                descriptor=candidate.descriptor,
+                knowledge=knowledge,
+                hints=hints,
+            )
         )
-
-        missions.append(mission)
 
     return missions
