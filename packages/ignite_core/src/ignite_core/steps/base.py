@@ -853,9 +853,9 @@ prefer completing the assigned objective.
 
 {self.reasoning_prompt()}
 
-{self.evidence_prompt()}
-
 {self.investigation_modes_prompt()}
+
+{self.evidence_prompt()}
 
 {self.tool_philosophy_prompt()}
 
@@ -867,6 +867,21 @@ prefer completing the assigned objective.
 
 {self.termination_criteria_prompt()}
 """
+
+    def prompt_sections(self) -> list[str]:
+        return [
+            self.identity_prompt(),
+            self.phase_scope_note(),
+            self.environment_prompt(),
+            self.reasoning_prompt(),
+            self.investigation_modes_prompt(),
+            self.evidence_prompt(),
+            self.tool_philosophy_prompt(),
+            self.planning_prompt(),
+            self.failure_recovery_prompt(),
+            self.completion_prompt(),
+            self.termination_criteria_prompt(),
+        ]
 
     def initial_prompt(
         self, context: dict, reporter: Reporter, debug_logger: DebugLogger
