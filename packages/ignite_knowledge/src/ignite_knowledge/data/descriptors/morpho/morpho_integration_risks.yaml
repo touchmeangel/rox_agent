@@ -1,0 +1,274 @@
+id: morpho_integration_risks
+name: Morpho Blue integration risks
+granularity: integration
+tags:
+  - morpho
+severity: high
+
+candidate_pattern: >
+  Contract calls into Morpho Blue's core interface (IMorpho) — supply,
+  borrow, withdraw, repay, supplyCollateral, withdrawCollateral, liquidate,
+  flashLoan, createMarket, or setAuthorization — or implements one of
+  Morpho's callback interfaces (IMorphoFlashLoanCallback,
+  IMorphoRepayCallback, IMorphoLiquidateCallback, IMorphoSupplyCallback).
+
+scenario: >
+  This contract integrates directly with Morpho Blue rather than a
+  higher-level, safer wrapper. Morpho Blue is intentionally minimal —
+  it pushes a lot of correctness responsibility onto the integrator:
+  exact share-math formulas, exact virtual-amount constants, exact
+  callback-sender checks, and exact liquidation input constraints. Getting
+  any of these subtly wrong doesn't usually look like an obvious bug — it
+  looks like a plausible-seeming custom implementation that diverges from
+  Morpho's actual behavior in a specific edge case (stale interest reads,
+  wrong rounding direction, an unchecked callback sender, bad debt
+  delta misattribution). Generic vault/lending-market descriptors do not
+  cover these, since they depend on Morpho's specific interface and
+  constants, not general lending-market patterns.
+
+exploitation_context: >
+  Typically surfaces either as (a) an integrator error that misapplies
+  Morpho's exact share-math or state-read semantics, producing an
+  incorrect risk, accounting, or repayment decision, or (b) a missing
+  msg.sender == address(MORPHO) check on an implemented callback, letting
+  a third party invoke it directly and manipulate the integration's
+  internal state through Morpho's own callback mechanism.
+
+references:
+  - "Cantina audit, finding 3.1.4 (first-borrower share inflation — background context; see note on property share-math-virtual-amounts)"
+  - "https://docs.morpho.org/morpho/concepts/morpho-blue"
+
+properties:
+  - id: market-exists-check
+    severity: low
+    check: >
+      createMarket() reverts if the market already exists. Verify the
+      integration handles this revert rather than assuming idempotent
+      market creation, or documents the expected behavior.
+
+  - id: irm-lltv-whitelist
+    severity: medium
+    check: >
+      Morpho only allows whitelisted IRMs and specific LLTV values;
+      createMarket() reverts on non-whitelisted values. Verify the
+      integration doesn't assume an arbitrary IRM/LLTV pair will succeed.
+
+  - id: market-params-immutable
+    severity: medium
+    check: >
+      Market params (IRM, LLTV, oracle, tokens) are immutable once a
+      market is created — a wrong parameter cannot be corrected, only a
+      new market created. Verify initialization guards against passing
+      wrong params, since there is no recovery path afterward.
+
+  - id: accrue-before-state-read
+    severity: high
+    check: >
+      All Morpho operations (borrow/repay/supply/withdraw/liquidate) call
+      accrueInterest internally, so reads immediately after any of these
+      are current — but a read taken before any operation this
+      transaction is stale. Verify any totalBorrowAssets/totalSupplyAssets
+      read used for a decision is either post-operation or explicitly
+      accrues interest first.
+
+  - id: borrow-shares-stable-vs-assets
+    severity: informational
+    check: >
+      balanceOfBorrowShares() and totalBorrowShares are stable without
+      accrueInterest — only the asset-denominated values go stale.
+      Verify the integration isn't forcing an unnecessary accrual for a
+      shares-only read, or conversely skipping one where an asset value
+      is actually needed.
+
+  - id: health-factor-accrue-first
+    severity: high
+    check: >
+      Any custom health-factor or liquidatability check built on top of
+      Morpho's state must accrue interest first — otherwise borrowed
+      amount is understated and a position looks healthier than it
+      actually is. Verify accrueInterest (or an operation that triggers
+      it) precedes any such check.
+
+  - id: share-math-virtual-amounts
+    severity: high
+    check: >
+      Any custom borrow share→asset conversion must replicate Morpho's
+      exact formula: mulDivUp(shares, totalBorrowAssets + 1,
+      totalBorrowShares + 1e6). Plain division rounds down (understating
+      debt) and drops the virtual offset — if this feeds a repayment
+      amount, the repay call leaves residual shares. Verify any
+      reimplemented conversion matches this exactly, including rounding
+      direction.
+
+  - id: supply-share-math-virtual-amounts
+    severity: high
+    check: >
+      Supply share math uses the same virtual-amount convention:
+      mulDivDown(assets, totalSupplyShares + 1e6, totalSupplyAssets + 1)
+      for deposits, mulDivUp(shares, totalSupplyAssets + 1,
+      totalSupplyShares + 1e6) for withdrawals. Verify any custom
+      supply-side conversion uses the correct rounding direction for each
+      operation — the wrong direction favors one side on every call.
+
+  - id: dual-share-systems
+    severity: high
+    check: >
+      If the protocol has its own vault token on top of Morpho, Morpho's
+      internal supply/borrow shares are entirely separate from that vault
+      token's shares. Morpho's virtual amounts protect Morpho's own share
+      math — they do NOT protect the vault token's share math from its
+      own inflation attack. Verify the vault token has independent
+      inflation protection; do not assume Morpho's mitigation covers it.
+
+  - id: liquidate-input-exclusivity
+    severity: medium
+    check: >
+      MORPHO.liquidate() requires exactly ONE of seizedAssets or
+      repaidShares to be non-zero — passing both non-zero, or both zero,
+      reverts with "inconsistent input". Verify any wrapper enforces this
+      before calling into Morpho rather than relying on Morpho's revert
+      as the only guard.
+
+  - id: bad-debt-delta-accounting
+    severity: medium
+    check: >
+      In bad-debt scenarios, Morpho zeros the borrower's borrowShares and
+      reduces totalBorrowAssets/totalBorrowShares without the liquidator
+      paying the difference. A before/after delta on borrowShares
+      therefore mixes liquidator-paid shares with bad-debt-written-off
+      shares. Verify anything using this delta for fees, rewards, or
+      accounting separates the two rather than treating the whole delta
+      as liquidator-attributable.
+
+  - id: liquidate-hidden-side-effects
+    severity: high
+    check: >
+      liquidate() has two side effects beyond the seizure itself: bad-debt
+      socialization (reduces totalBorrowAssets AND totalSupplyAssets, so
+      lenders absorb the loss) and an internal accrueInterest call. Verify
+      any before/after measurement around a liquidate() call accounts for
+      both, not just the direct seize/repay amounts.
+
+  - id: liquidation-callback-preapproval
+    severity: medium
+    check: >
+      onMorphoLiquidate-style callbacks typically need to
+      safeTransferFrom(liquidator, router, repaidAssets) — Morpho has no
+      on-chain guard for this; a missing approval fails silently inside
+      Morpho's callback, reverting the whole transaction with no
+      informative message. Verify the integration checks or requires the
+      approval upfront, or surfaces a clear error before calling
+      liquidate().
+
+  - id: partial-liquidation-bad-debt
+    severity: medium
+    check: >
+      Bad debt only arises when ALL collateral is seized and debt remains
+      outstanding — a partial liquidation never creates bad debt by
+      itself. Verify the integration correctly handles (or explicitly
+      rejects) the case where a position can only be partially
+      liquidated, without assuming bad-debt-handling logic applies to
+      every liquidation.
+
+  - id: oracle-price-format
+    severity: high
+    check: >
+      Morpho's oracle interface returns price in the exact format
+      (loanToken / collateralToken) * 1e36. Verify any custom oracle
+      implementation or price consumer uses this exact scaling — an
+      off-by-one in the exponent silently produces a wrong collateral
+      valuation rather than an obvious revert.
+
+  - id: price-reentrancy-dos
+    severity: medium
+    check: >
+      Morpho staticcalls the oracle's price() internally during
+      borrow/withdrawCollateral/liquidate. Transient storage is readable
+      during staticcalls — if price() checks a reentrancy-guard flag and
+      that guard happens to be held when Morpho calls price(), the call
+      reverts and takes the entire Morpho operation down with it. Verify
+      no nonReentrant-guarded external-call path can leave the guard held
+      while a Morpho operation that triggers a price() staticcall is
+      reachable.
+
+  - id: price-zero-return-semantics
+    severity: medium
+    check: >
+      If price() can return 0 instead of reverting under some condition,
+      Morpho interprets that as zero collateral value, blocking all
+      borrows through that path. Verify any such 0-return path is
+      intentional and that the borrow path it's meant to gate actually
+      sets the required state first, rather than 0 being an unintended
+      fallback.
+
+  - id: callback-sender-check
+    severity: critical
+    check: >
+      All implemented Morpho callbacks (IMorphoFlashLoanCallback,
+      IMorphoRepayCallback, IMorphoLiquidateCallback, and
+      IMorphoSupplyCallback if implemented) must verify
+      msg.sender == address(MORPHO). Verify every implemented callback has
+      this check — a missing check lets anyone invoke the callback
+      directly and manipulate internal state.
+
+  - id: callback-data-untrusted
+    severity: medium
+    check: >
+      The bytes data passed into borrow/repay/flashLoan/liquidate is
+      returned verbatim in the corresponding callback — it was set by the
+      calling contract itself, not validated by Morpho. Verify no routing
+      or authorization logic inside a callback trusts this data as if
+      Morpho had validated it.
+
+  - id: flashloan-exact-repay
+    severity: high
+    check: >
+      MORPHO.flashLoan() pulls repayment via transferFrom at the end of
+      the callback. Verify the callback approves Morpho for exactly the
+      borrowed amount before returning — an insufficient or missing
+      approval fails the flash loan.
+
+  - id: set-authorization-bypass
+    severity: medium
+    check: >
+      Any account can authorize another to act on its behalf via
+      MORPHO.setAuthorization(). If the protocol's design relies on
+      positions being non-transferable or non-delegatable, this is a
+      bypass vector — verify the integration accounts for a user being
+      able to hand control of their Morpho position to another address.
+
+  - id: direct-morpho-call-bypass
+    severity: medium
+    check: >
+      If the protocol gates access through a router or wrapper (e.g. via
+      a price() check that depends on transient state the router sets),
+      verify that calling MORPHO's functions directly — bypassing the
+      router — is actually blocked, rather than assuming users can only
+      reach Morpho through the intended path.
+
+  - id: market-id-spoofing
+    severity: high
+    check: >
+      Morpho identifies markets by Id = keccak256(abi.encode(MarketParams)).
+      If any function accepts both a MarketParams struct and an Id as
+      separate inputs, verify Id == keccak256(abi.encode(params)) —
+      otherwise a caller can supply mismatched params and Id to target a
+      different market than intended.
+
+  - id: supply-collateral-transfer-auth
+    severity: medium
+    check: >
+      supplyCollateral pulls the collateral token via ERC20 transferFrom
+      into Morpho. If the collateral token has transfer restrictions,
+      verify the integration explicitly authorizes Morpho as a recipient
+      before calling supplyCollateral — otherwise the call reverts inside
+      the token, not obviously inside Morpho.
+
+  - id: seize-collateral-transfer-auth
+    severity: medium
+    check: >
+      During liquidation, Morpho transfers seized collateral to the
+      liquidator via a plain ERC20 transfer. If the collateral token
+      restricts transfers, verify this specific path is authorized —
+      otherwise every liquidation reverts at the final transfer, which can
+      silently make the position unliquidatable.

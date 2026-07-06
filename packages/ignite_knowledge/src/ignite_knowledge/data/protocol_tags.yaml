@@ -1,0 +1,9 @@
+protocol_tags:
+  - id: morpho
+    description: >
+      This contract directly integrates with Morpho Blue's core interface —
+      calling supply, borrow, withdraw, repay, supplyCollateral,
+      withdrawCollateral, liquidate, flashLoan, createMarket, or
+      setAuthorization on the Morpho contract itself, or implementing one of
+      its callback interfaces (IMorphoFlashLoanCallback,
+      IMorphoRepayCallback, IMorphoLiquidateCallback, IMorphoSupplyCallback).
