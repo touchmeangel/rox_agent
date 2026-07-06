@@ -1,6 +1,6 @@
 from ignite_coordinator.config import MODELS
 from ignite_coordinator.steps.audit_delta import AuditDeltaStep
-from ignite_coordinator.steps.coordinator import PlanningStep
+from ignite_coordinator.steps.planning import PlanningStep
 from ignite_coordinator.steps.documentation import DocumentationStep
 from ignite_coordinator.steps.fork_analysis import ForkAnalysisStep
 
