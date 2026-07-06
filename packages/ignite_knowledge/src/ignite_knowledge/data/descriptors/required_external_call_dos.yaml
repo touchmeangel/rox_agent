@@ -1,62 +1,42 @@
 id: required_external_call_dos
-
 name: Denial of Service via Required External Call
-
 granularity: function
-
 tags:
   - critical_external_call
 
 scenario: |
   The contract requires an external call to succeed in order to continue
-  execution.
-
-  If any recipient intentionally or unintentionally reverts, the entire
-  operation fails.
-
-  A malicious participant may permanently block withdrawals,
-  distributions, auctions, rewards, or protocol progress.
+  execution. If any recipient intentionally or unintentionally reverts,
+  the entire operation fails. A malicious participant may permanently
+  block withdrawals, distributions, auctions, rewards, or protocol
+  progress.
 
 properties:
   - id: mandatory_call_success
     check: |
       Look for external calls whose returned success value is enforced.
-
       Examples include:
-
-      require(success)
-
-      require(token.transfer(...))
-
-      require(token.transferFrom(...))
-
-      SafeERC20 operations that revert on failure.
-
+        require(success)
+        require(token.transfer(...))
+        require(token.transferFrom(...))
+        SafeERC20 operations that revert on failure.
       This is only a vulnerability when one failing recipient prevents
-      unrelated users from completing their own operations.
-
-      Individual user withdrawals reverting are expected behavior and
-      should not be reported.
-
+      unrelated users from completing their own operations. Individual
+      user withdrawals reverting are expected behavior and should not be
+      reported.
     confirm_with: |
       shell: rg "require\(success" src/ -n
-
       shell: rg "\.call\{" src/ -n
-
       shell: rg "safeTransfer|safeTransferFrom" src/ -n
-
       Determine whether a single malicious recipient can block progress
       for everyone else.
-
     severity: high
 
 exploitation_context: |
-  Write a malicious receiver contract that always reverts.
-
-  Verify whether interacting with that receiver prevents unrelated users
-  from successfully executing the vulnerable function.
-
-  If only the malicious user's own withdrawal fails, reject the finding.
+  Write a malicious receiver contract that always reverts. Verify whether
+  interacting with that receiver prevents unrelated users from
+  successfully executing the vulnerable function. If only the malicious
+  user's own withdrawal fails, reject the finding.
 
 references:
   - https://swcregistry.io/docs/SWC-113/
