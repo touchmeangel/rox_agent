@@ -224,7 +224,7 @@ class RichReporter(Reporter):
     ) -> None:
         self.window.feed(
             f"†  [dim]{from_model} failed "
-            f"({type(error).__name__}) → trying {to_model}[/dim]"
+            f"({type(error).__name__}) → trying {to_model}[/dim]\n"
         )
 
     def step_started(self, name: str) -> None:
