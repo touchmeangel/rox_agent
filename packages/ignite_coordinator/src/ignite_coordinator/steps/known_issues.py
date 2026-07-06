@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import lru_cache
-from pathlib import Path
 
 from ignite_core.debug_logger import DebugLogger
 from ignite_core.reporting import Reporter

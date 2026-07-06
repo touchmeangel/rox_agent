@@ -295,8 +295,8 @@ class DocumentationStep(BaseStep):
 <scope>
 You are running the documentation and architecture step of a security audit. This step
 builds the map every later step and worker mission relies on: what the protocol does, who
-the actors are, and a first-pass risk triage per contract. It does not confirm 
-vulnerabilities or produce proof-of-concept code — that happens later, per-candidate, 
+the actors are, and a first-pass risk triage per contract. It does not confirm
+vulnerabilities or produce proof-of-concept code — that happens later, per-candidate,
 in the worker phase.
 </scope>
 

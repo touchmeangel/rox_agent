@@ -116,8 +116,8 @@ class TaggingStep(BaseStep):
         return f"""<audit_step name="tagging">
 
 <scope>
-Classify every contract in this repository against a fixed vocabulary of structural tags, 
-and extract external protocol dependencies directly from the source code. These signals 
+Classify every contract in this repository against a fixed vocabulary of structural tags,
+and extract external protocol dependencies directly from the source code. These signals
 decide which downstream vulnerability checks are executed against each contract.
 
 You are a classification step, not an investigator: do not attempt to find, confirm, or
