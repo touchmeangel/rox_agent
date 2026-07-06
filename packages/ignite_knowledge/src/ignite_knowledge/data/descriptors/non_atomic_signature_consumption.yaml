@@ -5,7 +5,7 @@ name: Non-Atomic Signature Consumption
 granularity: contract
 
 tags:
-  - signature_based_authorization
+  - signature_authorized_action
 
 scenario: |
   The protocol separates signature consumption from the action that the

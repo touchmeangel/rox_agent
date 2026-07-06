@@ -5,7 +5,7 @@ name: Permit Front-Running Denial of Service
 granularity: contract
 
 tags:
-  - signature_based_authorization
+  - signature_authorized_action
 
 scenario: |
   The contract performs permit() immediately before another protocol
