@@ -294,8 +294,8 @@ _SUBMIT_SPEC: dict = {
 }
 
 
-class CoordinatorStep(BaseStep):
-    name = "coordinator"
+class PlanningStep(BaseStep):
+    name = "planning"
 
     def select_context(self, global_context: dict) -> dict:
         return {k: v for k, v in global_context.items() if k in _CONTEXT_KEYS}
@@ -562,7 +562,7 @@ def _build_missions(
         if idx is None or idx >= len(candidates):
             default_debug_logger.log_event(
                 "coordinator_invalid_candidate_index",
-                step=CoordinatorStep.name,
+                step=PlanningStep.name,
                 candidate_index=idx,
                 candidate_count=len(candidates),
             )

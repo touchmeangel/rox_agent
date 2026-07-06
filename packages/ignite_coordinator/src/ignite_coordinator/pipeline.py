@@ -1,6 +1,6 @@
 from ignite_coordinator.config import MODELS
 from ignite_coordinator.steps.audit_delta import AuditDeltaStep
-from ignite_coordinator.steps.coordinator import CoordinatorStep
+from ignite_coordinator.steps.coordinator import PlanningStep
 from ignite_coordinator.steps.documentation import DocumentationStep
 from ignite_coordinator.steps.fork_analysis import ForkAnalysisStep
 
@@ -46,7 +46,7 @@ PIPELINE: list[BaseStep] = [
     KnownIssuesStep(
         StepConfig(models=MODELS["reasoning"], max_iterations=48, max_web_calls=16)
     ),
-    CoordinatorStep(
+    PlanningStep(
         StepConfig(
             models=MODELS["reasoning"],
             max_iterations=64,
