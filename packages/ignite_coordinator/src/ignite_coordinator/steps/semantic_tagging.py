@@ -168,7 +168,7 @@ class SemanticTaggingStep(BaseStep):
 - Every assigned semantic tag should be supported by concrete observations from
   the implementation that can later be recorded as tag_evidence.
 """
-    )
+        )
 
     def initial_prompt(
         self, context: dict, reporter: Reporter, debug_logger: DebugLogger

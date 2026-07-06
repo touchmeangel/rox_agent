@@ -1,11 +1,13 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+
 @dataclass
 class InvestigationScope:
     contracts: list[str] = field(default_factory=list)
     entrypoints: list[str] = field(default_factory=list)
     ignore: list[str] = field(default_factory=list)
+
 
 @dataclass
 class RepositoryKnowledge:
@@ -17,6 +19,4 @@ class RepositoryKnowledge:
     previous_audits: list[dict[str, Any]] = field(default_factory=list)
     diff: dict[str, Any] | None = None
     fork: dict[str, Any] | None = None
-    investigation_scope: InvestigationScope = field(
-        default_factory=InvestigationScope
-    )
+    investigation_scope: InvestigationScope = field(default_factory=InvestigationScope)

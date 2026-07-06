@@ -80,12 +80,9 @@ def _candidates_for_context(context: dict) -> list[_Candidate]:
                     descriptor=descriptor,
                     matching_tags=sorted(matching),
                     tag_evidence={
-                        tag: contract_evidence.get(tag, [])
-                        for tag in sorted(matching)
+                        tag: contract_evidence.get(tag, []) for tag in sorted(matching)
                     },
-                    detected_protocols=detected_protocols_by_contract.get(
-                        contract, []
-                    ),
+                    detected_protocols=detected_protocols_by_contract.get(contract, []),
                     static_hints=static_hints,
                     known_issue_hints=ki_hints,
                     audit_delta_hint=delta_hint,
@@ -184,9 +181,7 @@ def _fmt_candidate(i: int, c: _Candidate) -> str:
 
     if c.detected_protocols:
         lines.append("  <protocols>")
-        lines.extend(
-            f"    <protocol>{p}</protocol>" for p in c.detected_protocols
-        )
+        lines.extend(f"    <protocol>{p}</protocol>" for p in c.detected_protocols)
         lines.append("  </protocols>")
 
     lines.extend(
@@ -201,7 +196,7 @@ def _fmt_candidate(i: int, c: _Candidate) -> str:
     for prop in getattr(c.descriptor, "properties", []):
         lines.append(
             f'    <property id="{prop["id"]}">'
-            f'{prop.get("check", "").strip()[:300]}'
+            f"{prop.get('check', '').strip()[:300]}"
             "</property>"
         )
 
@@ -223,6 +218,7 @@ def _fmt_candidate(i: int, c: _Candidate) -> str:
     lines.append("</candidate>")
 
     return "\n".join(lines)
+
 
 _CONTEXT_KEYS = (
     "documentation",

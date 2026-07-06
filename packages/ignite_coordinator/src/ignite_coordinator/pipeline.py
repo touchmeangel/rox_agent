@@ -6,8 +6,8 @@ from ignite_coordinator.steps.fork_analysis import ForkAnalysisStep
 
 # from ignite_coordinator.steps.invariant_testing import InvariantTestingStep
 from ignite_coordinator.steps.known_issues import KnownIssuesStep
-from ignite_coordinator.steps.static_analysis import StaticAnalysisStep
 from ignite_coordinator.steps.semantic_tagging import SemanticTaggingStep
+from ignite_coordinator.steps.static_analysis import StaticAnalysisStep
 from ignite_coordinator.steps.test_coverage import TestCoverageStep
 from ignite_core.steps.base import BaseStep
 from ignite_core.steps.config import StepConfig

@@ -29,7 +29,9 @@ def load_descriptors() -> list[Descriptor]:
         seen_ids.add(descriptor_id)
 
         if not raw.get("name", "").strip():
-            raise ValueError(f"Descriptor {descriptor_id!r} ({path}) has an empty name.")
+            raise ValueError(
+                f"Descriptor {descriptor_id!r} ({path}) has an empty name."
+            )
 
         if not raw.get("scenario", "").strip():
             raise ValueError(

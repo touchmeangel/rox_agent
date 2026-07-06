@@ -167,6 +167,7 @@ If the failure is unfamiliar, investigate the exact error message rather than gu
 
     return "\n".join(parts)
 
+
 class BaseStep:
     name: str = "base"
 
@@ -178,7 +179,7 @@ class BaseStep:
 
     def select_context(self, global_context: dict) -> dict:
         return global_context
-    
+
     def identity_prompt(self) -> str:
         return """<identity>
 
