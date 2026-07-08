@@ -4,6 +4,8 @@ import argparse
 import json
 from datetime import datetime
 from pathlib import Path
+from dataclasses import fields, is_dataclass
+from typing import get_args, get_origin, Union
 
 from ignite_core.debug_logger import default_debug_logger
 from ignite_core.mission import Mission
@@ -12,6 +14,7 @@ from ignite_core.steps.base import StepResult
 from ignite_core.workflow import Workflow
 from ignite_knowledge.descriptor import Descriptor
 from ignite_worker.pipeline import PIPELINE
+
 from rich.console import Console
 
 console = Console()
@@ -50,6 +53,47 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(output, indent=2))
 
+def from_dict(cls, data):
+    if data is None:
+        return None
+
+    if not is_dataclass(cls):
+        return data
+
+    kwargs = {}
+
+    for field in fields(cls):
+        value = data.get(field.name)
+        typ = field.type
+
+        origin = get_origin(typ)
+
+        if is_dataclass(typ):
+            kwargs[field.name] = from_dict(typ, value)
+
+        elif origin is list:
+            inner = get_args(typ)[0]
+            if is_dataclass(inner):
+                kwargs[field.name] = [from_dict(inner, v) for v in value]
+            else:
+                kwargs[field.name] = value
+
+        elif origin is dict:
+            kwargs[field.name] = value
+
+        elif origin is Union:
+            args = [a for a in get_args(typ) if a is not type(None)]
+            if len(args) == 1 and is_dataclass(args[0]):
+                kwargs[field.name] = (
+                    None if value is None else from_dict(args[0], value)
+                )
+            else:
+                kwargs[field.name] = value
+
+        else:
+            kwargs[field.name] = value
+
+    return cls(**kwargs)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -118,14 +162,7 @@ def main():
             f"mission id '{args.mission_id}' not found in {args.missions_file}"
         )
 
-    mission = Mission(
-        id=mission_data["id"],
-        contract=mission_data["contract"],
-        vulnerability=mission_data["vulnerability"],
-        descriptor=Descriptor(**mission_data["descriptor"]),
-        knowledge=RepositoryKnowledge(**mission_data["knowledge"]),
-        hints=mission_data["hints"],
-    )
+    mission = from_dict(Mission, mission_data)
 
     workflow = Workflow(PIPELINE)
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import fields, is_dataclass
+from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -114,31 +114,20 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _to_jsonable(obj: Any) -> Any:
-    if obj is None or isinstance(obj, (str, int, float, bool)):
-        return obj
+def to_jsonable(obj):
+    if is_dataclass(obj):
+        return to_jsonable(asdict(obj))
 
     if isinstance(obj, Enum):
         return obj.value
 
-    if isinstance(obj, (list, tuple, set)):
-        return [_to_jsonable(v) for v in obj]
-
     if isinstance(obj, dict):
-        return {str(k): _to_jsonable(v) for k, v in obj.items()}
+        return {k: to_jsonable(v) for k, v in obj.items()}
 
-    if is_dataclass(obj) and not isinstance(obj, type):
-        return {f.name: _to_jsonable(getattr(obj, f.name)) for f in fields(obj)}
+    if isinstance(obj, (list, tuple)):
+        return [to_jsonable(v) for v in obj]
 
-    as_dict_method = getattr(obj, "as_dict", None)
-    if callable(as_dict_method):
-        return _to_jsonable(as_dict_method())
-
-    obj_dict = getattr(obj, "__dict__", None)
-    if obj_dict is not None:
-        return _to_jsonable(obj_dict)
-
-    return str(obj)
+    return obj
 
 
 def _missions_from_findings(findings: dict) -> list[Any]:
@@ -154,7 +143,7 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
 
     output = {
         "generated_at": datetime.now().isoformat(),
-        "missions": _to_jsonable(all_missions),
+        "missions": to_jsonable(all_missions),
         "steps": {
             name: {
                 "success": r.success,
@@ -170,7 +159,7 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
 
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(_to_jsonable(output), indent=2))
+    path.write_text(json.dumps(to_jsonable(output), indent=2))
 
 
 def main():
