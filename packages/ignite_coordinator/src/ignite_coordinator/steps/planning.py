@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+import uuid
 import json
 from dataclasses import dataclass
 
@@ -7,6 +9,8 @@ from ignite_core.debug_logger import DebugLogger, default_debug_logger
 from ignite_core.reporting import Reporter, RichReporter
 from ignite_core.rolling_window import RollingWindow
 from ignite_core.steps.base import BaseStep, StepResult
+from ignite_core.mission import Mission
+from ignite_core.repository_knowlage import InvestigationScope, RepositoryKnowledge
 from ignite_knowledge.descriptor import Descriptor
 from ignite_knowledge.descriptors import load_descriptors
 
@@ -352,23 +356,27 @@ report_blocker, no report_failed, and no follow-up turn to add anything afterwar
                 raw = json.loads(turn.text)
             except json.JSONDecodeError:
                 pass
-        missions_created = len(raw.get("missions", []))
+
+        missions = _build_missions(
+            raw.get("missions", []), candidates, context, self.name
+        )
+        skipped = raw.get("skipped", [])
 
         default_debug_logger.log_event(
             "step_complete",
             step=self.name,
             iteration=1,
-            missions_created=missions_created,
-            skipped=len(raw.get("skipped", [])),
+            missions_created=len(missions),
+            skipped=len(skipped),
         )
 
         return StepResult(
             step_name=self.name,
             success=True,
-            findings=raw,
+            findings={"missions": missions, "skipped": skipped},
             summary=(
-                f"Created {missions_created} mission(s) from {len(candidates)} candidates "
-                f"({len(raw.get('skipped', []))} skipped)."
+                f"Created {len(missions)} mission(s) from {len(candidates)} candidates "
+                f"({len(skipped)} skipped)."
             ),
             iterations_used=1,
         )
@@ -503,3 +511,83 @@ Avoid repeating the descriptor itself.
 - This is a single tool call with no follow-up.
 
 </rules>"""
+
+def _build_knowledge(context: dict, candidate: _Candidate) -> RepositoryKnowledge:
+    doc = context.get("documentation", {}).get("findings", {})
+    static = context.get("static_analysis", {}).get("findings", {})
+    fork = context.get("fork_analysis", {}).get("findings")
+    audit_delta = context.get("audit_delta", {}).get("findings")
+
+    previous_audits: list[dict[str, Any]] = []
+    if audit_delta and audit_delta.get("audit"):
+        previous_audits.append(audit_delta["audit"])
+
+    diff: dict[str, Any] | None = None
+    if audit_delta and audit_delta.get("diff_available"):
+        diff = {
+            "risk_level": audit_delta.get("risk_level"),
+            "changed_files": audit_delta.get("changed_files", []),
+            "diff_excerpt": audit_delta.get("diff_excerpt", ""),
+        }
+
+    risk_matrix = doc.get("contract_risk_matrix", [])
+    related = [
+        row["contract"]
+        for row in risk_matrix
+        if row.get("external_calls") and row.get("external_calls") != "None"
+    ]
+
+    return RepositoryKnowledge(
+        semantic_tags=candidate.matching_tags,
+        semantic_evidence=candidate.tag_evidence,
+        detected_protocols=candidate.detected_protocols,
+        documentation=doc,
+        static_analysis=static,
+        fork=fork,
+        previous_audits=previous_audits,
+        diff=diff,
+        investigation_scope=InvestigationScope(
+            contracts=[candidate.contract]
+            + [c for c in related if c != candidate.contract],
+            entrypoints=[],
+            ignore=[],
+        ),
+    )
+
+def _build_missions(
+    raw_missions: list[dict],
+    candidates: list[_Candidate],
+    context: dict,
+    step_name: str,
+) -> list[Mission]:
+    missions: list[Mission] = []
+    for raw in raw_missions:
+        idx = raw.get("candidate_index")
+        if not isinstance(idx, int) or idx < 0 or idx >= len(candidates):
+            default_debug_logger.log_event(
+                "coordinator_invalid_candidate_index",
+                step=step_name,
+                candidate_index=idx,
+                candidate_count=len(candidates),
+            )
+            continue
+
+        candidate = candidates[idx]
+        knowledge = _build_knowledge(context, candidate)
+
+        mission = Mission(
+            id=f"M-{uuid.uuid4().hex[:32].upper()}",
+            contract=candidate.contract,
+            vulnerability=candidate.descriptor.name,
+            descriptor=candidate.descriptor,
+            knowledge=knowledge,
+            hints=[
+                *candidate.static_hints,
+                *candidate.known_issue_hints,
+                *([] if not candidate.audit_delta_hint else [candidate.audit_delta_hint]),
+                *raw.get("hints", []),
+            ],
+        )
+        missions.append(mission)
+
+    return missions
