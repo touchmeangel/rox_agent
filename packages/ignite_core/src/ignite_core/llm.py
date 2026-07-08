@@ -155,7 +155,7 @@ class LLMClient:
                     messages=messages,
                     response="",
                     duration_s=time.time() - start,
-                    error=str(exc),
+                    error=repr(exc),
                 )
                 debug_logger.log_event(
                     "llm_call_error",
@@ -163,7 +163,7 @@ class LLMClient:
                     provider=cfg.provider,
                     model=cfg.model,
                     error_type=type(exc).__name__,
-                    error=str(exc),
+                    error=repr(exc),
                 )
                 last_exc = exc
 
