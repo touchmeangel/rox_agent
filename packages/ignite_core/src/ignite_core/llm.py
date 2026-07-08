@@ -170,15 +170,8 @@ class LLMClient:
                 if remaining:
                     if _is_transient(exc):
                         continue
-                    # Non-transient error with models still left in the pool:
-                    # surface it immediately, raw, since it's not a
-                    # capacity/availability problem — it's a real bug.
                     raise
 
-                # Pool exhausted — every configured model has now been tried
-                # and failed. Raise one clean, catchable error instead of
-                # letting the last provider's raw exception (e.g. a bare
-                # openai.RateLimitError) propagate uncaught to main().
                 debug_logger.log_event(
                     "alloy_pool_exhausted",
                     step=step_name,
@@ -193,8 +186,6 @@ class LLMClient:
                     f"Last error ({type(exc).__name__}): {exc}"
                 ) from exc
 
-        # Unreachable: the while-loop above always either returns a turn or
-        # raises before falling through here.
         raise RuntimeError("Alloy pool exhausted") from last_exc
 
     @staticmethod
