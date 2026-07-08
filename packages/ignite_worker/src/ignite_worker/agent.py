@@ -2,19 +2,16 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import fields, is_dataclass
 from datetime import datetime
 from pathlib import Path
-from dataclasses import fields, is_dataclass
-from typing import get_args, get_origin, Union
+from typing import Union, get_args, get_origin
 
 from ignite_core.debug_logger import default_debug_logger
 from ignite_core.mission import Mission
-from ignite_core.repository_knowlage import RepositoryKnowledge
 from ignite_core.steps.base import StepResult
 from ignite_core.workflow import Workflow
-from ignite_knowledge.descriptor import Descriptor
 from ignite_worker.pipeline import PIPELINE
-
 from rich.console import Console
 
 console = Console()
@@ -52,6 +49,7 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(output, indent=2))
+
 
 def from_dict(cls, data):
     if data is None:
@@ -94,6 +92,7 @@ def from_dict(cls, data):
             kwargs[field.name] = value
 
     return cls(**kwargs)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(

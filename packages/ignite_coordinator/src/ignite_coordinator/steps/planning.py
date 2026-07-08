@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from typing import Any
-import uuid
 import json
+import uuid
 from dataclasses import dataclass
+from typing import Any
 
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
+from ignite_core.mission import Mission
 from ignite_core.reporting import Reporter, RichReporter
+from ignite_core.repository_knowlage import InvestigationScope, RepositoryKnowledge
 from ignite_core.rolling_window import RollingWindow
 from ignite_core.steps.base import BaseStep, StepResult
-from ignite_core.mission import Mission
-from ignite_core.repository_knowlage import InvestigationScope, RepositoryKnowledge
 from ignite_knowledge.descriptor import Descriptor
 from ignite_knowledge.descriptors import load_descriptors
 
@@ -512,6 +512,7 @@ Avoid repeating the descriptor itself.
 
 </rules>"""
 
+
 def _build_knowledge(context: dict, candidate: _Candidate) -> RepositoryKnowledge:
     doc = context.get("documentation", {}).get("findings", {})
     static = context.get("static_analysis", {}).get("findings", {})
@@ -554,6 +555,7 @@ def _build_knowledge(context: dict, candidate: _Candidate) -> RepositoryKnowledg
         ),
     )
 
+
 def _build_missions(
     raw_missions: list[dict],
     candidates: list[_Candidate],
@@ -584,7 +586,11 @@ def _build_missions(
             hints=[
                 *candidate.static_hints,
                 *candidate.known_issue_hints,
-                *([] if not candidate.audit_delta_hint else [candidate.audit_delta_hint]),
+                *(
+                    []
+                    if not candidate.audit_delta_hint
+                    else [candidate.audit_delta_hint]
+                ),
                 *raw.get("hints", []),
             ],
         )
