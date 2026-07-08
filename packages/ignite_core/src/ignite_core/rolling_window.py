@@ -41,7 +41,21 @@ class RollingWindow:
             self._spin_thread.join()
 
     def _animate_spinner(self):
-        frames = ["·", "*", "✷", "✸", "✹", "✺", "✹", "✸", "✷", "*"]
+        frames = [
+            "·",
+            "✦",
+            "✧",
+            "✲",
+            "✳",
+            "✴",
+            "❄",
+            "✴",
+            "✳",
+            "✲",
+            "✧",
+            "✦"
+        ]
+        
         i = 0
         while self._spinning:
             frame = frames[i % len(frames)]
