@@ -1,14 +1,10 @@
 from __future__ import annotations
 
 import json
-import uuid
 from dataclasses import dataclass
-from typing import Any
 
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
-from ignite_core.mission import Mission
 from ignite_core.reporting import Reporter, RichReporter
-from ignite_core.repository_knowlage import InvestigationScope, RepositoryKnowledge
 from ignite_core.rolling_window import RollingWindow
 from ignite_core.steps.base import BaseStep, StepResult
 from ignite_knowledge.descriptor import Descriptor
@@ -327,7 +323,7 @@ report_blocker, no report_failed, and no follow-up turn to add anything afterwar
                 success=True,
                 findings={"missions": [], "skipped": []},
                 summary="No tag-matched candidates found — no missions created.",
-                iterations_used=0
+                iterations_used=0,
             )
 
         with RollingWindow(max_lines=8) as window:
