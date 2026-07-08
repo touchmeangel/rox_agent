@@ -144,7 +144,6 @@ class LLMClient:
                     duration_s=time.time() - start,
                 )
                 return turn
-
             except Exception as exc:
                 reporter.stop_spinner()
                 debug_logger.log_llm_call(
@@ -154,6 +153,14 @@ class LLMClient:
                     messages=messages,
                     response="",
                     duration_s=time.time() - start,
+                    error=str(exc),
+                )
+                debug_logger.log_event(
+                    "llm_call_error",
+                    step=step_name,
+                    provider=cfg.provider,
+                    model=cfg.model,
+                    error_type=type(exc).__name__,
                     error=str(exc),
                 )
                 last_exc = exc
