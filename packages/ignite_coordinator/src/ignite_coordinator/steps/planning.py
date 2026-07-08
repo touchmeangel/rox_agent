@@ -327,8 +327,7 @@ report_blocker, no report_failed, and no follow-up turn to add anything afterwar
                 success=True,
                 findings={"missions": [], "skipped": []},
                 summary="No tag-matched candidates found — no missions created.",
-                iterations_used=0,
-                missions=[],
+                iterations_used=0
             )
 
         with RollingWindow(max_lines=8) as window:
@@ -357,14 +356,13 @@ report_blocker, no report_failed, and no follow-up turn to add anything afterwar
                 raw = json.loads(turn.text)
             except json.JSONDecodeError:
                 pass
-
-        missions = _build_missions(raw.get("missions", []), candidates, context)
+        missions_created = len(raw.get("missions", []))
 
         default_debug_logger.log_event(
             "step_complete",
             step=self.name,
             iteration=1,
-            missions_created=len(missions),
+            missions_created=missions_created,
             skipped=len(raw.get("skipped", [])),
         )
 
@@ -373,11 +371,10 @@ report_blocker, no report_failed, and no follow-up turn to add anything afterwar
             success=True,
             findings=raw,
             summary=(
-                f"Created {len(missions)} mission(s) from {len(candidates)} candidates "
+                f"Created {missions_created} mission(s) from {len(candidates)} candidates "
                 f"({len(raw.get('skipped', []))} skipped)."
             ),
             iterations_used=1,
-            missions=missions,
         )
 
     def initial_prompt(
@@ -510,91 +507,3 @@ Avoid repeating the descriptor itself.
 - This is a single tool call with no follow-up.
 
 </rules>"""
-
-
-def _build_knowledge(
-    context: dict,
-    candidate: _Candidate,
-) -> RepositoryKnowledge:
-    static = context.get("static_analysis", {}).get("findings", {})
-    fork = context.get("fork_analysis", {}).get("findings")
-    audit_delta = context.get("audit_delta", {}).get("findings")
-    documentation = context.get("documentation", {}).get("findings", {})
-
-    previous_audits: list[dict[str, Any]] = []
-    if audit_delta and audit_delta.get("audit"):
-        previous_audits.append(audit_delta["audit"])
-
-    diff = None
-    if audit_delta and audit_delta.get("diff_available"):
-        diff = {
-            "risk_level": audit_delta.get("risk_level"),
-            "changed_files": audit_delta.get("changed_files", []),
-            "diff_excerpt": audit_delta.get("diff_excerpt", ""),
-        }
-
-    investigation_scope = InvestigationScope(
-        contracts=[candidate.contract],
-    )
-
-    return RepositoryKnowledge(
-        semantic_tags=candidate.matching_tags,
-        semantic_evidence=candidate.tag_evidence,
-        detected_protocols=candidate.detected_protocols,
-        documentation=documentation,
-        static_analysis=static,
-        previous_audits=previous_audits,
-        diff=diff,
-        fork=fork,
-        investigation_scope=investigation_scope,
-    )
-
-
-def _build_missions(
-    raw_missions: list[dict],
-    candidates: list[_Candidate],
-    context: dict,
-) -> list[Mission]:
-    missions: list[Mission] = []
-
-    for raw in raw_missions:
-        idx = raw.get("candidate_index")
-        if idx is None or idx >= len(candidates):
-            default_debug_logger.log_event(
-                "coordinator_invalid_candidate_index",
-                step=PlanningStep.name,
-                candidate_index=idx,
-                candidate_count=len(candidates),
-            )
-            continue
-
-        candidate = candidates[idx]
-        knowledge = _build_knowledge(context, candidate)
-
-        hints = list(
-            dict.fromkeys(
-                [
-                    *candidate.static_hints,
-                    *candidate.known_issue_hints,
-                    *(
-                        [candidate.audit_delta_hint]
-                        if candidate.audit_delta_hint
-                        else []
-                    ),
-                    *raw.get("hints", []),
-                ]
-            )
-        )
-
-        missions.append(
-            Mission(
-                id=f"M-{uuid.uuid4().hex[:32].upper()}",
-                contract=candidate.contract,
-                vulnerability=candidate.descriptor.name,
-                descriptor=candidate.descriptor,
-                knowledge=knowledge,
-                hints=hints,
-            )
-        )
-
-    return missions

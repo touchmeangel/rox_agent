@@ -141,14 +141,20 @@ def _to_jsonable(obj: Any) -> Any:
     return str(obj)
 
 
+def _missions_from_findings(findings: dict) -> list[Any]:
+    if not isinstance(findings, dict):
+        return []
+    return findings.get("missions", []) or []
+
+
 def _write_results(results: dict[str, StepResult], output_path: str) -> None:
-    missions: list[Any] = []
+    all_missions: list[Any] = []
     for r in results.values():
-        missions.extend(getattr(r, "missions", []) or [])
+        all_missions.extend(_missions_from_findings(r.findings))
 
     output = {
         "generated_at": datetime.now().isoformat(),
-        "missions": _to_jsonable(missions),
+        "missions": _to_jsonable(all_missions),
         "steps": {
             name: {
                 "success": r.success,
@@ -157,7 +163,6 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
                 "findings": r.findings,
                 "plan": r.plan,
                 "blockers": r.blockers,
-                "missions": _to_jsonable(getattr(r, "missions", [])),
             }
             for name, r in results.items()
         },
