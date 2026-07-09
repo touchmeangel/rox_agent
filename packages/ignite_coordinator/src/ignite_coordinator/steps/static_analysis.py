@@ -89,37 +89,6 @@ def _extract_json(stdout: str) -> dict | None:
     return None
 
 
-def _is_hex_blob(text: str) -> bool:
-    sample = text.strip()[:200]
-    hex_chars = sum(1 for c in sample if c in "0123456789abcdefABCDEF")
-    return len(sample) > 20 and hex_chars / max(len(sample), 1) > 0.85
-
-
-def _clean_error(raw: str | None, max_chars: int = 400) -> str | None:
-    if not raw:
-        return None
-
-    text = raw.strip()
-
-    if _is_hex_blob(text):
-        return (
-            "Mythril output raw EVM bytecode instead of JSON. "
-            "This usually means solc failed to compile the target — "
-            "check solc version compatibility (`solc-select use <ver>`) "
-            "or ARM64/Rosetta issues with the solc binary."
-        )
-
-    lines = [line for line in text.splitlines() if line.strip()]
-
-    if lines and "Traceback (most recent call last)" in lines[0]:
-        return lines[-1] if lines else text
-
-    if len(text) > max_chars:
-        return "…" + text[-max_chars:]
-
-    return text
-
-
 def _run_prescan_tool(
     project_path: str,
     tool_name: str,
@@ -276,88 +245,6 @@ def _run_aderyn(
         debug_logger=debug_logger,
     )
 
-
-def _parse_mythril(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
-    if _is_hex_blob(stdout):
-        return PreScanResult(
-            tool_name="mythril",
-            success=False,
-            error=_clean_error(stdout),
-            stderr_tail=stderr[-1_000:].strip() or None,
-            exit_code=exit_code,
-        )
-
-    data = _extract_json(stdout)
-    if not data:
-        return PreScanResult(
-            tool_name="mythril",
-            success=False,
-            error="Mythril produced no parseable JSON output.",
-            stderr_tail=stderr[-1_000:].strip() or None,
-            exit_code=exit_code,
-        )
-
-    if data.get("success") is False:
-        return PreScanResult(
-            tool_name="mythril",
-            success=False,
-            error=_clean_error(data.get("error") or "Mythril reported failure."),
-            stderr_tail=stderr[-1_000:].strip() or None,
-            exit_code=exit_code,
-        )
-
-    detectors = []
-    for issue in data.get("issues", []):
-        filename = issue.get("filename") or ""
-
-        if filename and not filename.startswith("src/") and "/src/" not in filename:
-            continue
-
-        swc_id = str(issue.get("swc-id", ""))
-        severity = _SWC_SEVERITY.get(swc_id, issue.get("severity", "Medium"))
-        lineno = issue.get("lineno")
-        contract = issue.get("contract", "")
-        function = issue.get("function", "")
-
-        elements = []
-        if filename:
-            elements.append(
-                {
-                    "source_mapping": {
-                        "filename_short": Path(filename).name,
-                        "lines": [lineno] if lineno else [],
-                    }
-                }
-            )
-        elif contract:
-            elements.append({"contract_path": contract, "line_no": None})
-
-        title = issue.get("title", "")
-        desc = issue.get("description", "")
-        loc_note = (
-            f" [{contract}.{function}]"
-            if not filename and (contract or function)
-            else ""
-        )
-        detectors.append(
-            {
-                "check": f"SWC-{swc_id}" if swc_id else "mythril-finding",
-                "impact": severity,
-                "confidence": "Medium",
-                "description": f"{title}: {desc}{loc_note}".strip(": "),
-                "elements": elements,
-            }
-        )
-
-    return PreScanResult(
-        tool_name="mythril",
-        success=True,
-        detectors=detectors,
-        stderr_tail=stderr[-1_000:].strip() or None,
-        exit_code=exit_code,
-    )
-
-
 def _foundry_artifacts_shim(project_path: str) -> tuple[Path, bool]:
     project = Path(project_path)
     artifacts_dir = project / "artifacts"
@@ -395,36 +282,6 @@ def _clean_foundry_build_info(project_path: str) -> None:
             except Exception:
                 pass
 
-
-def _run_mythril(
-    project_path: str, reporter: Reporter, debug_logger: DebugLogger
-) -> PreScanResult:
-    project = Path(project_path)
-    if not (project / "foundry.toml").exists():
-        return PreScanResult(
-            tool_name="mythril",
-            success=False,
-            error="No foundry.toml found — myth foundry requires a Foundry project.",
-        )
-
-    _clean_foundry_build_info(project_path)
-    _, we_created_shim = _foundry_artifacts_shim(project_path)
-
-    try:
-        flags = "foundry -o json --max-depth 12"
-        return _run_prescan_tool(
-            project_path,
-            "myth",
-            flags,
-            _parse_mythril,
-            reporter=reporter,
-            debug_logger=debug_logger,
-        )
-    finally:
-        if we_created_shim:
-            _cleanup_artifacts_shim(project_path)
-
-
 def _fmt_result(result: PreScanResult, label: str) -> str:
     if not result.success:
         lines = [f"   {label} failed (exit {result.exit_code or '?'})."]
@@ -456,9 +313,6 @@ def _fmt_slither(result: PreScanResult) -> str:
 def _fmt_aderyn(result: PreScanResult) -> str:
     return _fmt_result(result, "Aderyn")
 
-
-def _fmt_mythril(result: PreScanResult) -> str:
-    return _fmt_result(result, "Mythril")
 
 
 def _fmt_detectors(detectors: list[dict]) -> str:
@@ -527,8 +381,7 @@ def _pre_scan_project(
 ) -> dict[str, PreScanResult]:
     return {
         "slither": _run_slither(project_path, reporter, debug_logger),
-        "aderyn": _run_aderyn(project_path, reporter, debug_logger),
-        "mythril": _run_mythril(project_path, reporter, debug_logger),
+        "aderyn": _run_aderyn(project_path, reporter, debug_logger)
     }
 
 
@@ -557,7 +410,7 @@ class StaticAnalysisStep(BaseStep):
                             "id": {"type": "string", "description": "e.g., SA-001"},
                             "origin": {
                                 "type": "string",
-                                "description": "slither | aderyn | mythril",
+                                "description": "slither | aderyn",
                             },
                             "check": {"type": "string"},
                             "severity": {
@@ -674,11 +527,9 @@ class StaticAnalysisStep(BaseStep):
 
         slither_result = pre_scan["slither"]
         aderyn_result = pre_scan["aderyn"]
-        mythril_result = pre_scan["mythril"]
 
         slither_section = _fmt_slither(slither_result)
         aderyn_section = _fmt_aderyn(aderyn_result)
-        mythril_section = _fmt_mythril(mythril_result)
 
         instructions = []
         if slither_result.success:
@@ -697,22 +548,13 @@ class StaticAnalysisStep(BaseStep):
         else:
             instructions.append("- Aderyn context collection failed or was partial.")
 
-        if mythril_result.success:
-            instructions.append(
-                "- Mythril completed symbolic execution. Prioritise its High/Medium SWC findings — generally lower false-positive rate than static tools."
-            )
-        else:
-            instructions.append(
-                "- Mythril did not complete successfully; treat its absence as a coverage gap for integer/assertion/delegatecall issues."
-            )
-
         tool_instructions = "\n".join(instructions)
 
         return f"""<audit_step name="static_analysis">
 
 <scope>
 You are running the static analysis triage step of a security audit. Your job is to sort
-raw analyzer output (Slither, Aderyn, Mythril) into signal and noise — not to fully verify
+raw analyzer output (Slither, Aderyn) into signal and noise — not to fully verify
 exploitability or produce proof-of-concept code. "Confirmed" in this step means "I read the
 flagged source and this pattern clearly holds," not "I traced and proved a working
 exploit." Everything you flag here is a candidate that a worker mission will later
@@ -729,10 +571,6 @@ and, if needed, demonstrate impact.
 
 <tool name="aderyn">
 {aderyn_section}
-</tool>
-
-<tool name="mythril">
-{mythril_section}
 </tool>
 
 <notes>
@@ -758,7 +596,7 @@ Pass this to submit_findings:
   "confirmed": [
     {{
       "id": "SA-001",
-      "origin": "slither | aderyn | mythril",
+      "origin": "slither | aderyn",
       "check": "reentrancy-eth",
       "severity": "critical | high | medium | low",
       "title": "Short title",
@@ -777,7 +615,7 @@ Pass this to submit_findings:
   "suspected": [
     {{
       "id": "SA-S01",
-      "origin": "slither | aderyn | mythril",
+      "origin": "slither | aderyn",
       "check": "optional",
       "title": "What looks suspicious",
       "location": {{

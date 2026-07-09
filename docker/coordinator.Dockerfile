@@ -62,8 +62,6 @@ RUN pip install --no-cache-dir \
     crytic-compile \
     git+https://github.com/touchmeangel/evm_decode_constructor
 
-RUN pip install --no-cache-dir "mythril==0.24.8"
-
 RUN npm install -g \
     solhint \
     surya

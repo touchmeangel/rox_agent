@@ -39,8 +39,6 @@ def _tool_display(tool_name: str, tool_input: dict) -> str:
             display = f"slither {tool_input.get('flags', './')}"
         case "aderyn":
             display = f"aderyn {tool_input.get('flags', '') or '.'}"
-        case "myth":
-            display = f"myth {tool_input.get('flags', '') or 'analyze ./'}"
         case "forge":
             display = f"forge {tool_input.get('subcommand', 'build')}"
         case "cast":
@@ -232,13 +230,6 @@ def aderyn(
 ) -> ToolResult:
     cmd_str = f"aderyn {flags}".strip() if flags else "aderyn"
     return run_command(cmd_str, cwd=project_path, timeout=180, reporter=reporter)
-
-
-def myth(
-    project_path: str, flags: str = "", reporter: Reporter | None = None
-) -> ToolResult:
-    cmd = f"myth {flags}".strip() if flags else "myth analyze ./"
-    return run_command(cmd, cwd=project_path, timeout=300, reporter=reporter)
 
 
 def cast(
@@ -807,37 +798,6 @@ TOOL_SPECS: list[dict] = [
         },
     },
     {
-        "name": "myth",
-        "description": (
-            "Run Mythril symbolic execution against specific Solidity files.\n\n"
-            "Unlike Slither/Aderyn, Mythril uses SMT-based symbolic execution so it "
-            "catches vulnerabilities that static pattern matching misses: integer "
-            "overflows/underflows, assertion violations, reachable selfdestruct or "
-            "delegatecall, and some reentrancy classes.\n\n"
-            "Always pass '-o json' for machine-readable results and "
-            "'--execution-timeout <n>' to avoid hanging on complex contracts.\n\n"
-            "Example flags:\n"
-            "  'analyze src/Vault.sol -o json --execution-timeout 60'\n"
-            "  'analyze src/A.sol src/B.sol -o json --execution-timeout 60 --max-depth 12'\n\n"
-            "NOTE: Mythril is slow. Keep the file list short and always set a timeout. "
-            "SWC-107 = reentrancy, SWC-101 = integer overflow, SWC-106 = selfdestruct, "
-            "SWC-112 = delegatecall — see swcregistry.io for the full list."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "flags": {
-                    "type": "string",
-                    "description": (
-                        "Full myth invocation after 'myth', e.g. "
-                        "'analyze src/Vault.sol -o json --execution-timeout 60'."
-                    ),
-                    "default": "",
-                }
-            },
-        },
-    },
-    {
         "name": "forge",
         "description": (
             "Run Foundry's forge. Use 'build' to confirm the project compiles before "
@@ -1142,7 +1102,6 @@ DISPATCHABLE_TOOL_NAMES: frozenset[str] = frozenset(spec["name"] for spec in TOO
 
 
 _STDOUT_LIMITS: dict[str, int] = {
-    "myth": 200_000,
     "slither": 200_000,
     "aderyn": 200_000,
 }
@@ -1181,10 +1140,6 @@ def dispatch(
                 )
             case "aderyn":
                 result = aderyn(
-                    project_path, tool_input.get("flags") or "", reporter=reporter
-                )
-            case "myth":
-                result = myth(
                     project_path, tool_input.get("flags") or "", reporter=reporter
                 )
             case "forge":
