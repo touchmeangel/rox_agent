@@ -46,7 +46,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 RUN mkdir -p /tmp/matplotlib_cache && chmod -R 777 /tmp/matplotlib_cache
 RUN mkdir -p /home/shared && chmod 777 /home/shared
 
-RUN curl -L https://foundry.paradigm.xyz | bash && foundryup
+RUN curl -L https://foundry.paradigm.xyz | bash \
+    && foundryup --install v1.7.1
 
 RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/cyfrin/aderyn/releases/latest/download/aderyn-installer.sh | bash \
     && mv /home/shared/.cargo/bin/aderyn /usr/local/bin/aderyn \
@@ -61,7 +62,7 @@ RUN pip install --no-cache-dir \
     crytic-compile \
     git+https://github.com/touchmeangel/evm_decode_constructor
 
-RUN pip install --no-cache-dir "mythril>=0.23.25"
+RUN pip install --no-cache-dir "mythril==0.24.8"
 
 RUN npm install -g \
     solhint \
