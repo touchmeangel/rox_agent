@@ -905,7 +905,10 @@ prefer completing the assigned objective.
                 "name": "submit_findings",
                 "description": (
                     "Finish this step successfully. Only call this once you've actually "
-                    "completed the task this step's instructions define."
+                    "completed the task this step's instructions define. Never call this "
+                    "with placeholder, empty, or minimal content just to see what the "
+                    "validation error says — read the schema and any worked example in "
+                    "the initial prompt and get it right on the first attempt."
                 ),
                 "input_schema": {
                     "type": "object",

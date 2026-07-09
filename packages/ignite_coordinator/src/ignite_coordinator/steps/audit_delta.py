@@ -283,6 +283,38 @@ or reference exploit code in this step.
 {prefetch_section}
 </audit_prefetch>
 
+<output_format>
+Pass this to submit_findings once:
+
+{{
+  "audit_found": true,
+  "audit": {{
+    "firm": "Trail of Bits",
+    "date": "2024-03-15",
+    "url": "https://github.com/trailofbits/publications/blob/master/reviews/2024-03-protocolx.pdf",
+    "audited_commit": "a1b2c3d4e5f6...",
+    "audited_version": "v1.2.0"
+  }},
+  "diff_available": true,
+  "changed_files": ["src/Vault.sol", "src/Oracle.sol"],
+  "insertions": 42,
+  "deletions": 11,
+  "diff_excerpt": "diff --git a/src/Vault.sol b/src/Vault.sol\\n@@ -120,7 +120,7 @@ function withdraw(...) {{\\n-    uint256 fee = amount * FEE_BPS / 10000;\\n+    uint256 fee = amount * FEE_BPS / 10_000;\\n...(raw diff content, max ~3000 chars, not prose)",
+  "risk_level": "medium",
+  "summary": "Trail of Bits audited commit a1b2c3d at v1.2.0 in March 2024. Since then, 2 files changed (42 insertions, 11 deletions), concentrated in Vault.sol's fee calculation and Oracle.sol's staleness check."
+}}
+
+If no audit is found (Scenario C), use the fallback baseline commit and set:
+{{
+  "audit_found": false,
+  "audit": null,
+  "diff_available": true,
+  ...
+  "risk_level": "none",
+  "summary": "No prior audit found via repo scan or web search (queries: ...). Diffing against root commit <hash> as fallback baseline."
+}}
+</output_format>
+
 <task>
 You MUST execute BOTH tracks below to find historical security records. Do not stop at track 1.
 

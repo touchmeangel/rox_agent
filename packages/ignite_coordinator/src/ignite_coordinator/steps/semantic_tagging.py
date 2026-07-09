@@ -231,6 +231,40 @@ Assign tags only when they are directly supported by the implementation.
 </contract_files>
 </pre_scan>
 
+<output_format>
+Pass this to submit_findings once, for ALL contracts at once — not incrementally:
+
+{{
+  "semantic_tags": {{
+    "src/Vault.sol": ["pooled_share_vault", "oracle_dependency"],
+    "src/MathLib.sol": []
+  }},
+
+  "tag_evidence": {{
+    "src/Vault.sol": {{
+      "pooled_share_vault": [
+        "deposit() mints shares via _convertToShares() using totalSupply/totalAssets ratio",
+        "totalAssets tracked in a single storage variable shared across all depositors"
+      ],
+      "oracle_dependency": [
+        "getPrice() calls IChainlinkAggregator(priceFeed).latestRoundData()",
+        "liquidate() reverts if price staleness check in _validatePrice() fails"
+      ]
+    }}
+  }},
+
+  "detected_protocols": {{
+    "src/Vault.sol": ["Chainlink"],
+    "src/MathLib.sol": []
+  }}
+}}
+
+Notes on the example above:
+- Every contract in <contract_files> gets an entry in semantic_tags, even if the list is empty ([]).
+- tag_evidence is only populated for contracts/tags that actually got tags — MathLib.sol has none, so it has no key in tag_evidence at all.
+- Each evidence array has 1-3 short, concrete observations — not vague restatements of the tag name.
+</output_format>
+
 <task>
 <step id="1" title="Read each contract">
 For every Solidity contract:

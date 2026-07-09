@@ -417,6 +417,48 @@ Your only responsibility is allocating worker time efficiently.
 
 </candidates>
 
+<output_format>
+
+Call submit_missions exactly once.
+
+Every candidate must appear exactly once.
+
+For every created mission provide:
+
+- candidate_index
+- property_ids ([] means investigate the full descriptor)
+- hints
+- rationale
+
+For every skipped candidate provide:
+
+- candidate_index
+- reason
+
+Example call:
+
+{{
+  "missions": [
+    {{
+      "candidate_index": 0,
+      "property_ids": [],
+      "hints": [
+        "SA-003 (suspected) already flags withdraw() at Vault.sol:120-140 for this same pattern",
+        "totalAssets is updated in a separate transaction from share minting — check ordering"
+      ],
+      "rationale": "Confirmed pooled_share_vault with a suspected static-analysis hit on the exact function; worth dedicated verification."
+    }}
+  ],
+  "skipped": [
+    {{
+      "candidate_index": 1,
+      "reason": "IVault.sol is a pure interface — no executable logic to investigate."
+    }}
+  ]
+}}
+
+</output_format>
+
 <task>
 
 Each candidate already passed semantic matching.
