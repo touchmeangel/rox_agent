@@ -59,7 +59,7 @@ class RollingWindow:
             "✶",
             "✦",
         ]
-        
+
         i = 0
         while self._spinning:
             frame = frames[i % len(frames)]

@@ -5,7 +5,6 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-import subprocess
 
 from ignite_core.debug_logger import DebugLogger
 from ignite_core.reporting import Reporter
@@ -336,7 +335,9 @@ def _parse_mythril(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
         title = issue.get("title", "")
         desc = issue.get("description", "")
         loc_note = (
-            f" [{contract}.{function}]" if not filename and (contract or function) else ""
+            f" [{contract}.{function}]"
+            if not filename and (contract or function)
+            else ""
         )
         detectors.append(
             {
@@ -355,6 +356,7 @@ def _parse_mythril(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
         stderr_tail=stderr[-1_000:].strip() or None,
         exit_code=exit_code,
     )
+
 
 def _foundry_artifacts_shim(project_path: str) -> tuple[Path, bool]:
     project = Path(project_path)
