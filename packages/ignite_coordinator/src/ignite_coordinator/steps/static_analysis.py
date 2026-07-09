@@ -5,6 +5,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+import subprocess
 
 from ignite_core.debug_logger import DebugLogger
 from ignite_core.reporting import Reporter
@@ -308,10 +309,17 @@ def _parse_mythril(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
 
     detectors = []
     for issue in data.get("issues", []):
+        filename = issue.get("filename") or ""
+
+        if filename and not filename.startswith("src/") and "/src/" not in filename:
+            continue
+
         swc_id = str(issue.get("swc-id", ""))
         severity = _SWC_SEVERITY.get(swc_id, issue.get("severity", "Medium"))
-        filename = issue.get("filename", "")
         lineno = issue.get("lineno")
+        contract = issue.get("contract", "")
+        function = issue.get("function", "")
+
         elements = []
         if filename:
             elements.append(
@@ -322,14 +330,20 @@ def _parse_mythril(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
                     }
                 }
             )
+        elif contract:
+            elements.append({"contract_path": contract, "line_no": None})
+
         title = issue.get("title", "")
         desc = issue.get("description", "")
+        loc_note = (
+            f" [{contract}.{function}]" if not filename and (contract or function) else ""
+        )
         detectors.append(
             {
                 "check": f"SWC-{swc_id}" if swc_id else "mythril-finding",
                 "impact": severity,
                 "confidence": "Medium",
-                "description": f"{title}: {desc}".strip(": "),
+                "description": f"{title}: {desc}{loc_note}".strip(": "),
                 "elements": elements,
             }
         )
@@ -342,37 +356,60 @@ def _parse_mythril(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
         exit_code=exit_code,
     )
 
+def _foundry_artifacts_shim(project_path: str) -> tuple[Path, bool]:
+    project = Path(project_path)
+    artifacts_dir = project / "artifacts"
+    contracts_link = artifacts_dir / "contracts"
+    out_dir = project / "out"
+
+    if contracts_link.exists():
+        # Real Hardhat artifacts, or a leftover shim — don't touch it.
+        return contracts_link, False
+
+    artifacts_dir.mkdir(exist_ok=True)
+    contracts_link.symlink_to(out_dir.resolve(), target_is_directory=True)
+    return contracts_link, True
+
+
+def _cleanup_artifacts_shim(project_path: str) -> None:
+    artifacts_dir = Path(project_path) / "artifacts"
+    contracts_link = artifacts_dir / "contracts"
+
+    if contracts_link.is_symlink():
+        contracts_link.unlink()
+
+    try:
+        artifacts_dir.rmdir()  # only succeeds if empty — safe by construction
+    except OSError:
+        pass
+
 
 def _run_mythril(
     project_path: str, reporter: Reporter, debug_logger: DebugLogger
 ) -> PreScanResult:
-    src_dir = Path(project_path) / "src"
-    if not src_dir.exists():
-        src_dir = Path(project_path)
-
-    sol_files = [
-        str(p)
-        for p in src_dir.rglob("*.sol")
-        if not any(part in _SKIP_DIRS for part in p.parts)
-    ]
-
-    if not sol_files:
+    project = Path(project_path)
+    if not (project / "foundry.toml").exists():
         return PreScanResult(
             tool_name="mythril",
             success=False,
-            error="No Solidity source files found to analyze",
+            error="No foundry.toml found — myth foundry requires a Foundry project.",
         )
 
-    flags = "analyze " + " ".join(sol_files) + " -o json --max-depth 12"
+    _, we_created_shim = _foundry_artifacts_shim(project_path)
 
-    return _run_prescan_tool(
-        project_path,
-        "myth",
-        flags,
-        _parse_mythril,
-        reporter=reporter,
-        debug_logger=debug_logger,
-    )
+    try:
+        flags = "foundry -o json --max-depth 12"
+        return _run_prescan_tool(
+            project_path,
+            "myth",
+            flags,
+            _parse_mythril,
+            reporter=reporter,
+            debug_logger=debug_logger,
+        )
+    finally:
+        if we_created_shim:
+            _cleanup_artifacts_shim(project_path)
 
 
 def _fmt_result(result: PreScanResult, label: str) -> str:
