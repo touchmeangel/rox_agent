@@ -395,6 +395,7 @@ def _clean_foundry_build_info(project_path: str) -> None:
             except Exception:
                 pass
 
+
 def _run_mythril(
     project_path: str, reporter: Reporter, debug_logger: DebugLogger
 ) -> PreScanResult:
