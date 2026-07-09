@@ -41,7 +41,6 @@ class Plan:
         ]
 
     def render_line(self) -> str:
-        """One-line compact summary, e.g. '◐ plan: 2/5 — Running slither on core contracts'."""
         if not self.items:
             return ""
         done, total = self.progress()
@@ -50,7 +49,6 @@ class Plan:
         return f"  plan {done}/{total}{tail}\n"
 
     def render_block(self) -> str:
-        """Multi-line checklist for the final summary / debug log."""
         lines = []
         for item in self.items:
             icon = _ICONS.get(item.status, "○")
