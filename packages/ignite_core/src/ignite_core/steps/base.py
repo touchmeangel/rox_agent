@@ -107,10 +107,9 @@ Focus on strengthening existing findings, resolving open plan items, and prepari
     return note
 
 
-def _tool_failure_hint(result, pacing_note: str) -> str:
+def _tool_failure_hint(result) -> str:
     parts = [
         f"TOOL FAILED (exit {result.returncode}).",
-        pacing_note,
         "",
     ]
 
@@ -714,6 +713,9 @@ the pipeline—not to answer every possible question yourself.
 
     def environment_prompt(self) -> str:
         return f"""Target Project Path: {self.project_path}
+Iteration Budget: {self.cfg.max_iterations} total iterations for this step. A
+budget update (iterations remaining, plan progress) is appended after every
+turn — use it to decide when to keep investigating versus synthesize and submit.
 
 You are executing inside a secure, isolated sandbox with unrestricted local
 permissions.
@@ -1264,8 +1266,6 @@ prefer completing the assigned objective.
                             search_state=search_state,
                         )
 
-                        pacing_note = _pacing_note(i + 1, self.cfg.max_iterations, plan)
-
                         if result.success:
                             last_failed_signature = None
                             consecutive_repeat_blocks = 0
@@ -1274,7 +1274,6 @@ prefer completing the assigned objective.
                                 "success": True,
                                 "stdout": result.stdout,
                                 "stderr": result.stderr,
-                                "system_note": pacing_note,
                             }
                             tool_results.append(
                                 ToolResultEntry(call.id, json.dumps(payload, indent=2))
@@ -1284,7 +1283,7 @@ prefer completing the assigned objective.
                             tool_results.append(
                                 ToolResultEntry(
                                     call.id,
-                                    _tool_failure_hint(result, pacing_note),
+                                    _tool_failure_hint(result),
                                     is_error=True,
                                 )
                             )
@@ -1294,7 +1293,9 @@ prefer completing the assigned objective.
                         terminal_result, messages, thinking_trace, blockers, plan
                     )
 
+                pacing_note = _pacing_note(i + 1, self.cfg.max_iterations, plan)
                 messages.append({"role": "tool_results", "results": tool_results})
+                messages.append({"role": "user", "content": pacing_note})
 
             default_debug_logger.log_event(
                 "step_iteration_limit",
