@@ -984,6 +984,16 @@ prefer completing the assigned objective.
         result.thinking_trace = thinking_trace
         result.blockers = blockers
         result.plan = plan.as_dicts()
+
+        if result.success:
+            open_items = [i for i in plan.items if i.status not in ("completed", "dropped")]
+            if open_items:
+                default_debug_logger.log_event(
+                    "plan_left_open",
+                    step=self.name,
+                    open_items=[{"content": i.content, "status": i.status} for i in open_items],
+                )
+
         return result
 
     def run(self, context: dict) -> StepResult:

@@ -3,9 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-Status = Literal["pending", "in_progress", "completed"]
-
-_ICONS = {"pending": "○", "in_progress": "◐", "completed": "●"}
+Status = Literal["pending", "in_progress", "completed", "dropped"]
+_ICONS = {"pending": "○", "in_progress": "◐", "completed": "●", "dropped": "✕"}
 
 
 @dataclass
@@ -71,6 +70,12 @@ UPDATE_PLAN_SPEC: dict = {
         "  - Never mark an item 'completed' if it's only partially done, if a check "
         "failed, or if you hit an unresolved error while doing it. Leave it "
         "'in_progress' (or split out a new item for the remaining work) instead.\n"
+        "  - If you decide not to pursue an item — superseded, no longer worth the "
+        "budget, merged into other work — mark it 'dropped' rather than leaving it "
+        "'pending' or 'in_progress'. Say briefly why in your summary.\n"
+        "  - Before calling submit_findings, report_blocker, or report_failed, make "
+        "sure your last update_plan call reflects the real end state: every item "
+        "should be 'completed' or 'dropped', not hanging as 'pending'/'in_progress'.\n"
         "  - Always pass the FULL current list — this call replaces the whole "
         "checklist, it does not patch a single item.\n"
         "  - It's fine to add newly-discovered work as new pending items as you go."
@@ -94,7 +99,7 @@ UPDATE_PLAN_SPEC: dict = {
                         },
                         "status": {
                             "type": "string",
-                            "enum": ["pending", "in_progress", "completed"],
+                            "enum": ["pending", "in_progress", "completed", "dropped"],
                         },
                     },
                     "required": ["content", "activeForm", "status"],
