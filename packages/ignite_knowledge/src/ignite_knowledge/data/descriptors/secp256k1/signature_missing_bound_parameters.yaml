@@ -1,0 +1,41 @@
+id: signature_missing_bound_parameters
+name: Signature Authorization Missing Critical Parameters
+granularity: contract
+tags:
+  - signature_authorized_action
+
+scenario: |
+  A signature only constrains what's actually inside the hash. If a function
+  takes parameters that affect the outcome (recipient address, token amount,
+  which token, a relayer/forwarder address) but some of those are NOT part of
+  the signed struct, whoever submits the transaction — not whoever signed it —
+  controls the excluded fields. A relayer or MEV searcher can then submit the
+  user's valid signature with a different recipient, larger amount, or
+  redirected destination than the user intended, and the contract has no way
+  to detect this because the signature still recovers to the correct signer.
+
+properties:
+  - id: unbound_execution_parameters
+    check: |
+      List every parameter the target function accepts and every state change it
+      makes. Cross-reference against the fields actually included in the
+      `abi.encode`/typed-struct hash. Any parameter that influences fund
+      destination, amount, or which asset is moved, but is absent from the signed
+      hash, is a vulnerability. Pay particular attention to a `recipient`/`to`
+      argument passed separately from the signed struct.
+    confirm_with: |
+      shell: rg "function .*\(.*bytes.*signature" src/ -n -A 15
+      Compare the function's full parameter list against the fields inside the
+      matching `abi.encode(...)` or EIP-712 struct definition.
+    severity: high
+
+exploitation_context: |
+  1. Have a legitimate user sign a payload authorizing action X with
+     recipient = their own address.
+  2. As the relayer/attacker, submit the transaction but pass a different
+     `recipient` argument (one not covered by the signature) pointing to the
+     attacker's address.
+  3. Assert the call succeeds and funds move to the attacker's address despite
+     the signer never having authorized that destination.
+references:
+  - https://swcregistry.io/docs/SWC-117/

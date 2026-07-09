@@ -7,3 +7,12 @@ protocol_tags:
       setAuthorization on the Morpho contract itself, or implementing one of
       its callback interfaces (IMorphoFlashLoanCallback,
       IMorphoRepayCallback, IMorphoLiquidateCallback, IMorphoSupplyCallback).
+  - id: openzeppelin_ecdsa
+    description: >
+      This contract imports and uses OpenZeppelin's ECDSA library —
+      via `using ECDSA for bytes32`, or direct calls to
+      `ECDSA.recover`, `ECDSA.tryRecover`, `ECDSA.toEthSignedMessageHash`,
+      or `ECDSA.toTypedDataHash` — rather than calling the raw `ecrecover`
+      precompile directly. Also matches contracts inheriting OpenZeppelin's
+      `EIP712` base contract, since it composes `ECDSA` internally for
+      `_hashTypedDataV4`.

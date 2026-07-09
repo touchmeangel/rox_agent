@@ -1,0 +1,48 @@
+id: outdated_or_misused_openzeppelin_ecdsa
+name: Outdated or Misused OpenZeppelin ECDSA Library
+granularity: contract
+tags:
+  - openzeppelin_ecdsa
+
+scenario: |
+  OpenZeppelin's ECDSA library has had real historical footguns, and even the
+  current version can be misused:
+    - Pre-4.1.3 (GHSA-4h98-2769-gh6h, 2021): `recover` did not fully validate
+      signature length/format on all code paths before v4.1.3, permitting a
+      malleability-adjacent bypass in specific integration patterns.
+    - `tryRecover` vs `recover`: newer OZ versions expose `tryRecover`, which
+      returns `(address(0), RecoverError, bytes32)` instead of reverting. If a
+      contract calls `tryRecover` but doesn't check the `RecoverError` enum
+      (or doesn't reject a zero-address result), it reintroduces the exact
+      same zero-address bypass class as raw `ecrecover` — just through a
+      "safe" library.
+    - Signature length: `recover(bytes32, bytes memory)` should enforce
+      exactly 65 bytes (or correctly branch for EIP-2098 64-byte compact
+      signatures). A custom wrapper that slices `r`/`s`/`v` out of a
+      variable-length byte array without checking `.length` first can read
+      out-of-bounds or attacker-influenced data as part of the signature.
+properties:
+  - id: ecdsa_library_version_or_misuse
+    check: |
+      Identify the OpenZeppelin contracts version in use (via lockfile / git
+      submodule commit / package.json). If < 4.1.3, flag the historical advisory
+      directly. Separately, regardless of version, check every `tryRecover` call
+      site for whether the `RecoverError` return is actually checked and whether
+      a zero-address result is rejected.
+    confirm_with: |
+      shell: rg "openzeppelin-contracts" foundry.lock package.json 2>/dev/null
+      shell: rg "import.*ECDSA(\.sol)?" src/ -n
+      shell: rg "tryRecover\(" src/ -A 6 -n
+      shell: rg "RecoverError" src/ -n
+    severity: high
+
+exploitation_context: |
+  1. If `tryRecover` is used without an error/zero-address check: craft a
+     malformed signature (wrong length or garbage bytes) so recovery fails.
+  2. Call the target function with this malformed signature.
+  3. If the target's "expected signer" state can ever be `address(0)`
+     (uninitialized, or a revoked-access pattern), assert the call succeeds —
+     proving the unchecked zero-address recovery bypassed authorization.
+references:
+  - https://github.com/OpenZeppelin/openzeppelin-contracts/security/advisories/GHSA-4h98-2769-gh6h
+  - https://docs.openzeppelin.com/contracts/4.x/api/utils#ECDSA

@@ -1,0 +1,40 @@
+id: missing_nonce_signature_replay
+name: Signature Replay via Missing or Non-Incrementing Nonce
+granularity: contract
+tags:
+  - signature_authorized_action
+
+scenario: |
+  Domain separators (contract + chainId) stop *cross*-contract replay, but do
+  nothing to stop the *same* signature being submitted to the *same* contract
+  twice. That requires a nonce: a value included in the signed hash that is
+  consumed (incremented or marked used) on first execution, so a second
+  submission of the identical signature hashes to something already spent.
+  Common breaks: no nonce at all; a nonce that exists but isn't included in
+  the signed payload; a nonce incremented *after* an external call (reentrancy
+  window where the same nonce can be consumed twice); or a nonce keyed
+  globally instead of per-signer, letting one user's replay-protection state
+  interfere with another's.
+
+properties:
+  - id: unbound_or_late_nonce
+    check: |
+      Find the signature-verification function. Confirm a nonce variable exists,
+      that it is part of the `abi.encode`/struct hash that gets signed (not just
+      checked separately after recovery), and that it is incremented/marked used
+      BEFORE any external call in the same function (checks-effects-interactions).
+    confirm_with: |
+      shell: rg "nonce" src/ -n
+      shell: rg "nonces\[|nonces\(|usedNonces" src/ -n
+      Trace whether the nonce write happens before or after any `.call(`,
+      `.transfer(`, `.send(`, or external interface call in the same function.
+    severity: critical
+
+exploitation_context: |
+  1. Obtain one valid signature for a state-changing action (e.g. a withdrawal).
+  2. Call the function once — confirm it succeeds.
+  3. Call the function again with the exact same signature and payload.
+  4. Assert the second call also succeeds, proving the same signature was
+     accepted twice.
+references:
+  - https://swcregistry.io/docs/SWC-121/

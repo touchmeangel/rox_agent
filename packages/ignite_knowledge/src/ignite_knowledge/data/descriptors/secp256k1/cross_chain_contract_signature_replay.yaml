@@ -16,18 +16,32 @@ scenario: |
 properties:
   - id: weak_message_hashing
     check: |
-      Examine the payload being hashed via `keccak256` before it is passed to 
-      `ecrecover`. If the hashed payload does not firmly include the current 
-      contract's address (`address(this)`) and the current network's chain ID 
+      Examine the payload being hashed via `keccak256` before it is passed to
+      `ecrecover`. If the hashed payload does not firmly include the current
+      contract's address (`address(this)`) and the current network's chain ID
       (`block.chainid`), it is vulnerable to cross-contract or cross-chain replay.
+
+      Also identify which signing scheme is used, since the domain-binding
+      requirement applies to both but the implementation differs:
+        - EIP-712 typed data: look for `_hashTypedDataV4`, `EIP712`, or a manually
+          constructed `DOMAIN_SEPARATOR` combined with a struct typehash. Verify
+          the typehash's fields exactly match what's actually encoded — a mismatch
+          between the declared typehash string and the actual `abi.encode` args is
+          a silent vulnerability (wrong data gets signed off as something else).
+        - Plain `eth_sign` / `personal_sign`: look for `toEthSignedMessageHash` or
+          a raw `"\x19Ethereum Signed Message:\n32"` prefix. This scheme has no
+          structured typing at all — every domain/nonce/deadline binding must be
+          manually baked into the pre-image, and there's no wallet-side warning
+          to the user about what they're signing (blind signing), which raises
+          the severity of any missing-field issue below.
+
     confirm_with: |
       shell: rg "keccak256\(abi\.encode" src/ -A 10 -n
-      Review the encoded parameters. 
       shell: rg "block\.chainid|address\(this\)" src/ -n
-      If the hashing logic lacks these two specific bindings, flag it. Be careful 
-      with cached `DOMAIN_SEPARATOR` variables in `constructor()` — if the chain 
-      forks, the cached `chainId` becomes stale, which is also a vulnerability.
-    severity: critical
+      shell: rg "_hashTypedDataV4|EIP712|DOMAIN_SEPARATOR" src/ -n
+      shell: rg "toEthSignedMessageHash|Ethereum Signed Message" src/ -n
+      If a `DOMAIN_SEPARATOR` is cached in `constructor()`, flag the stale-chainId-
+      on-fork issue separately (see cached_domain_separator_chain_fork below).
 
 exploitation_context: |
   Proving cross-chain replay in a single Foundry test requires simulating the 

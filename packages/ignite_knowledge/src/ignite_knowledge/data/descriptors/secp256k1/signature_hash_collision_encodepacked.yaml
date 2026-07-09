@@ -1,0 +1,37 @@
+id: signature_hash_collision_encodepacked
+name: Signature Hash Collision via abi.encodePacked with Dynamic Types
+granularity: contract
+tags:
+  - signature_authorized_action
+
+scenario: |
+  `abi.encodePacked` concatenates arguments with no padding or length
+  prefixes. When two or more dynamic-length arguments (`bytes`, `string`, or
+  dynamic arrays) are packed together, different sets of inputs can produce
+  identical byte output — e.g. `encodePacked("a", "bc")` equals
+  `encodePacked("ab", "c")`. If this packed value is what gets hashed and
+  signed, an attacker can shift data across a field boundary and produce a
+  different logical payload that hashes identically, making a signature valid
+  for content the signer never actually saw.
+
+properties:
+  - id: packed_dynamic_type_collision
+    check: |
+      Find `abi.encodePacked` calls feeding into a hash that's later checked
+      against a signature. Count how many dynamic-length arguments (bytes/string/
+      dynamic array) are present. Two or more is a collision risk; the fix is
+      `abi.encode` (which pads and disambiguates) or a fixed-order EIP-712 struct.
+    confirm_with: |
+      shell: rg "abi\.encodePacked" src/ -A 5 -n
+      Manually inspect each match for 2+ non-fixed-size arguments.
+    severity: high
+
+exploitation_context: |
+  1. Construct two different logical payloads (e.g. different string/bytes
+     splits) that produce the same `abi.encodePacked` output.
+  2. Have a legitimate signer sign payload A.
+  3. Submit payload B (the colliding alternative) with the signature from A.
+  4. Assert the contract accepts it as valid, proving the signer's actual
+     intent was not what got authorized.
+references:
+  - https://swcregistry.io/docs/SWC-133/
