@@ -245,6 +245,7 @@ def _run_aderyn(
         debug_logger=debug_logger,
     )
 
+
 def _foundry_artifacts_shim(project_path: str) -> tuple[Path, bool]:
     project = Path(project_path)
     artifacts_dir = project / "artifacts"
@@ -282,6 +283,7 @@ def _clean_foundry_build_info(project_path: str) -> None:
             except Exception:
                 pass
 
+
 def _fmt_result(result: PreScanResult, label: str) -> str:
     if not result.success:
         lines = [f"   {label} failed (exit {result.exit_code or '?'})."]
@@ -312,7 +314,6 @@ def _fmt_slither(result: PreScanResult) -> str:
 
 def _fmt_aderyn(result: PreScanResult) -> str:
     return _fmt_result(result, "Aderyn")
-
 
 
 def _fmt_detectors(detectors: list[dict]) -> str:
@@ -381,7 +382,7 @@ def _pre_scan_project(
 ) -> dict[str, PreScanResult]:
     return {
         "slither": _run_slither(project_path, reporter, debug_logger),
-        "aderyn": _run_aderyn(project_path, reporter, debug_logger)
+        "aderyn": _run_aderyn(project_path, reporter, debug_logger),
     }
 
 
