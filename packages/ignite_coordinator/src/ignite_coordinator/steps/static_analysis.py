@@ -386,6 +386,15 @@ def _cleanup_artifacts_shim(project_path: str) -> None:
         pass
 
 
+def _clean_foundry_build_info(project_path: str) -> None:
+    build_info_dir = Path(project_path) / "out" / "build-info"
+    if build_info_dir.exists():
+        for f in build_info_dir.glob("*.json"):
+            try:
+                f.unlink()
+            except Exception:
+                pass
+
 def _run_mythril(
     project_path: str, reporter: Reporter, debug_logger: DebugLogger
 ) -> PreScanResult:
@@ -397,6 +406,7 @@ def _run_mythril(
             error="No foundry.toml found — myth foundry requires a Foundry project.",
         )
 
+    _clean_foundry_build_info(project_path)
     _, we_created_shim = _foundry_artifacts_shim(project_path)
 
     try:
