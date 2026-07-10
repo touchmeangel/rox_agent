@@ -15,7 +15,7 @@ from ignite_core.steps.config import StepConfig
 # The active pipeline, using direct class references
 PIPELINE: list[BaseStep] = [
     DocumentationStep(
-        StepConfig(models=MODELS["reasoning"], max_iterations=32, max_web_calls=12)
+        StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=12)
     ),
     TestCoverageStep(
         StepConfig(
