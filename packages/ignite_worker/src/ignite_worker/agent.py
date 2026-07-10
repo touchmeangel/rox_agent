@@ -42,14 +42,38 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
                 "findings": r.findings,
                 "plan": r.plan,
                 "blockers": r.blockers,
+                "model_usage": r.model_usage,
             }
             for name, r in results.items()
         },
+        "usage_summary": _aggregate_usage(results),
     }
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(output, indent=2))
 
+def _aggregate_usage(results: dict[str, StepResult]) -> dict:
+    totals: dict[str, dict] = {}
+    for r in results.values():
+        for model, usage in (r.model_usage or {}).items():
+            entry = totals.setdefault(
+                model, {"calls": 0, "input_tokens": 0, "output_tokens": 0}
+            )
+            entry["calls"] += usage.get("calls", 0)
+            entry["input_tokens"] += usage.get("input_tokens", 0)
+            entry["output_tokens"] += usage.get("output_tokens", 0)
+
+    total_calls = sum(m["calls"] for m in totals.values())
+    total_tokens = sum(m["input_tokens"] + m["output_tokens"] for m in totals.values())
+
+    for m in totals.values():
+        m["total_tokens"] = m["input_tokens"] + m["output_tokens"]
+        m["pct_of_calls"] = round(100 * m["calls"] / total_calls, 2) if total_calls else 0.0
+        m["pct_of_tokens"] = (
+            round(100 * m["total_tokens"] / total_tokens, 2) if total_tokens else 0.0
+        )
+
+    return {"total_calls": total_calls, "total_tokens": total_tokens, "by_model": totals}
 
 def from_dict(cls, data):
     if data is None:

@@ -51,6 +51,12 @@ class ToolResultEntry:
 
 
 @dataclass
+class TokenUsage:
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+
+@dataclass
 class AssistantTurn:
     text: str = ""
     thinking: str | None = None
@@ -58,6 +64,8 @@ class AssistantTurn:
     tool_calls: list[ToolCall] = field(default_factory=list)
     stop_reason: str = ""
     raw: object = None
+    model: str = ""
+    usage: TokenUsage = field(default_factory=TokenUsage)
 
 
 class LLMClient:
@@ -145,6 +153,7 @@ class LLMClient:
                     response=_log_repr(turn),
                     duration_s=time.time() - start,
                 )
+                turn.model = cfg.model
                 return turn
             except Exception as exc:
                 reporter.stop_spinner()
@@ -281,6 +290,10 @@ class LLMClient:
             for b in final.content
             if b.type == "tool_use"
         ]
+        usage = TokenUsage(
+            input_tokens=getattr(final.usage, "input_tokens", 0) or 0,
+            output_tokens=getattr(final.usage, "output_tokens", 0) or 0,
+        )
         return AssistantTurn(
             text="".join(text_parts),
             thinking=thinking_joined or None,
@@ -288,6 +301,7 @@ class LLMClient:
             tool_calls=tool_calls,
             stop_reason=final.stop_reason or "",
             raw=[block.model_dump() for block in final.content],
+            usage=usage,
         )
 
     def _openai_with_tools(
@@ -316,6 +330,7 @@ class LLMClient:
             "tool_choice": "auto",
             "max_tokens": cfg.max_tokens,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
 
         if cfg.temperature:
@@ -332,11 +347,14 @@ class LLMClient:
         finish_reason = ""
         spinner_stopped = False
         thinking_box_open = False
+        usage_chunk = None
 
         for chunk in stream:
             if not spinner_stopped:
                 reporter.stop_spinner()
                 spinner_stopped = True
+            if getattr(chunk, "usage", None):
+                usage_chunk = chunk.usage
             if not chunk.choices:
                 continue
             choice = chunk.choices[0]
@@ -417,6 +435,14 @@ class LLMClient:
             raw_assistant_message["tool_calls"] = raw_tool_calls
 
         reasoning_joined = "".join(reasoning_parts)
+        usage = TokenUsage(
+            input_tokens=getattr(usage_chunk, "prompt_tokens", 0) or 0
+            if usage_chunk
+            else 0,
+            output_tokens=getattr(usage_chunk, "completion_tokens", 0) or 0
+            if usage_chunk
+            else 0,
+        )
         return AssistantTurn(
             text=text,
             thinking=reasoning_joined or None,
@@ -424,6 +450,7 @@ class LLMClient:
             tool_calls=tool_calls,
             stop_reason=finish_reason or "stop",
             raw=raw_assistant_message,
+            usage=usage,
         )
 
 

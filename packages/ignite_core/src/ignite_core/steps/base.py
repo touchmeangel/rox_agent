@@ -24,6 +24,7 @@ class StepResult:
     thinking_trace: list[str] = field(default_factory=list)
     blockers: list[dict] = field(default_factory=list)
     plan: list[dict] = field(default_factory=list)
+    model_usage: dict[str, dict] = field(default_factory=dict)
 
 
 _REPEAT_CALL_HINT = (
@@ -984,11 +985,13 @@ prefer completing the assigned objective.
         thinking_trace: list[str],
         blockers: list[dict],
         plan: Plan,
+        model_usage: dict[str, dict] | None = None,
     ) -> StepResult:
         result.messages = messages
         result.thinking_trace = thinking_trace
         result.blockers = blockers
         result.plan = plan.as_dicts()
+        result.model_usage = model_usage or {}
 
         if result.success:
             open_items = [
@@ -1026,6 +1029,15 @@ prefer completing the assigned objective.
             thinking_trace: list[str] = []
             blockers: list[dict] = []
             plan = Plan()
+            model_usage: dict[str, dict] = {}
+
+            def _record_usage(turn) -> None:
+                entry = model_usage.setdefault(
+                    turn.model, {"calls": 0, "input_tokens": 0, "output_tokens": 0}
+                )
+                entry["calls"] += 1
+                entry["input_tokens"] += turn.usage.input_tokens
+                entry["output_tokens"] += turn.usage.output_tokens
 
             last_failed_signature: tuple[str, str] | None = None
             consecutive_repeat_blocks = 0
@@ -1053,6 +1065,7 @@ prefer completing the assigned objective.
                     step_name=self.name,
                     show_thinking=True,
                 )
+                _record_usage(turn)
                 messages.append(
                     {
                         "role": "assistant",
@@ -1106,6 +1119,7 @@ prefer completing the assigned objective.
                             thinking_trace,
                             blockers,
                             plan,
+                            model_usage
                         )
 
                     messages.append({"role": "user", "content": _NUDGE_FINISH_PROMPT})
@@ -1297,7 +1311,7 @@ prefer completing the assigned objective.
 
                 if terminal_result is not None:
                     return self._finalize(
-                        terminal_result, messages, thinking_trace, blockers, plan
+                        terminal_result, messages, thinking_trace, blockers, plan, model_usage
                     )
 
                 pacing_note = _pacing_note(i + 1, self.cfg.max_iterations, plan)
@@ -1321,4 +1335,5 @@ prefer completing the assigned objective.
                 thinking_trace,
                 blockers,
                 plan,
+                model_usage
             )
