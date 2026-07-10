@@ -68,6 +68,7 @@ class AssistantTurn:
     account_key: str = ""
     usage: TokenUsage = field(default_factory=TokenUsage)
 
+
 class LLMClient:
     def __init__(self, chain: list[ModelConfig]):
         if not chain:

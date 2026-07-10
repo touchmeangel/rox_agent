@@ -1,5 +1,5 @@
-from collections.abc import Sequence
 import traceback
+from collections.abc import Sequence
 
 from ignite_core.debug_logger import default_debug_logger
 from ignite_core.reporting import Reporter, RichReporter

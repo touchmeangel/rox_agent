@@ -77,6 +77,7 @@ def print_welcome_banner():
     console.print(Panel(grid, box=box.ROUNDED, border_style="dim", padding=(1, 3)))
     console.print()
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="EVM Smart Contract Audit Agent | ignite"
@@ -165,6 +166,7 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(to_jsonable(output), indent=2))
 
+
 def _aggregate_usage(results: dict[str, StepResult]) -> dict:
     totals: dict[str, dict] = {}
     for r in results.values():
@@ -187,12 +189,19 @@ def _aggregate_usage(results: dict[str, StepResult]) -> dict:
 
     for m in totals.values():
         m["total_tokens"] = m["input_tokens"] + m["output_tokens"]
-        m["pct_of_calls"] = round(100 * m["calls"] / total_calls, 2) if total_calls else 0.0
+        m["pct_of_calls"] = (
+            round(100 * m["calls"] / total_calls, 2) if total_calls else 0.0
+        )
         m["pct_of_tokens"] = (
             round(100 * m["total_tokens"] / total_tokens, 2) if total_tokens else 0.0
         )
 
-    return {"total_calls": total_calls, "total_tokens": total_tokens, "by_model": totals}
+    return {
+        "total_calls": total_calls,
+        "total_tokens": total_tokens,
+        "by_model": totals,
+    }
+
 
 def main():
     args = parse_args()
@@ -205,7 +214,7 @@ def main():
 
     workflow = Workflow(PIPELINE)
     results: dict = {}
-    
+
     try:
         results = workflow.run(repo_path, work_path)
     except Exception:

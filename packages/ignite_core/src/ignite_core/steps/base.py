@@ -1033,7 +1033,13 @@ prefer completing the assigned objective.
 
             def _record_usage(turn) -> None:
                 entry = model_usage.setdefault(
-                    turn.account_key, {"model": turn.model, "calls": 0, "input_tokens": 0, "output_tokens": 0}
+                    turn.account_key,
+                    {
+                        "model": turn.model,
+                        "calls": 0,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                    },
                 )
                 entry["calls"] += 1
                 entry["input_tokens"] += turn.usage.input_tokens
@@ -1119,7 +1125,7 @@ prefer completing the assigned objective.
                             thinking_trace,
                             blockers,
                             plan,
-                            model_usage
+                            model_usage,
                         )
 
                     messages.append({"role": "user", "content": _NUDGE_FINISH_PROMPT})
@@ -1311,7 +1317,12 @@ prefer completing the assigned objective.
 
                 if terminal_result is not None:
                     return self._finalize(
-                        terminal_result, messages, thinking_trace, blockers, plan, model_usage
+                        terminal_result,
+                        messages,
+                        thinking_trace,
+                        blockers,
+                        plan,
+                        model_usage,
                     )
 
                 pacing_note = _pacing_note(i + 1, self.cfg.max_iterations, plan)
@@ -1335,5 +1346,5 @@ prefer completing the assigned objective.
                 thinking_trace,
                 blockers,
                 plan,
-                model_usage
+                model_usage,
             )
