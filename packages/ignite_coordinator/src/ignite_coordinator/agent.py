@@ -42,21 +42,24 @@ def print_welcome_banner():
     models_table.add_column(style="dim", no_wrap=True)
     models_table.add_column(style="dim", no_wrap=True)
 
+    all_entries: list[tuple[str, Any]] = []
     for key, cfg_list in MODELS.items():
         if not cfg_list:
             continue
+        for idx, model in enumerate(cfg_list):
+            all_entries.append((key if idx == 0 else "", model))
 
-        primary = cfg_list[0]
-        models_table.add_row(
-            f"[{color}]{key}[/{color}]", primary.model, f"({primary.provider})"
-        )
+    MAX_MODELS_SHOWN = 5
+    shown = all_entries[:MAX_MODELS_SHOWN]
+    remaining = len(all_entries) - len(shown)
 
-        for model in cfg_list[1:]:
-            models_table.add_row(
-                "",
-                f"[dim]{model.model}[/dim]",
-                f"[dim]({model.provider})[/dim]",
-            )
+    for label, model in shown:
+        prefix = f"[{color}]{label}[/{color}]" if label else ""
+        models_table.add_row(prefix, model.model, f"({model.provider})")
+
+    if remaining > 0:
+        plural = "s" if remaining != 1 else ""
+        models_table.add_row("", f"[dim]+{remaining} more model{plural}[/dim]", "")
 
     footer = Text.from_markup(
         f"\n[dim underline link={REPO_URL}]{REPO_URL.removeprefix('https://')}[/]\n"
@@ -73,7 +76,6 @@ def print_welcome_banner():
     console.print()
     console.print(Panel(grid, box=box.ROUNDED, border_style="dim", padding=(1, 3)))
     console.print()
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
