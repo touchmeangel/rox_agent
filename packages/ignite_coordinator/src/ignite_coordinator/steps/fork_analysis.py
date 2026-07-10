@@ -155,7 +155,8 @@ class ForkAnalysisStep(BaseStep):
 
     def validate_complete(self, findings: dict) -> str | None:
         if not isinstance(findings, dict):
-            return "findings must be a dict"
+            return "findings must be json object (python dict)"
+        
         if "is_fork" not in findings or not findings.get("summary"):
             return "missing 'is_fork' or 'summary'"
         if not findings["is_fork"]:

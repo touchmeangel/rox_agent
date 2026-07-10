@@ -216,7 +216,7 @@ class KnownIssuesStep(BaseStep):
 
     def validate_complete(self, findings: dict) -> str | None:
         if not isinstance(findings, dict):
-            return "the output should be json object (python dict)"
+            return "findings must be json object (python dict)"
 
         if not findings.get("summary"):
             return "summary is not set which is required"

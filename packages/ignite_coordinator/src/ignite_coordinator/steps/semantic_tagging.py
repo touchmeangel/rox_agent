@@ -80,6 +80,9 @@ class SemanticTaggingStep(BaseStep):
         }
 
     def validate_complete(self, findings: dict) -> str | None:
+        if not isinstance(findings, dict):
+            return "findings must be json object (python dict)"
+        
         valid_tag_ids = set(_vuln_tag_ids())
 
         semantic_tags = findings.get("semantic_tags")

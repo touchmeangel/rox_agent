@@ -160,7 +160,7 @@ class TestCoverageStep(BaseStep):
 
     def validate_complete(self, findings: dict) -> str | None:
         if not isinstance(findings, dict):
-            return "findings must be a dict"
+            return "findings must be json object (python dict)"
         required = {
             "has_tests",
             "coverage_run_success",

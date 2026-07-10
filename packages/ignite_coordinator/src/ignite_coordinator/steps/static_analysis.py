@@ -661,7 +661,7 @@ Pass this to submit_findings:
 
     def validate_complete(self, findings: dict) -> str | None:
         if not isinstance(findings, dict):
-            return "findings must be a dict"
+            return "findings must be json object (python dict)"
         required = {"confirmed", "suspected", "false_positives", "informational"}
         missing = required - findings.keys()
         if missing:
