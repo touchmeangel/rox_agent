@@ -47,6 +47,7 @@ _NUDGE_FINISH_PROMPT = (
     "Respond with a tool call only."
 )
 
+
 def _pacing_note(iterations_used: int, max_iterations: int, plan: Plan) -> str:
     remaining = max_iterations - iterations_used
     used_pct = int(100 * iterations_used / max_iterations) if max_iterations else 0
@@ -59,7 +60,9 @@ def _pacing_note(iterations_used: int, max_iterations: int, plan: Plan) -> str:
         done = sum(1 for t in todos if t.get("status") == "completed")
         total = len(todos)
         done_pct = int(100 * done / total) if total else 0
-        lines.append(f"Plan progress: {done}/{total} milestones completed ({done_pct}%).")
+        lines.append(
+            f"Plan progress: {done}/{total} milestones completed ({done_pct}%)."
+        )
         delta = used_pct - done_pct
     else:
         lines.append(
@@ -1042,7 +1045,9 @@ prefer completing the assigned objective.
                 if iterations_left <= 1:
                     tools = self._terminal_tool_specs() + [UPDATE_PLAN_SPEC]
                 else:
-                    tools = TOOL_SPECS + [UPDATE_PLAN_SPEC] + self._terminal_tool_specs()
+                    tools = (
+                        TOOL_SPECS + [UPDATE_PLAN_SPEC] + self._terminal_tool_specs()
+                    )
 
                 def _log(category: str, *, _iteration: int = i, **fields) -> None:
                     default_debug_logger.log_event(

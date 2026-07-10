@@ -143,7 +143,7 @@ forge scoping \u2014 ALWAYS use one of these exact forms, never bare `forge test
     def validate_complete(self, findings: dict) -> str | None:
         if not isinstance(findings, dict):
             return "findings must be json object (python dict)"
-        
+
         invariants = findings.get("invariants")
         if invariants is None:
             return "findings.invariants must be present (use an empty list [] if there are genuinely none)"
