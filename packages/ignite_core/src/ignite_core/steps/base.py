@@ -1033,7 +1033,7 @@ prefer completing the assigned objective.
 
             def _record_usage(turn) -> None:
                 entry = model_usage.setdefault(
-                    turn.model, {"calls": 0, "input_tokens": 0, "output_tokens": 0}
+                    turn.account_key, {"model": turn.model, "calls": 0, "input_tokens": 0, "output_tokens": 0}
                 )
                 entry["calls"] += 1
                 entry["input_tokens"] += turn.usage.input_tokens

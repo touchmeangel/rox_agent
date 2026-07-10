@@ -168,9 +168,15 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
 def _aggregate_usage(results: dict[str, StepResult]) -> dict:
     totals: dict[str, dict] = {}
     for r in results.values():
-        for model, usage in (r.model_usage or {}).items():
+        for account_key, usage in (r.model_usage or {}).items():
             entry = totals.setdefault(
-                model, {"calls": 0, "input_tokens": 0, "output_tokens": 0}
+                account_key,
+                {
+                    "model": usage.get("model", ""),
+                    "calls": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                },
             )
             entry["calls"] += usage.get("calls", 0)
             entry["input_tokens"] += usage.get("input_tokens", 0)

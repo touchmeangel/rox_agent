@@ -65,8 +65,8 @@ class AssistantTurn:
     stop_reason: str = ""
     raw: object = None
     model: str = ""
+    account_key: str = ""
     usage: TokenUsage = field(default_factory=TokenUsage)
-
 
 class LLMClient:
     def __init__(self, chain: list[ModelConfig]):
@@ -154,6 +154,7 @@ class LLMClient:
                     duration_s=time.time() - start,
                 )
                 turn.model = cfg.model
+                turn.account_key = self._account_key(cfg)
                 return turn
             except Exception as exc:
                 reporter.stop_spinner()
@@ -210,6 +211,19 @@ class LLMClient:
         if not key and cfg.base_url:
             raise RuntimeError(f'no api key for "{cfg.model}" model was provided')
         return key
+
+    @staticmethod
+    def _account_key(cfg: ModelConfig) -> str:
+        api_key_env = cfg.api_key_env
+        if not api_key_env:
+            fallback_map = {
+                "openai": "OPENAI_API_KEY",
+                "anthropic": "ANTHROPIC_API_KEY",
+            }
+            api_key_env = fallback_map.get(cfg.provider)
+        env_part = api_key_env if api_key_env else "null"
+        url_part = cfg.base_url if cfg.base_url else "null"
+        return f"{cfg.model}:{env_part}:{url_part}"
 
     def _anthropic_with_tools(
         self,
