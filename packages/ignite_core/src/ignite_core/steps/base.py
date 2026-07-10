@@ -47,65 +47,50 @@ _NUDGE_FINISH_PROMPT = (
     "Respond with a tool call only."
 )
 
-_PACING_WARNING_THRESHOLD = 25
-
-
 def _pacing_note(iterations_used: int, max_iterations: int, plan: Plan) -> str:
     remaining = max_iterations - iterations_used
     used_pct = int(100 * iterations_used / max_iterations) if max_iterations else 0
-
     todos = plan.as_dicts()
-    if not todos:
-        return (
-            f"{remaining} iterations remaining "
-            f"({used_pct}% of budget consumed).\n\n"
-            "No active investigation plan is being tracked. "
-            "If this task is more than a few actions, create or update a plan so "
-            "future pacing feedback can measure real progress instead of iteration usage alone."
+
+    lines = [f"{remaining} iterations remaining ({used_pct}% of budget consumed)."]
+
+    delta = None
+    if todos:
+        done = sum(1 for t in todos if t.get("status") == "completed")
+        total = len(todos)
+        done_pct = int(100 * done / total) if total else 0
+        lines.append(f"Plan progress: {done}/{total} milestones completed ({done_pct}%).")
+        delta = used_pct - done_pct
+    else:
+        lines.append(
+            "No active plan is being tracked. That's fine for a bounded step — "
+            "only create one if the investigation turns out to be larger than expected."
         )
 
-    done = sum(1 for t in todos if t.get("status") == "completed")
-    total = len(todos)
-    done_pct = int(100 * done / total) if total else 0
+    hard_floor = max(2, max_iterations // 10)
+    soft_floor = max(3, max_iterations // 5)
 
-    note = (
-        f"{remaining} iterations remaining "
-        f"({used_pct}% of budget consumed).\n"
-        f"Plan progress: {done}/{total} milestones completed ({done_pct}%)."
-    )
+    if remaining <= hard_floor:
+        lines.append(
+            f"\nHARD STOP: only {remaining} iteration(s) left. Do not start new "
+            "investigation. Call submit_findings with what you have, or "
+            "report_blocker/report_failed if you genuinely cannot. If you take no "
+            "terminal action, this step ends with nothing recorded."
+        )
+    elif remaining <= soft_floor:
+        lines.append(
+            "\nFinal budget window — bias toward synthesis over exploration. "
+            "Resolve open questions with existing evidence rather than collecting new evidence."
+        )
+    elif delta is not None and delta >= 25:
+        lines.append("\nBudget consumption is significantly ahead of plan progress...")
+    elif delta is None and used_pct >= 70:
+        lines.append(
+            "\nMost of the budget is consumed with no plan to measure against — "
+            "confirm you're near completion, not just exploring."
+        )
 
-    delta = used_pct - done_pct
-
-    if delta >= _PACING_WARNING_THRESHOLD:
-        note += """
-
-Budget consumption is significantly ahead of investigation progress.
-
-Treat remaining iterations as a scarce resource.
-
-Prefer one of the following before expanding scope:
-
-• Complete existing investigations.
-• Merge duplicate work.
-• Remove low-value plan items.
-• Summarize evidence already collected.
-
-Avoid opening new investigation threads unless they are substantially more valuable than finishing current work.
-
-Remember: a completed investigation is usually more valuable than several partially explored ones.
-"""
-
-    elif remaining <= max(3, max_iterations // 5):
-        note += """
-
-The investigation is entering its final budget.
-
-Bias toward synthesis over exploration.
-
-Focus on strengthening existing findings, resolving open plan items, and preparing for completion rather than collecting entirely new evidence.
-"""
-
-    return note
+    return "\n".join(lines)
 
 
 def _tool_failure_hint(result) -> str:
@@ -1014,7 +999,6 @@ prefer completing the assigned objective.
         )
 
         system = self.system_prompt()
-        tools = TOOL_SPECS + [UPDATE_PLAN_SPEC] + self._terminal_tool_specs()
 
         with RollingWindow(max_lines=16) as window:
             messages: list[dict] = [
@@ -1054,6 +1038,11 @@ prefer completing the assigned objective.
 
             for i in range(self.cfg.max_iterations):
                 iterations_left = self.cfg.max_iterations - i - 1
+
+                if iterations_left <= 1:
+                    tools = self._terminal_tool_specs() + [UPDATE_PLAN_SPEC]
+                else:
+                    tools = TOOL_SPECS + [UPDATE_PLAN_SPEC] + self._terminal_tool_specs()
 
                 def _log(category: str, *, _iteration: int = i, **fields) -> None:
                     default_debug_logger.log_event(
