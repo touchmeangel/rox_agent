@@ -144,7 +144,6 @@ def parse_args() -> argparse.Namespace:
 
     return parser.parse_args()
 
-
 def main():
     args = parse_args()
     default_debug_logger.configure(args.debug)
@@ -164,17 +163,22 @@ def main():
     mission = from_dict(Mission, mission_data)
 
     workflow = Workflow(PIPELINE)
+    results: dict = {}
 
-    results = workflow.run(
-        repo_path,
-        work_path,
-        context={
-            "mission": mission,
-        },
-    )
-
-    if output_path:
-        _write_results(results, output_path)
+    try:
+        results = workflow.run(
+            repo_path,
+            work_path,
+            context={
+                "mission": mission,
+            },
+        )
+    except Exception:
+        results = workflow.results
+        raise
+    finally:
+        if output_path:
+            _write_results(results, output_path)
 
 
 if __name__ == "__main__":

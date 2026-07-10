@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+import traceback
 
 from ignite_core.debug_logger import default_debug_logger
 from ignite_core.reporting import Reporter, RichReporter
@@ -19,12 +20,14 @@ class Workflow:
             self._window.__enter__()
             reporter = RichReporter(self._window)
         self.reporter = reporter
+        self.results: dict[str, StepResult] = {}
 
     def run(
         self, repo_path: str, work_path: str, context: dict | None = None
     ) -> dict[str, StepResult]:
         if context is None:
             context = {}
+        self.results = {}
 
         try:
             default_debug_logger.log_event(
@@ -33,7 +36,6 @@ class Workflow:
                 work_path=work_path,
             )
 
-            results: dict[str, StepResult] = {}
             for step in self.pipeline:
                 self.reporter.step_started(step.name)
 
@@ -41,8 +43,41 @@ class Workflow:
                 step.project_path = work_path
 
                 filtered_context = step.select_context(context)
-                result = step.run(filtered_context)
-                results[step.name] = result
+
+                try:
+                    result = step.run(filtered_context)
+                except Exception as exc:
+                    tb = traceback.format_exc()
+                    default_debug_logger.log_event(
+                        "step_crashed",
+                        step=step.name,
+                        error_type=type(exc).__name__,
+                        error=str(exc),
+                        traceback=tb,
+                    )
+                    result = StepResult(
+                        step_name=step.name,
+                        success=False,
+                        findings={
+                            "error": {
+                                "type": type(exc).__name__,
+                                "message": str(exc),
+                                "traceback": tb,
+                            }
+                        },
+                        summary=f"[CRASHED] {type(exc).__name__}: {exc}",
+                        iterations_used=0,
+                    )
+                    self.results[step.name] = result
+                    context[step.name] = {
+                        "findings": result.findings,
+                        "summary": result.summary,
+                        "success": result.success,
+                    }
+                    self.reporter.step_finished(step.name, False, 0, None, None)
+                    raise
+
+                self.results[step.name] = result
 
                 context[step.name] = {
                     "findings": result.findings,
@@ -64,8 +99,8 @@ class Workflow:
                     plan_total,
                 )
 
-            succeeded = sum(1 for r in results.values() if r.success)
-            failed = len(results) - succeeded
+            succeeded = sum(1 for r in self.results.values() if r.success)
+            failed = len(self.results) - succeeded
             self.reporter.run_summary(succeeded, failed)
 
             default_debug_logger.log_event(
@@ -75,7 +110,7 @@ class Workflow:
                 succeeded=succeeded,
                 failed=failed,
             )
-            return results
+            return self.results
         finally:
             _overflow_store.cleanup()
             _download_store.cleanup()

@@ -172,10 +172,16 @@ def main():
     output_path = args.output
 
     workflow = Workflow(PIPELINE)
-    results = workflow.run(repo_path, work_path)
-
-    if output_path:
-        _write_results(results, output_path)
+    results: dict = {}
+    
+    try:
+        results = workflow.run(repo_path, work_path)
+    except Exception:
+        results = workflow.results
+        raise
+    finally:
+        if output_path:
+            _write_results(results, output_path)
 
 
 if __name__ == "__main__":
