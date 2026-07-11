@@ -38,6 +38,8 @@ _REPEAT_CALL_HINT = (
 
 _REPEAT_BLOCK_LIMIT = 2
 
+NO_TOOL_CALL_REPEAT_LIMIT = 2
+
 _NUDGE_FINISH_PROMPT = (
     "Your previous response did not contain a valid tool call. "
     "Decide which state you are in:\n"
@@ -156,6 +158,23 @@ If the failure is unfamiliar, investigate the exact error message rather than gu
 
     return "\n".join(parts)
 
+_EXTENSION_TOOL_SPEC: dict = {
+    "name": "request_more_iterations",
+    "description": (
+        "Request a bounded extension when you are near the iteration budget but have "
+        "identified a specific, finishable remaining task the budget doesn't cover — "
+        "not open-ended continued exploration. State exactly what's left and how many "
+        "iterations it will realistically take. Extensions are capped and logged."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "remaining_task": {"type": "string"},
+            "iterations_requested": {"type": "integer", "minimum": 1, "maximum": 15},
+        },
+        "required": ["remaining_task", "iterations_requested"],
+    },
+}
 
 class BaseStep:
     name: str = "base"
@@ -1005,8 +1024,10 @@ prefer completing the assigned objective.
         return result
 
     def run(self, context: dict) -> StepResult:
+        effective_max = self.cfg.max_iterations
+
         default_debug_logger.log_event(
-            "step_start", step=self.name, max_iterations=self.cfg.max_iterations
+            "step_start", step=self.name, max_iterations=effective_max
         )
 
         system = self.system_prompt()
@@ -1045,17 +1066,18 @@ prefer completing the assigned objective.
             search_state = SearchState(max_calls=self.cfg.max_web_calls)
 
             consecutive_no_tool_call_repeats = 0
-            NO_TOOL_CALL_REPEAT_LIMIT = 2
 
-            for i in range(self.cfg.max_iterations):
-                iterations_left = self.cfg.max_iterations - i - 1
+            extension_budget_used = 0
+            extension_cap = max(5, int(effective_max * 0.5))
+
+            i = 0
+            while i < effective_max:
+                iterations_left = effective_max - i - 1
 
                 if iterations_left <= 1:
-                    tools = self._terminal_tool_specs() + [UPDATE_PLAN_SPEC]
+                    tools = self._terminal_tool_specs() + [UPDATE_PLAN_SPEC] + [_EXTENSION_TOOL_SPEC]
                 else:
-                    tools = (
-                        TOOL_SPECS + [UPDATE_PLAN_SPEC] + self._terminal_tool_specs()
-                    )
+                    tools = TOOL_SPECS + [UPDATE_PLAN_SPEC] + self._terminal_tool_specs()
 
                 def _log(category: str, *, _iteration: int = i, **fields) -> None:
                     default_debug_logger.log_event(
@@ -1131,6 +1153,7 @@ prefer completing the assigned objective.
                         )
 
                     messages.append({"role": "user", "content": _NUDGE_FINISH_PROMPT})
+                    i += 1
                     continue
 
                 consecutive_no_tool_call_repeats = 0
@@ -1225,22 +1248,43 @@ prefer completing the assigned objective.
                             findings={
                                 "error": {
                                     "message": call.input.get("error", "unknown error"),
-                                    "reason": call.input.get(
-                                        "reason", "unknown failure"
-                                    ),
+                                    "reason": call.input.get("reason", "unknown failure"),
                                 }
                             },
                             summary=f"[FAILED] {call.input.get('reason', '')}",
                             iterations_used=i + 1,
                         )
-                        tool_results.append(
-                            ToolResultEntry(call.id, "Failure recorded.")
-                        )
+                        tool_results.append(ToolResultEntry(call.id, "Failure recorded."))
 
                     elif call.name == "update_plan":
                         plan.update(call.input.get("todos", []))
                         reporter.feed(plan.render_line())
                         tool_results.append(ToolResultEntry(call.id, "Plan updated."))
+
+                    elif call.name == "request_more_iterations":
+                        requested = call.input.get("iterations_requested", 0)
+                        task = call.input.get("remaining_task", "")
+                        granted = min(requested, extension_cap - extension_budget_used)
+
+                        default_debug_logger.log_event(
+                            "iteration_extension_requested", step=self.name,
+                            requested=requested, granted=granted, remaining_task=task,
+                            original_budget=effective_max,
+                        )
+
+                        if granted <= 0:
+                            tool_results.append(ToolResultEntry(
+                                call.id,
+                                "Extension cap already reached for this step. Wrap up with "
+                                "submit_findings using what you have, or report_blocker/report_failed.",
+                                is_error=True,
+                            ))
+                        else:
+                            extension_budget_used += granted
+                            effective_max += granted  # while-loop condition re-checks this next pass
+                            tool_results.append(ToolResultEntry(
+                                call.id, f"Granted {granted} additional iteration(s) for: {task}",
+                            ))
 
                     else:
                         signature = (call.name, json.dumps(call.input, sort_keys=True))
@@ -1253,9 +1297,7 @@ prefer completing the assigned objective.
                                 repeats=consecutive_repeat_blocks,
                             )
                             tool_results.append(
-                                ToolResultEntry(
-                                    call.id, _REPEAT_CALL_HINT, is_error=True
-                                )
+                                ToolResultEntry(call.id, _REPEAT_CALL_HINT, is_error=True)
                             )
 
                             if consecutive_repeat_blocks >= _REPEAT_BLOCK_LIMIT:
@@ -1282,11 +1324,7 @@ prefer completing the assigned objective.
                                 )
                             continue
 
-                        _log(
-                            "tool_call_issued",
-                            tool=call.name,
-                            args=call.input,
-                        )
+                        _log("tool_call_issued", tool=call.name, args=call.input)
                         result = dispatch(
                             call.name,
                             call.input,
@@ -1311,31 +1349,22 @@ prefer completing the assigned objective.
                         else:
                             last_failed_signature = signature
                             tool_results.append(
-                                ToolResultEntry(
-                                    call.id,
-                                    _tool_failure_hint(result),
-                                    is_error=True,
-                                )
+                                ToolResultEntry(call.id, _tool_failure_hint(result), is_error=True)
                             )
 
                 if terminal_result is not None:
                     return self._finalize(
-                        terminal_result,
-                        messages,
-                        thinking_trace,
-                        blockers,
-                        plan,
-                        model_usage,
+                        terminal_result, messages, thinking_trace, blockers, plan, model_usage,
                     )
 
-                pacing_note = _pacing_note(i + 1, self.cfg.max_iterations, plan)
+                pacing_note = _pacing_note(i + 1, effective_max, plan)
                 messages.append({"role": "tool_results", "results": tool_results})
                 messages.append({"role": "user", "content": pacing_note})
 
+                i += 1
+
             default_debug_logger.log_event(
-                "step_iteration_limit",
-                step=self.name,
-                max_iterations=self.cfg.max_iterations,
+                "step_iteration_limit", step=self.name, max_iterations=effective_max,
             )
             return self._finalize(
                 StepResult(
@@ -1343,11 +1372,7 @@ prefer completing the assigned objective.
                     success=False,
                     findings={"warning": "max_iterations_reached"},
                     summary="Step hit the iteration limit before finishing.",
-                    iterations_used=self.cfg.max_iterations,
+                    iterations_used=effective_max,
                 ),
-                messages,
-                thinking_trace,
-                blockers,
-                plan,
-                model_usage,
+                messages, thinking_trace, blockers, plan, model_usage,
             )

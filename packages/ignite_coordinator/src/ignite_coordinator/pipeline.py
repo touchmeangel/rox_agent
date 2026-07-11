@@ -16,24 +16,24 @@ from ignite_core.steps.config import StepConfig
 PIPELINE: list[BaseStep] = [
     DocumentationStep(
         StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=12)
-    ),
+    ), # dyn, loc
     TestCoverageStep(
         StepConfig(
             models=MODELS["reasoning"],
             max_iterations=48,
         )
-    ),
+    ), # dyn, loc (tests)
     StaticAnalysisStep(
         StepConfig(
             models=MODELS["reasoning"],
             max_iterations=64,
         )
-    ),
+    ), # dyn, loc
     ForkAnalysisStep(
-        StepConfig(models=MODELS["reasoning"], max_iterations=32, max_web_calls=12)
+        StepConfig(models=MODELS["reasoning"], max_iterations=32, max_web_calls=12) # dyn
     ),
     AuditDeltaStep(
-        StepConfig(models=MODELS["reasoning"], max_iterations=48, max_web_calls=16)
+        StepConfig(models=MODELS["reasoning"], max_iterations=48, max_web_calls=16) # dyn
     ),
     # InvariantTestingStep(
     #     StepConfig(
@@ -41,10 +41,10 @@ PIPELINE: list[BaseStep] = [
     #     )
     # ), # Needs to be moved to POC step
     SemanticTaggingStep(
-        StepConfig(models=MODELS["reasoning"], max_iterations=48, max_web_calls=12)
+        StepConfig(models=MODELS["reasoning"], max_iterations=48, max_web_calls=12) # dyn, loc
     ),
     KnownIssuesStep(
-        StepConfig(models=MODELS["reasoning"], max_iterations=48, max_web_calls=16)
+        StepConfig(models=MODELS["reasoning"], max_iterations=48, max_web_calls=16) # dyn
     ),
     PlanningStep(
         StepConfig(
