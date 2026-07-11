@@ -11,6 +11,7 @@ from ignite_core.rolling_window import RollingWindow
 from ignite_core.search_state import SearchState
 from ignite_core.steps.config import StepConfig
 from ignite_core.tools import TOOL_SPECS, dispatch
+from ignite_core.graph import Graph, get_or_build_graph
 
 
 @dataclass
@@ -167,6 +168,13 @@ class BaseStep:
 
     def select_context(self, global_context: dict) -> dict:
         return global_context
+    
+    @property
+    def repo_graph(self) -> Graph:
+        graph = get_or_build_graph(self.github_repo_path)
+        if graph is None:
+            raise RuntimeError(f"invalid repo path: {self.github_repo_path}")
+        return graph
 
     def identity_prompt(self) -> str:
         return """<identity>
@@ -1283,6 +1291,7 @@ prefer completing the assigned objective.
                             call.name,
                             call.input,
                             self.project_path,
+                            self.repo_graph,
                             reporter=reporter,
                             search_state=search_state,
                         )

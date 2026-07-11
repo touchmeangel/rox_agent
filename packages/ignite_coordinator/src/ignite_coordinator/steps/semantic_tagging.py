@@ -188,7 +188,7 @@ class SemanticTaggingStep(BaseStep):
             for tag_id, defn in sorted(protocol_registry.items())
         )
 
-        contract_files = list_sol_files(self.project_path).stdout
+        contract_files = "\n".join(self.repo_graph.files) if self.repo_graph else list_sol_files(self.project_path).stdout
 
         return f"""<audit_step name="semantic_classification">
 

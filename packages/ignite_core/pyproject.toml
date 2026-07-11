@@ -12,6 +12,7 @@ dependencies = [
     "openpyxl==3.1.5",
     "beautifulsoup4==4.15.0",
     "playwright==1.61.0",
+    "slither-analyzer==0.11.5"
 ]
 
 [build-system]

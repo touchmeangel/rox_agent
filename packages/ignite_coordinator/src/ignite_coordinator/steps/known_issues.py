@@ -10,6 +10,7 @@ from ignite_core.tools import dispatch
 from ignite_knowledge.descriptor import Descriptor
 from ignite_knowledge.descriptors import load_descriptors
 from ignite_knowledge.protocol_tags import match_protocol_tags
+from ignite_core.graph import Graph
 
 
 @dataclass
@@ -87,6 +88,7 @@ def _curated_coverage_for_target(target: ProtocolTarget) -> list[Descriptor]:
 def _prefetch_protocol(
     target: ProtocolTarget,
     project_path: str,
+    repo_graph: Graph,
     reporter: Reporter,
     debug_logger: DebugLogger,
     search_state: SearchState,
@@ -101,6 +103,7 @@ def _prefetch_protocol(
             "web_search",
             {"query": query},
             project_path,
+            repo_graph,
             reporter=reporter,
             search_state=search_state,
             debug_logger=debug_logger,
@@ -239,7 +242,7 @@ class KnownIssuesStep(BaseStep):
         search_state = SearchState(max_calls=len(targets) * 2)
         for t in targets:
             _prefetch_protocol(
-                t, self.project_path, reporter, debug_logger, search_state
+                t, self.project_path, self.repo_graph, reporter, debug_logger, search_state
             )
 
         targets_section = "\n\n────────────────────────────────────\n\n".join(

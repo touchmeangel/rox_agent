@@ -7,6 +7,7 @@ from ignite_core.debug_logger import DebugLogger
 from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep, StepResult
 from ignite_core.tools import dispatch
+from ignite_core.graph import Graph
 
 _FORK_README_KEYWORDS = [
     "fork of",
@@ -33,6 +34,7 @@ class ForkSignals:
 def _shell_prescan(
     command: str,
     project_path: str,
+    repo_graph: Graph,
     reporter: Reporter,
     debug_logger: DebugLogger,
     max_chars: int = 2_000,
@@ -41,6 +43,7 @@ def _shell_prescan(
         "shell",
         {"command": command},
         project_path,
+        repo_graph,
         reporter=reporter,
         search_state=None,
         debug_logger=debug_logger,
@@ -56,6 +59,7 @@ def _shell_prescan(
 def _detect_fork_signals(
     github_repo_path: str,
     project_path: str,
+    repo_graph: Graph,
     reporter: Reporter,
     debug_logger: DebugLogger,
     doc_summary: str,
@@ -63,6 +67,7 @@ def _detect_fork_signals(
     remote_output = _shell_prescan(
         f"cd '{github_repo_path}' && git remote -v 2>/dev/null || echo '(no remotes)'",
         project_path,
+        repo_graph,
         reporter,
         debug_logger,
     )
@@ -71,6 +76,7 @@ def _detect_fork_signals(
     git_log_output = _shell_prescan(
         f"cd '{github_repo_path}' && git log --oneline -15 2>/dev/null || echo '(no history)'",
         project_path,
+        repo_graph,
         reporter,
         debug_logger,
     )
@@ -192,6 +198,7 @@ class ForkAnalysisStep(BaseStep):
         signals = _detect_fork_signals(
             self.github_repo_path,
             self.project_path,
+            self.repo_graph,
             reporter,
             debug_logger,
             doc_summary,

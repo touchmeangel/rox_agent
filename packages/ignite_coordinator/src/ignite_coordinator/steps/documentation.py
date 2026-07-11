@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
 from pathlib import Path
 
 from ignite_core.debug_logger import DebugLogger
 from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep
-from ignite_core.tools import dispatch
 
 
 def _generate_repo_tree(repo_path: str) -> str:
@@ -48,98 +45,31 @@ def _generate_repo_tree(repo_path: str) -> str:
     return "\n".join(lines)
 
 
-@dataclass
-class PrintResult:
-    label: str
-    printer: str
-    output: str
+def _fmt_architecture(graph) -> str:
+    if graph is None:
+        return "(Repo graph unavailable — compilation failed. Read files directly with read_file/shell instead.)"
+    lines = []
+    for contract in graph.contracts():
+        meta = graph.node_meta.get(contract, {})
+        kind = "interface" if meta.get("is_interface") else "abstract" if meta.get("is_abstract") else "contract"
+        parents = graph.inherits(contract)
+        lines.append(f"\n### {contract} [{kind}]" + (f" (inherits: {', '.join(parents)})" if parents else ""))
 
-    def render(self) -> str:
-        header = f"════ {self.label} "
-        header += "═" * max(0, 56 - len(header))
-        return f"{header}\n\n{self.output}"
+        svars = graph.state_vars(contract)
+        if svars:
+            lines.append("  State: " + ", ".join(f"{v.split('.',1)[1]}: {graph.node_meta[v]['type']}" for v in svars))
 
-
-def _slither_print(
-    project_path: str,
-    printer: str,
-    label: str,
-    reporter: Reporter,
-    debug_logger: DebugLogger,
-    max_chars: int = 3_000,
-) -> PrintResult:
-    result = dispatch(
-        "slither",
-        {"flags": f". --print {printer} --exclude-dependencies"},
-        project_path,
-        reporter=reporter,
-        search_state=None,
-        debug_logger=debug_logger,
-    )
-    combined = "\n".join(filter(None, [result.stdout, result.stderr])).strip()
-
-    if result.returncode == 127 or "command not found" in combined.lower():
-        output = "(slither not found in PATH)"
-    elif not combined:
-        output = "(no output)"
-    elif len(combined) > max_chars:
-        output = combined[:max_chars] + "\n…(truncated)"
-    else:
-        output = combined
-
-    return PrintResult(label=label, printer=printer, output=output)
-
-
-_SLITHER_PRINTERS: list[tuple[str, str]] = [
-    ("human-summary", "Human Summary"),
-    ("contract-summary", "Contract Summary"),
-    ("function-summary", "Function Summary"),
-    ("data-dependency", "Data Dependency"),
-]
-
-
-def _run_all_prints(
-    project_path: str,
-    reporter: Reporter,
-    debug_logger: DebugLogger,
-) -> list[PrintResult]:
-    return [
-        _slither_print(project_path, printer, label, reporter, debug_logger)
-        for printer, label in _SLITHER_PRINTERS
-    ]
-
-
-def _strip_ansi(text: str) -> str:
-    return re.sub(r"\x1b\[[0-9;]*m", "", text)
-
-
-def _run_surya_describe(
-    project_path: str,
-    reporter: Reporter,
-    debug_logger: DebugLogger,
-    max_chars: int = 4_000,
-) -> str:
-    result = dispatch(
-        "shell",
-        {
-            "command": (
-                f"cd '{project_path}' && "
-                "find ./src -name '*.sol' | xargs surya describe 2>/dev/null "
-                "|| echo 'surya unavailable or no .sol files under src/'"
-            )
-        },
-        project_path,
-        reporter=reporter,
-        search_state=None,
-        debug_logger=debug_logger,
-    )
-    output = (
-        _strip_ansi((result.stdout or "").strip())
-        or "(surya describe produced no output)"
-    )
-    if len(output) > max_chars:
-        output = output[:max_chars] + "\n…(truncated)"
-    return output
+        for f in graph.functions(contract):
+            fmeta = graph.node_meta.get(f, {})
+            writes = sorted({d.split(".",1)[1] for d, k in graph.out_edges.get(f, []) if k == "writes"})
+            reads  = sorted({d.split(".",1)[1] for d, k in graph.out_edges.get(f, []) if k == "reads"})
+            calls  = sorted({d for d, k in graph.out_edges.get(f, []) if k in ("calls", "calls_external")})
+            mods = ", ".join(fmeta.get("modifiers", [])) or "none"
+            lines.append(f"  - {f.split('.',1)[1]}({fmeta.get('visibility','?')}, modifiers: {mods})")
+            if writes: lines.append(f"      writes: {', '.join(writes)}")
+            if reads:  lines.append(f"      reads: {', '.join(reads)}")
+            if calls:  lines.append(f"      calls: {', '.join(calls)}")
+    return "\n".join(lines) if lines else "(no contracts parsed)"
 
 
 class DocumentationStep(BaseStep):
@@ -287,9 +217,7 @@ class DocumentationStep(BaseStep):
         self, context: dict, reporter: Reporter, debug_logger: DebugLogger
     ) -> str:
         repo_map = _generate_repo_tree(self.github_repo_path)
-        surya_table = _run_surya_describe(self.project_path, reporter, debug_logger)
-        prints = _run_all_prints(self.project_path, reporter, debug_logger)
-        prints_section = "\n\n".join(r.render() for r in prints)
+        architecture_section = _fmt_architecture(self.repo_graph)
 
         return f"""<audit_step name="documentation">
 
@@ -311,24 +239,17 @@ in the worker phase.
 </repository>
 
 <pre_scan>
-<tool name="surya" output="function visibility table">
-Contract-level breakdown of every function: name, visibility, mutability, and modifiers.
-Use this to quickly identify privileged entry-points and state-mutating functions.
-
-{surya_table}
-</tool>
-
-<tool name="slither" output="architecture printers">
-{prints_section}
-</tool>
+<repo_graph note="parsed directly from the compiled contracts — every contract, its inheritance, state variables, and every function with its visibility, modifiers, and what it reads/writes/calls. This is ground truth from compilation, not a heuristic guess, but it only covers Solidity structure: it has no docs, no NatSpec, no protocol names, and 'calls'/'writes' are direct edges only, not full taint-tracked data flow.">
+{architecture_section}
+</repo_graph>
 </pre_scan>
 
 <task>
 You are completely responsible for exploring this repository. Analyze the repository map
-above. Identify relevant documentation files (READMEs, specs, or docs directories),
-configuration settings (foundry.toml, hardhat.config.js, remappings.txt), and target source
-folders. Execute read_file or relevant shell commands sequentially to read files of
-interest. Do not guess. Work through the steps below in order.
+and repo graph above. Identify relevant documentation files (READMEs, specs, or docs
+directories), configuration settings (foundry.toml, hardhat.config.js, remappings.txt), and
+target source folders. Execute read_file or relevant shell commands sequentially to read
+files of interest. Do not guess. Work through the steps below in order.
 
 <step id="0" title="Identify the protocol name">
 Determine the public-facing name of this protocol. Check in this order:
@@ -354,9 +275,10 @@ Deliverable: a clear 2-4 sentence description of what the protocol does.
 
 <step id="2" title="Map the roles">
 Identify every actor in the system from docs AND from access-control patterns in the source
-(modifiers, require(msg.sender == ...), role constants, etc.). Cross-reference the Surya
-visibility table above to find privileged functions (onlyOwner, onlyRole, etc.) that confirm
-or extend what docs describe. For each role document:
+(modifiers, require(msg.sender == ...), role constants, etc.). The repo graph above already
+lists each function's visibility and modifiers — scan it first to find privileged functions
+(onlyOwner, onlyRole, etc.) before opening files, then read_file to confirm what each
+modifier actually enforces. For each role document:
   - What they can do (powers)
   - What they are prevented from doing (restrictions)
   - Who they are trusted by and to what degree
@@ -376,12 +298,17 @@ solc_version must be a concrete string like "0.8.24", not "unknown".
 </step>
 
 <step id="5" title="Contract risk matrix">
-For every in-scope contract produce one row. Base it on everything gathered in steps 0-4
-plus the Slither function-summary and surya table above. This is a triage/priority signal
-for downstream steps — not a vulnerability finding. For each contract determine:
-  - sloc — count non-blank, non-comment lines (use shell with wc/grep if needed)
-  - external_calls — which protocols it calls into, or "None"
-  - function_count — total number of functions (public + external + internal)
+For every in-scope contract produce one row. The repo graph above already gives you, per
+contract, its full function list with reads/writes/calls — use it as your starting point
+instead of re-deriving structure by hand, then confirm anything ambiguous with read_file.
+This is a triage/priority signal for downstream steps — not a vulnerability finding. For
+each contract determine:
+  - sloc — count non-blank, non-comment lines (use shell with wc/grep if needed; not in the graph)
+  - external_calls — protocols it calls into (cross-reference the graph's "calls" edges
+    against import statements to name the actual protocol, e.g. "Chainlink" not just the
+    interface name), or "None"
+  - function_count — total number of functions (the graph already lists every function
+    per contract — count directly from it rather than re-scanning source)
   - holds_funds — does it hold ETH or ERC20 balances? (check payable functions, token mappings)
   - upgradeable — does it use a proxy pattern or UUPSUpgradeable / TransparentUpgradeableProxy?
   - risk_level — Low / Medium / High / Critical
@@ -423,7 +350,7 @@ Pass this to submit_findings:
 
   "solc_version": "0.8.24",
 
-  "architecture_notes": "Describe the contract layout, inheritance hierarchy, and the primary call flows inferred from the slither output above and your source exploration.",
+  "architecture_notes": "Describe the contract layout, inheritance hierarchy, and the primary call flows inferred from the repo graph above and your source exploration.",
 
   "contract_risk_matrix": [
     {{
@@ -454,7 +381,7 @@ Pass this to submit_findings:
 <rule>Run STEP 0 before anything else — protocol_name must be actively searched for, not guessed.</rule>
 <rule>protocol_name may be "" if genuinely undiscoverable, but you must have checked all five sources listed in STEP 0 before setting it to empty.</rule>
 <rule>If documentation is missing, use web_search before guessing.</rule>
-<rule>Read source files before submitting — do not rely solely on docs.</rule>
+<rule>Read source files before submitting — do not rely solely on docs or the repo graph.</rule>
 <rule>Every role needs at least one power.</rule>
 <rule>solc_version must be a concrete version string — "unknown" will be rejected.</rule>
 <rule>tokens may be empty arrays [] if truly none exist, but you must have checked the source before concluding that.</rule>

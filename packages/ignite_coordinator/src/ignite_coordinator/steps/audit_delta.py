@@ -7,11 +7,13 @@ from ignite_core.reporting import Reporter
 from ignite_core.search_state import SearchState
 from ignite_core.steps.base import BaseStep, StepResult
 from ignite_core.tools import dispatch
+from ignite_core.graph import Graph
 
 
 def _sh(
     command: str,
     project_path: str,
+    repo_graph: Graph,
     reporter: Reporter,
     debug_logger: DebugLogger,
     max_chars: int = 3_000,
@@ -20,6 +22,7 @@ def _sh(
         "shell",
         {"command": command},
         project_path,
+        repo_graph,
         reporter=reporter,
         search_state=None,
         debug_logger=debug_logger,
@@ -41,12 +44,14 @@ class AuditPrescan:
 def _prescan(
     repo_path: str,
     project_path: str,
+    repo_graph: Graph,
     reporter: Reporter,
     debug_logger: DebugLogger,
 ) -> AuditPrescan:
     remote_url = _sh(
         f"cd '{repo_path}' && git remote get-url origin 2>/dev/null || echo '(no remote)'",
         project_path,
+        repo_graph,
         reporter,
         debug_logger,
     )
@@ -54,6 +59,7 @@ def _prescan(
     tags = _sh(
         f"cd '{repo_path}' && git tag --sort=-version:refname 2>/dev/null | head -20 || echo '(no tags)'",
         project_path,
+        repo_graph,
         reporter,
         debug_logger,
     )
@@ -61,6 +67,7 @@ def _prescan(
     git_log = _sh(
         f"cd '{repo_path}' && git log --oneline -25 2>/dev/null || echo '(no history)'",
         project_path,
+        repo_graph,
         reporter,
         debug_logger,
     )
@@ -71,6 +78,7 @@ def _prescan(
         r"-not -path '*/.git/*' -not -path '*/node_modules/*' -not -path '*/lib/*' "
         "2>/dev/null | head -20 || echo '(none found)'",
         project_path,
+        repo_graph,
         reporter,
         debug_logger,
     )
@@ -104,6 +112,7 @@ _AUDIT_QUERIES = [
 def _prefetch_audit(
     protocol_name: str,
     project_path: str,
+    repo_graph: Graph,
     reporter: Reporter,
     debug_logger: DebugLogger,
     max_chars_per_result: int = 1_500,
@@ -120,6 +129,7 @@ def _prefetch_audit(
             "web_search",
             {"query": query},
             project_path,
+            repo_graph,
             reporter=reporter,
             search_state=search_state,
             debug_logger=debug_logger,
@@ -248,12 +258,12 @@ class AuditDeltaStep(BaseStep):
         )
 
         scan = _prescan(
-            self.github_repo_path, self.project_path, reporter, debug_logger
+            self.github_repo_path, self.project_path, self.repo_graph, reporter, debug_logger
         )
         prescan_section = _fmt_prescan(scan)
 
         prefetch_results = _prefetch_audit(
-            protocol_name, self.project_path, reporter, debug_logger
+            protocol_name, self.project_path, self.repo_graph, reporter, debug_logger
         )
         prefetch_section = _fmt_prefetch(prefetch_results, protocol_name)
 

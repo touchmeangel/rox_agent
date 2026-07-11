@@ -63,8 +63,7 @@ RUN pip install --no-cache-dir \
     git+https://github.com/touchmeangel/evm_decode_constructor
 
 RUN npm install -g \
-    solhint \
-    surya
+    solhint
 
 RUN solc-select install 0.8.28 && \
     solc-select install 0.8.26 && \

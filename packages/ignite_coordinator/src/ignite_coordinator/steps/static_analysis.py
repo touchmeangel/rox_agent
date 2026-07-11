@@ -10,6 +10,7 @@ from ignite_core.debug_logger import DebugLogger
 from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep
 from ignite_core.tools import dispatch
+from ignite_core.graph import Graph
 
 _IMPACT_ORDER = ["High", "Medium", "Low", "Informational", "Optimization"]
 
@@ -27,43 +28,6 @@ _SKIP_DIRS: frozenset[str] = frozenset(
     }
 )
 
-_SLITHER_FILTER = ",".join(sorted(_SKIP_DIRS))
-
-_SWC_SEVERITY: dict[str, str] = {
-    "100": "High",
-    "101": "High",
-    "104": "High",
-    "105": "High",
-    "106": "High",
-    "107": "High",
-    "110": "High",
-    "112": "High",
-    "113": "High",
-    "115": "High",
-    "116": "High",
-    "124": "High",
-    "103": "Medium",
-    "108": "Medium",
-    "109": "Medium",
-    "111": "Medium",
-    "114": "Medium",
-    "120": "Medium",
-    "122": "Medium",
-    "123": "Medium",
-    "128": "Medium",
-    "131": "Medium",
-    "132": "Medium",
-    "102": "Low",
-    "117": "Low",
-    "118": "Low",
-    "119": "Low",
-    "121": "Low",
-    "125": "Low",
-    "126": "Low",
-    "129": "Low",
-}
-
-
 @dataclass
 class PreScanResult:
     tool_name: str
@@ -74,26 +38,12 @@ class PreScanResult:
     exit_code: int | None = None
 
 
-def _extract_json(stdout: str) -> dict | None:
-    stdout = stdout.strip()
-    try:
-        return json.loads(stdout)
-    except Exception:
-        pass
-    matches = re.findall(r"\{.*\}", stdout, re.DOTALL)
-    for match in reversed(matches):
-        try:
-            return json.loads(match)
-        except Exception:
-            continue
-    return None
-
-
 def _run_prescan_tool(
     project_path: str,
     tool_name: str,
     flags: str,
     parse_fn: Callable[[str, str, int], PreScanResult],
+    repo_graph: Graph,
     reporter: Reporter,
     debug_logger: DebugLogger,
 ) -> PreScanResult:
@@ -101,6 +51,7 @@ def _run_prescan_tool(
         tool_name,
         {"flags": flags},
         project_path,
+        repo_graph,
         reporter=reporter,
         search_state=None,
         debug_logger=debug_logger,
@@ -124,45 +75,34 @@ def _run_prescan_tool(
 
     return parse_fn(result.stdout, result.stderr, result.returncode)
 
+def _filter_skip_dirs(detectors: list[dict]) -> list[dict]:
+    def _in_skip_dir(file_path: str) -> bool:
+        return any(part in _SKIP_DIRS for part in Path(file_path).parts)
 
-_SLITHER_FLAGS = (
-    ". --json - --exclude-dependencies "
-    f"--filter-paths '{_SLITHER_FILTER}' "
-    "--exclude naming-convention,solc-version,low-level-calls,pragma,similar-names"
-)
-
-
-def _parse_slither(stdout: str, stderr: str, exit_code: int) -> PreScanResult:
-    data = _extract_json(stdout)
-    if not data:
-        return PreScanResult(
-            tool_name="slither",
-            success=False,
-            error="slither produced no parseable JSON output",
-            stderr_tail=stderr[-1_000:].strip() or None,
-            exit_code=exit_code,
-        )
-
-    return PreScanResult(
-        tool_name="slither",
-        success=bool(data.get("success")),
-        detectors=data.get("results", {}).get("detectors", []),
-        error=data.get("error"),
-        stderr_tail=stderr[-1_000:].strip() or None,
-        exit_code=exit_code,
-    )
-
+    filtered = []
+    for d in detectors:
+        elements = d.get("elements", [])
+        if not elements:
+            filtered.append(d)
+            continue
+        kept = []
+        for el in elements:
+            sm = el.get("source_mapping", {}) or {}
+            fname = sm.get("filename_short") or el.get("contract_path", "")
+            if fname and _in_skip_dir(fname):
+                continue
+            kept.append(el)
+        if kept:
+            filtered.append({**d, "elements": kept})
+    return filtered
 
 def _run_slither(
-    project_path: str, reporter: Reporter, debug_logger: DebugLogger
+    project_path: str, repo_graph: Graph, reporter: Reporter, debug_logger: DebugLogger
 ) -> PreScanResult:
-    return _run_prescan_tool(
-        project_path,
-        "slither",
-        _SLITHER_FLAGS,
-        _parse_slither,
-        reporter=reporter,
-        debug_logger=debug_logger,
+    return PreScanResult(
+        tool_name="slither",
+        success=True,
+        detectors=_filter_skip_dirs(repo_graph.detectors),
     )
 
 
@@ -170,7 +110,7 @@ _ADERYN_FLAGS = "-o {report_path}"
 
 
 def _run_aderyn(
-    project_path: str, reporter: Reporter, debug_logger: DebugLogger
+    project_path: str, repo_graph: Graph, reporter: Reporter, debug_logger: DebugLogger
 ) -> PreScanResult:
     report_path = Path(project_path) / "aderyn_report.json"
 
@@ -241,47 +181,10 @@ def _run_aderyn(
         "aderyn",
         _ADERYN_FLAGS.format(report_path=str(report_path)),
         parse_aderyn_file,
+        repo_graph,
         reporter=reporter,
         debug_logger=debug_logger,
     )
-
-
-def _foundry_artifacts_shim(project_path: str) -> tuple[Path, bool]:
-    project = Path(project_path)
-    artifacts_dir = project / "artifacts"
-    contracts_link = artifacts_dir / "contracts"
-    out_dir = project / "out"
-
-    if contracts_link.exists():
-        # Real Hardhat artifacts, or a leftover shim — don't touch it.
-        return contracts_link, False
-
-    artifacts_dir.mkdir(exist_ok=True)
-    contracts_link.symlink_to(out_dir.resolve(), target_is_directory=True)
-    return contracts_link, True
-
-
-def _cleanup_artifacts_shim(project_path: str) -> None:
-    artifacts_dir = Path(project_path) / "artifacts"
-    contracts_link = artifacts_dir / "contracts"
-
-    if contracts_link.is_symlink():
-        contracts_link.unlink()
-
-    try:
-        artifacts_dir.rmdir()  # only succeeds if empty — safe by construction
-    except OSError:
-        pass
-
-
-def _clean_foundry_build_info(project_path: str) -> None:
-    build_info_dir = Path(project_path) / "out" / "build-info"
-    if build_info_dir.exists():
-        for f in build_info_dir.glob("*.json"):
-            try:
-                f.unlink()
-            except Exception:
-                pass
 
 
 def _fmt_result(result: PreScanResult, label: str) -> str:
@@ -378,11 +281,11 @@ def _fmt_detectors(detectors: list[dict]) -> str:
 
 
 def _pre_scan_project(
-    project_path: str, reporter: Reporter, debug_logger: DebugLogger
+    project_path: str, repo_graph: Graph, reporter: Reporter, debug_logger: DebugLogger
 ) -> dict[str, PreScanResult]:
     return {
-        "slither": _run_slither(project_path, reporter, debug_logger),
-        "aderyn": _run_aderyn(project_path, reporter, debug_logger),
+        "slither": _run_slither(project_path, repo_graph, reporter, debug_logger),
+        "aderyn": _run_aderyn(project_path, repo_graph, reporter, debug_logger),
     }
 
 
@@ -524,7 +427,7 @@ class StaticAnalysisStep(BaseStep):
     def initial_prompt(
         self, context: dict, reporter: Reporter, debug_logger: DebugLogger
     ) -> str:
-        pre_scan = _pre_scan_project(self.project_path, reporter, debug_logger)
+        pre_scan = _pre_scan_project(self.project_path, self.repo_graph, reporter, debug_logger)
 
         slither_result = pre_scan["slither"]
         aderyn_result = pre_scan["aderyn"]
