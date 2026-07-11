@@ -158,24 +158,30 @@ If the failure is unfamiliar, investigate the exact error message rather than gu
 
     return "\n".join(parts)
 
-_EXTENSION_TOOL_SPEC: dict = {
-    "name": "request_more_iterations",
-    "description": (
-        "Request a bounded extension when you are near the iteration budget but have "
-        "identified a specific, finishable remaining task the budget doesn't cover — "
-        "not open-ended continued exploration. State exactly what's left and how many "
-        "iterations it will realistically take. Extensions are capped and logged."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "remaining_task": {"type": "string"},
-            "iterations_requested": {"type": "integer", "minimum": 1, "maximum": 15},
+def _extension_tool_spec(remaining_extension_budget: int) -> dict:
+    return {
+        "name": "request_more_iterations",
+        "description": (
+            f"Request a bounded extension when you are near the iteration budget but have "
+            f"identified a specific, finishable remaining task the budget doesn't cover — "
+            f"not open-ended continued exploration. State exactly what's left and how many "
+            f"iterations it will realistically take. "
+            f"You have {remaining_extension_budget} extension iteration(s) left for this step "
+            f"— requesting more than that will only grant what remains, if anything."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "remaining_task": {"type": "string"},
+                "iterations_requested": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": max(1, remaining_extension_budget),
+                },
+            },
+            "required": ["remaining_task", "iterations_requested"],
         },
-        "required": ["remaining_task", "iterations_requested"],
-    },
-}
-
+    }
 class BaseStep:
     name: str = "base"
 
@@ -1075,7 +1081,7 @@ prefer completing the assigned objective.
                 iterations_left = effective_max - i - 1
 
                 if iterations_left <= 1:
-                    tools = self._terminal_tool_specs() + [UPDATE_PLAN_SPEC] + [_EXTENSION_TOOL_SPEC]
+                    tools = self._terminal_tool_specs() + [UPDATE_PLAN_SPEC] + [_extension_tool_spec(extension_cap - extension_budget_used)]
                 else:
                     tools = TOOL_SPECS + [UPDATE_PLAN_SPEC] + self._terminal_tool_specs()
 
