@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from ignite_core.debug_logger import DebugLogger
+from ignite_core.graph import Graph
 from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep
 from ignite_core.tools import dispatch
-from ignite_core.graph import Graph
 
 _IMPACT_ORDER = ["High", "Medium", "Low", "Informational", "Optimization"]
 
@@ -27,6 +26,7 @@ _SKIP_DIRS: frozenset[str] = frozenset(
         "build",
     }
 )
+
 
 @dataclass
 class PreScanResult:
@@ -75,6 +75,7 @@ def _run_prescan_tool(
 
     return parse_fn(result.stdout, result.stderr, result.returncode)
 
+
 def _filter_skip_dirs(detectors: list[dict]) -> list[dict]:
     def _in_skip_dir(file_path: str) -> bool:
         return any(part in _SKIP_DIRS for part in Path(file_path).parts)
@@ -95,6 +96,7 @@ def _filter_skip_dirs(detectors: list[dict]) -> list[dict]:
         if kept:
             filtered.append({**d, "elements": kept})
     return filtered
+
 
 def _run_slither(
     project_path: str, repo_graph: Graph, reporter: Reporter, debug_logger: DebugLogger
@@ -427,7 +429,9 @@ class StaticAnalysisStep(BaseStep):
     def initial_prompt(
         self, context: dict, reporter: Reporter, debug_logger: DebugLogger
     ) -> str:
-        pre_scan = _pre_scan_project(self.project_path, self.repo_graph, reporter, debug_logger)
+        pre_scan = _pre_scan_project(
+            self.project_path, self.repo_graph, reporter, debug_logger
+        )
 
         slither_result = pre_scan["slither"]
         aderyn_result = pre_scan["aderyn"]

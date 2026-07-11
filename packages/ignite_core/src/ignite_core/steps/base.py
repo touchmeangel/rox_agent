@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass, field
 
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
+from ignite_core.graph import Graph, get_or_build_graph
 from ignite_core.llm import LLMClient, ToolResultEntry, get_llm
 from ignite_core.planning import UPDATE_PLAN_SPEC, Plan
 from ignite_core.reporting import Reporter, RichReporter
@@ -11,7 +12,6 @@ from ignite_core.rolling_window import RollingWindow
 from ignite_core.search_state import SearchState
 from ignite_core.steps.config import StepConfig
 from ignite_core.tools import TOOL_SPECS, dispatch
-from ignite_core.graph import Graph, get_or_build_graph
 
 
 @dataclass
@@ -168,7 +168,7 @@ class BaseStep:
 
     def select_context(self, global_context: dict) -> dict:
         return global_context
-    
+
     @property
     def repo_graph(self) -> Graph:
         graph = get_or_build_graph(self.github_repo_path)

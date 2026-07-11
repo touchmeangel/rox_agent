@@ -3,11 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ignite_core.debug_logger import DebugLogger
+from ignite_core.graph import Graph
 from ignite_core.reporting import Reporter
 from ignite_core.search_state import SearchState
 from ignite_core.steps.base import BaseStep, StepResult
 from ignite_core.tools import dispatch
-from ignite_core.graph import Graph
 
 
 def _sh(
@@ -258,7 +258,11 @@ class AuditDeltaStep(BaseStep):
         )
 
         scan = _prescan(
-            self.github_repo_path, self.project_path, self.repo_graph, reporter, debug_logger
+            self.github_repo_path,
+            self.project_path,
+            self.repo_graph,
+            reporter,
+            debug_logger,
         )
         prescan_section = _fmt_prescan(scan)
 

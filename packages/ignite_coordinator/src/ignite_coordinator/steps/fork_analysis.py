@@ -4,10 +4,10 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from ignite_core.debug_logger import DebugLogger
+from ignite_core.graph import Graph
 from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep, StepResult
 from ignite_core.tools import dispatch
-from ignite_core.graph import Graph
 
 _FORK_README_KEYWORDS = [
     "fork of",

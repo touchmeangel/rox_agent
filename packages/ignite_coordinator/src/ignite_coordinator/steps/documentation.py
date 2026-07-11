@@ -51,24 +51,61 @@ def _fmt_architecture(graph) -> str:
     lines = []
     for contract in graph.contracts():
         meta = graph.node_meta.get(contract, {})
-        kind = "interface" if meta.get("is_interface") else "abstract" if meta.get("is_abstract") else "contract"
+        kind = (
+            "interface"
+            if meta.get("is_interface")
+            else "abstract"
+            if meta.get("is_abstract")
+            else "contract"
+        )
         parents = graph.inherits(contract)
-        lines.append(f"\n### {contract} [{kind}]" + (f" (inherits: {', '.join(parents)})" if parents else ""))
+        lines.append(
+            f"\n### {contract} [{kind}]"
+            + (f" (inherits: {', '.join(parents)})" if parents else "")
+        )
 
         svars = graph.state_vars(contract)
         if svars:
-            lines.append("  State: " + ", ".join(f"{v.split('.',1)[1]}: {graph.node_meta[v]['type']}" for v in svars))
+            lines.append(
+                "  State: "
+                + ", ".join(
+                    f"{v.split('.', 1)[1]}: {graph.node_meta[v]['type']}" for v in svars
+                )
+            )
 
         for f in graph.functions(contract):
             fmeta = graph.node_meta.get(f, {})
-            writes = sorted({d.split(".",1)[1] for d, k in graph.out_edges.get(f, []) if k == "writes"})
-            reads  = sorted({d.split(".",1)[1] for d, k in graph.out_edges.get(f, []) if k == "reads"})
-            calls  = sorted({d for d, k in graph.out_edges.get(f, []) if k in ("calls", "calls_external")})
+            writes = sorted(
+                {
+                    d.split(".", 1)[1]
+                    for d, k in graph.out_edges.get(f, [])
+                    if k == "writes"
+                }
+            )
+            reads = sorted(
+                {
+                    d.split(".", 1)[1]
+                    for d, k in graph.out_edges.get(f, [])
+                    if k == "reads"
+                }
+            )
+            calls = sorted(
+                {
+                    d
+                    for d, k in graph.out_edges.get(f, [])
+                    if k in ("calls", "calls_external")
+                }
+            )
             mods = ", ".join(fmeta.get("modifiers", [])) or "none"
-            lines.append(f"  - {f.split('.',1)[1]}({fmeta.get('visibility','?')}, modifiers: {mods})")
-            if writes: lines.append(f"      writes: {', '.join(writes)}")
-            if reads:  lines.append(f"      reads: {', '.join(reads)}")
-            if calls:  lines.append(f"      calls: {', '.join(calls)}")
+            lines.append(
+                f"  - {f.split('.', 1)[1]}({fmeta.get('visibility', '?')}, modifiers: {mods})"
+            )
+            if writes:
+                lines.append(f"      writes: {', '.join(writes)}")
+            if reads:
+                lines.append(f"      reads: {', '.join(reads)}")
+            if calls:
+                lines.append(f"      calls: {', '.join(calls)}")
     return "\n".join(lines) if lines else "(no contracts parsed)"
 
 

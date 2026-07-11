@@ -17,18 +17,16 @@ from pathlib import Path
 
 import docx
 import openpyxl
-
 from ddgs import DDGS
-from playwright.sync_api import sync_playwright
-
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
+from ignite_core.graph import Graph
 from ignite_core.reporting import Reporter, RichReporter
 from ignite_core.rolling_window import RollingWindow
 from ignite_core.search_state import SearchState
 from ignite_core.storages.download_store import DownloadStore
 from ignite_core.storages.overflow_store import OverflowStore
 from ignite_core.tool_result import ToolResult
-from ignite_core.graph import Graph
+from playwright.sync_api import sync_playwright
 
 _overflow_store = OverflowStore()
 
@@ -767,10 +765,20 @@ TOOL_SPECS: list[dict] = [
         "input_schema": {
             "type": "object",
             "properties": {
-                "node": {"type": "string", "description": "e.g. 'Vault' or 'Vault.withdraw'. Ignored for dead_code."},
+                "node": {
+                    "type": "string",
+                    "description": "e.g. 'Vault' or 'Vault.withdraw'. Ignored for dead_code.",
+                },
                 "relation": {
                     "type": "string",
-                    "enum": ["callers", "callees", "inherits", "inherited_by", "dead_code", "search"],
+                    "enum": [
+                        "callers",
+                        "callees",
+                        "inherits",
+                        "inherited_by",
+                        "dead_code",
+                        "search",
+                    ],
                 },
             },
             "required": ["relation"],
@@ -1174,9 +1182,7 @@ def dispatch(
                         "graph_query", "", f"Unknown relation '{relation}'.", 1
                     )
                 else:
-                    result = ToolResult(
-                        "graph_query", json.dumps(method(node)), "", 0
-                    )
+                    result = ToolResult("graph_query", json.dumps(method(node)), "", 0)
             case "slither":
                 result = slither(
                     project_path, tool_input.get("flags") or "./", reporter=reporter

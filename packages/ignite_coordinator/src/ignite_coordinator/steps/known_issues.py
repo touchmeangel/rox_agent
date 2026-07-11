@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ignite_core.debug_logger import DebugLogger
+from ignite_core.graph import Graph
 from ignite_core.reporting import Reporter
 from ignite_core.search_state import SearchState
 from ignite_core.steps.base import BaseStep, StepResult
@@ -10,7 +11,6 @@ from ignite_core.tools import dispatch
 from ignite_knowledge.descriptor import Descriptor
 from ignite_knowledge.descriptors import load_descriptors
 from ignite_knowledge.protocol_tags import match_protocol_tags
-from ignite_core.graph import Graph
 
 
 @dataclass
@@ -242,7 +242,12 @@ class KnownIssuesStep(BaseStep):
         search_state = SearchState(max_calls=len(targets) * 2)
         for t in targets:
             _prefetch_protocol(
-                t, self.project_path, self.repo_graph, reporter, debug_logger, search_state
+                t,
+                self.project_path,
+                self.repo_graph,
+                reporter,
+                debug_logger,
+                search_state,
             )
 
         targets_section = "\n\n────────────────────────────────────\n\n".join(
