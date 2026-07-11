@@ -24,7 +24,7 @@ class ProtocolTarget:
 def _build_targets(context: dict) -> list[ProtocolTarget]:
     doc_findings = context.get("documentation", {}).get("findings", {})
     fork_findings = context.get("fork_analysis", {}).get("findings", {})
-    tagging_findings = context.get("tagging", {}).get("findings", {})
+    tagging_findings = context.get("semantic_tagging", {}).get("findings", {})
 
     targets: list[ProtocolTarget] = []
     seen_names: set[str] = set()
@@ -144,7 +144,7 @@ class KnownIssuesStep(BaseStep):
         return {
             "documentation": global_context.get("documentation", {}),
             "fork_analysis": global_context.get("fork_analysis", {}),
-            "tagging": global_context.get("tagging", {}),
+            "semantic_tagging": global_context.get("semantic_tagging", {}),
         }
 
     def run(self, context: dict) -> StepResult:
