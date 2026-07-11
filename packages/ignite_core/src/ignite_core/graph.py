@@ -1,10 +1,14 @@
 import inspect
 from collections import defaultdict
 from dataclasses import dataclass, field
+from typing import Literal
+from pathlib import Path
 
 from slither.detectors import all_detectors
 from slither.detectors.abstract_detector import AbstractDetector
 from slither.slither import Slither
+
+from ignite_core.foundry_config import FoundryConfig, load_foundry_config
 
 _GRAPH_CACHE: dict[str, "Graph"] = {}
 
@@ -18,6 +22,7 @@ _EXCLUDED_CHECKS = frozenset(
     }
 )
 
+SlocKind = Literal["src", "test", "script", "lib", "other"]
 
 def get_or_build_graph(path: str) -> "Graph | None":
     if not path:
@@ -30,6 +35,7 @@ def get_or_build_graph(path: str) -> "Graph | None":
 @dataclass
 class Graph:
     slither: Slither = field()
+    foundry_config: FoundryConfig = field()
     node_kind: dict[str, str] = field(default_factory=dict)
     node_file: dict[str, str] = field(default_factory=dict)
     node_meta: dict[str, dict] = field(default_factory=dict)
@@ -111,7 +117,33 @@ class Graph:
             for n, k in self.node_kind.items()
             if k == "state_var" and (contract is None or n.startswith(f"{contract}."))
         )
+        
+    def sloc(self, kind: SlocKind = "src") -> int:
+        all_lines: set[tuple[str, int]] = set()
+        for c in self.slither.contracts:
+            file = str(c.source_mapping.filename.relative)
+            if kind != "all" and _dir_of(file, self.foundry_config) != kind:
+                continue
+            all_lines.update((file, ln) for ln in c.source_mapping.lines)
+        return len(all_lines)
+    
+    def test_sloc(self) -> int:
+        return self.sloc(kind="test")
 
+def _dir_of(file_rel: str, cfg: FoundryConfig) -> SlocKind:
+    parts = Path(file_rel).parts
+    if not parts:
+        return "other"
+    top = parts[0]
+    if top == cfg.test:
+        return "test"
+    if top == cfg.script:
+        return "script"
+    if top in cfg.libs:
+        return "lib"
+    if top == cfg.src:
+        return "src"
+    return "other" 
 
 def run_detectors(sl: Slither) -> list[dict]:
     for name in dir(all_detectors):
@@ -128,9 +160,10 @@ def run_detectors(sl: Slither) -> list[dict]:
 
 
 def build_graph(project_path: str) -> Graph:
+    cfg = load_foundry_config(project_path)
     sl = Slither(project_path, foundry_out_directory="out")
 
-    g = Graph(slither=sl)
+    g = Graph(slither=sl, foundry_config=cfg)
     g.files = sorted({str(c.source_mapping.filename.relative) for c in sl.contracts})
 
     for c in sl.contracts:
