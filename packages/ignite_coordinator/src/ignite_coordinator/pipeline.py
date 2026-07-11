@@ -18,7 +18,15 @@ SCALABLE_ITERATIONS_MIN_LIMIT = 24
 # The active pipeline, using direct class references
 PIPELINE: list[BaseStep] = [
     DocumentationStep(
-        StepConfig(models=MODELS["reasoning"], max_iterations=SCALABLE_ITERATIONS_MAX_LIMIT, min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT, max_web_calls=12, scales_with_code=True, per_contract=0.3, per_kloc=1.5)
+        StepConfig(
+            models=MODELS["reasoning"],
+            max_iterations=SCALABLE_ITERATIONS_MAX_LIMIT,
+            min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
+            max_web_calls=12,
+            scales_with_code=True,
+            per_contract=0.3,
+            per_kloc=1.5,
+        )
     ),
     TestCoverageStep(
         StepConfig(
@@ -28,7 +36,7 @@ PIPELINE: list[BaseStep] = [
             scales_with_code=True,
             sloc_kind="test",
             per_contract=0.3,
-            per_kloc=1.0
+            per_kloc=1.0,
         )
     ),
     StaticAnalysisStep(
@@ -38,7 +46,7 @@ PIPELINE: list[BaseStep] = [
             min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
             scales_with_code=True,
             per_contract=0.4,
-            per_kloc=0.5
+            per_kloc=0.5,
         )
     ),
     ForkAnalysisStep(
@@ -53,7 +61,15 @@ PIPELINE: list[BaseStep] = [
     #     )
     # ), # Needs to be moved to POC step
     SemanticTaggingStep(
-        StepConfig(models=MODELS["reasoning"], max_iterations=SCALABLE_ITERATIONS_MAX_LIMIT, min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT, scales_with_code=True, per_contract=1.0, per_kloc=0.3, max_web_calls=12)
+        StepConfig(
+            models=MODELS["reasoning"],
+            max_iterations=SCALABLE_ITERATIONS_MAX_LIMIT,
+            min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
+            scales_with_code=True,
+            per_contract=1.0,
+            per_kloc=0.3,
+            max_web_calls=12,
+        )
     ),
     KnownIssuesStep(
         StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=32)

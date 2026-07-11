@@ -1,8 +1,9 @@
 from dataclasses import dataclass, field
 from typing import Literal
 
-from ignite_core.model_config import ModelConfig
 from ignite_core.graph import SlocKind
+from ignite_core.model_config import ModelConfig
+
 
 @dataclass
 class StepConfig:

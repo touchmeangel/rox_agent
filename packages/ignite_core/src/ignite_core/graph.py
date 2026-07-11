@@ -1,14 +1,13 @@
 import inspect
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Literal
 from pathlib import Path
+from typing import Literal
 
+from ignite_core.foundry_config import FoundryConfig, load_foundry_config
 from slither.detectors import all_detectors
 from slither.detectors.abstract_detector import AbstractDetector
 from slither.slither import Slither
-
-from ignite_core.foundry_config import FoundryConfig, load_foundry_config
 
 _GRAPH_CACHE: dict[str, "Graph"] = {}
 
@@ -23,6 +22,7 @@ _EXCLUDED_CHECKS = frozenset(
 )
 
 SlocKind = Literal["src", "test", "script", "lib", "other"]
+
 
 def get_or_build_graph(path: str) -> "Graph | None":
     if not path:
@@ -117,7 +117,7 @@ class Graph:
             for n, k in self.node_kind.items()
             if k == "state_var" and (contract is None or n.startswith(f"{contract}."))
         )
-        
+
     def sloc(self, kind: SlocKind | Literal["all"] = "src") -> int:
         all_lines: set[tuple[str, int]] = set()
         for c in self.slither.contracts:
@@ -126,7 +126,8 @@ class Graph:
                 continue
             all_lines.update((file, ln) for ln in c.source_mapping.lines)
         return len(all_lines)
-    
+
+
 def _dir_of(file_rel: str, cfg: FoundryConfig) -> SlocKind:
     parts = Path(file_rel).parts
     if not parts:
@@ -140,7 +141,8 @@ def _dir_of(file_rel: str, cfg: FoundryConfig) -> SlocKind:
         return "lib"
     if top == cfg.src:
         return "src"
-    return "other" 
+    return "other"
+
 
 def run_detectors(sl: Slither) -> list[dict]:
     for name in dir(all_detectors):
