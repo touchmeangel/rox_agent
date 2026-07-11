@@ -27,7 +27,6 @@ class StepResult:
     plan: list[dict] = field(default_factory=list)
     model_usage: dict[str, dict] = field(default_factory=dict)
 
-
 _REPEAT_CALL_HINT = (
     "BLOCKED: this exact call (same tool, same arguments) just failed and was not re-run — "
     "repeating it would produce the same failure. Choose one:\n"
@@ -190,6 +189,17 @@ class BaseStep:
         self.llm: LLMClient = get_llm(*cfg.models)
         self.project_path: str = ""
         self.github_repo_path: str = ""
+
+    def _iteration_budget(self) -> int:
+        if not self.cfg.scales_with_code:
+            return self.cfg.max_iterations
+
+        g = self.repo_graph
+        n_contracts = len(g.contracts())
+        kloc = g.sloc(kind=self.cfg.sloc_kind) / 1000
+
+        budget = self.cfg.min_iterations + n_contracts * self.cfg.per_contract + kloc * self.cfg.per_kloc
+        return int(min(self.cfg.max_iterations, budget))
 
     def select_context(self, global_context: dict) -> dict:
         return global_context
@@ -1030,7 +1040,7 @@ prefer completing the assigned objective.
         return result
 
     def run(self, context: dict) -> StepResult:
-        effective_max = self.cfg.max_iterations
+        effective_max = self._iteration_budget()
 
         default_debug_logger.log_event(
             "step_start", step=self.name, max_iterations=effective_max

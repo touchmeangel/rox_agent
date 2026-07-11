@@ -118,7 +118,7 @@ class Graph:
             if k == "state_var" and (contract is None or n.startswith(f"{contract}."))
         )
         
-    def sloc(self, kind: SlocKind = "src") -> int:
+    def sloc(self, kind: SlocKind | Literal["all"] = "src") -> int:
         all_lines: set[tuple[str, int]] = set()
         for c in self.slither.contracts:
             file = str(c.source_mapping.filename.relative)
@@ -127,9 +127,6 @@ class Graph:
             all_lines.update((file, ln) for ln in c.source_mapping.lines)
         return len(all_lines)
     
-    def test_sloc(self) -> int:
-        return self.sloc(kind="test")
-
 def _dir_of(file_rel: str, cfg: FoundryConfig) -> SlocKind:
     parts = Path(file_rel).parts
     if not parts:
