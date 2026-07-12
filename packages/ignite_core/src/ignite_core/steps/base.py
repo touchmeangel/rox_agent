@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import re
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -163,6 +163,7 @@ If the failure is unfamiliar, investigate the exact error message rather than gu
 
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
 
+
 def _coerce_findings(raw: Any) -> tuple[Any, str | None]:
     if isinstance(raw, dict):
         return raw, None
@@ -200,6 +201,7 @@ def _coerce_findings(raw: Any) -> tuple[Any, str | None]:
         return raw, f"findings parsed but was a {type(parsed).__name__}, not an object."
 
     return parsed, None
+
 
 def _extension_tool_spec(remaining_extension_budget: int) -> dict:
     return {
@@ -1256,7 +1258,7 @@ prefer completing the assigned objective.
                                 )
                             )
                             continue
-                            
+
                         validation = self.validate_complete(findings)
                         if validation is None:
                             _log(
@@ -1436,7 +1438,9 @@ prefer completing the assigned objective.
                                 )
                             continue
 
-                        _log(self, i, "tool_call_issued", tool=call.name, args=call.input)
+                        _log(
+                            self, i, "tool_call_issued", tool=call.name, args=call.input
+                        )
                         result = dispatch(
                             call.name,
                             call.input,
