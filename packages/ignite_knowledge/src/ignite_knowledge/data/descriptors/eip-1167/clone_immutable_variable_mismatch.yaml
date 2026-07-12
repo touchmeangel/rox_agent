@@ -1,0 +1,98 @@
+id: clone_immutable_variable_mismatch
+name: Solidity `immutable` Variables Silently Shared Across All Clones
+granularity: contract
+ 
+tags:
+  - eip1167_minimal_proxy_clone
+ 
+scenario: |
+  Solidity `immutable` variables are not stored in contract storage — they
+  are baked directly into the contract's RUNTIME BYTECODE at construction
+  time, and every read of an immutable variable is compiled to a `PUSH` of
+  that literal value (or a `CODECOPY` from the code region), not an `SLOAD`.
+ 
+  EIP-1167 clones do not have their own bytecode beyond the 45-byte
+  delegatecall stub — they execute the IMPLEMENTATION's bytecode via
+  `delegatecall`, using only the CLONE's storage. But immutable values are
+  embedded in that same shared implementation bytecode. This means every
+  clone that delegatecalls into the implementation reads the exact same
+  immutable values that were set when the IMPLEMENTATION contract was
+  constructed — not values specific to that clone.
+ 
+  If a developer assumes `initialize()` can set "per-clone" values into
+  variables that were declared `immutable` on the implementation (a natural
+  mistake, since `immutable` is normally the idiomatic way to set
+  once-at-deploy values cheaply), every single clone will silently share
+  the implementation's original value instead of the value the clone's
+  deployer intended. This is especially dangerous when the immutable is
+  something identity- or security-relevant: a fee recipient, an oracle
+  address, a signer/verifier key, a token address, or a chain-id-like
+  domain separator.
+ 
+properties:
+  - id: immutable_intended_to_vary_per_clone
+    check: |
+      List every `immutable` state variable in the implementation contract.
+ 
+      For each one, check whether it is ever referenced as if it could
+      differ between clones — e.g. compared against a value passed into
+      `initialize()`, described in comments/NatSpec as "per-instance" or
+      "per-pool" configuration, or named in a way that implies
+      clone-specific identity (e.g. `token0`, `pairOwner`, `vaultAsset`).
+ 
+      VULNERABLE: an `immutable` variable that the protocol's design
+      intends to differ per clone, but which is only ever set in the
+      implementation's constructor (so every clone reads the
+      implementation-deployment-time value).
+ 
+      NOTE: this is fine and NOT a bug if the immutable is genuinely meant
+      to be identical across all clones (e.g. a shared factory address or
+      protocol-wide constant) — the check is specifically about immutables
+      that are supposed to vary per clone but structurally cannot.
+    confirm_with: |
+      shell: rg "immutable" src/ -n -B 2 -A 2
+      shell: rg "function initialize" src/ -n -A 30
+      For each immutable found, check whether initialize() attempts to set
+      it (which would fail to compile / would be a no-op on storage,
+      confirming the misunderstanding) or whether other logic assumes its
+      value can be clone-specific.
+    severity: high
+ 
+  - id: initialize_writes_to_storage_shadow_of_immutable
+    check: |
+      Some implementations work around the immutable/clone mismatch
+      incorrectly: a developer notices `immutable` doesn't work per-clone
+      and "fixes" it by adding a same-named or similarly-named regular
+      storage variable set inside `initialize()`, but then leaves OTHER
+      functions in the implementation still reading the original
+      `immutable` version instead of the new storage variable.
+ 
+      Verify that every read of clone-specific configuration consistently
+      uses the storage variable (set via `initialize()`), and that no
+      function path still falls back to reading the old `immutable`.
+    confirm_with: |
+      shell: rg "immutable" src/ -n
+      shell: rg "function initialize" src/ -n -A 30
+      Diff the set of variables written in initialize() against the set of
+      variables declared immutable and read elsewhere in the contract.
+    severity: medium
+ 
+exploitation_context: |
+  1. Deploy the implementation contract with implementation-time
+     constructor arguments A (e.g. `feeRecipient = attackerControlledAddr`
+     if the attacker can influence the initial implementation deployment,
+     or simply any value A for a non-adversarial deployer scenario).
+  2. Deploy two clones, `cloneX` and `cloneY`, each calling `initialize()`
+     with different intended per-clone values (e.g. `feeRecipient = X` for
+     cloneX, `feeRecipient = Y` for cloneY).
+  3. Call the getter/logic that is supposed to return the per-clone value
+     through `cloneX` and `cloneY`.
+  4. Show that both return the SAME value — the one baked into the
+     implementation's bytecode at construction (value A) — regardless of
+     what was passed to `initialize()`, proving that per-clone
+     configuration silently failed and all clones share implementation-time
+     state for that variable.
+ 
+references:
+  - https://docs.soliditylang.org/en/latest/contracts.html#immutable
+  - https://eips.ethereum.org/EIPS/eip-1167

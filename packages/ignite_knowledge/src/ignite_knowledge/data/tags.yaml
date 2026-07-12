@@ -173,3 +173,20 @@ tags:
       state variables or inline assembly `tstore` / `tload`. Transient storage
       persists across every call executed within the same transaction and is
       automatically cleared only after the transaction completes.
+
+  - id: eip1167_minimal_proxy_clone
+    description: >
+      Contract is deployed as, deploys, or is otherwise part of an EIP-1167
+      minimal proxy ("clone") system. Apply this tag if you see the standard
+      EIP-1167 runtime bytecode prefix/suffix
+      (363d3d373d3d3d363d73...5af43d82803e903d91602b57fd5bf3), use of
+      OpenZeppelin's `Clones` library (`clone()`, `cloneDeterministic()`,
+      `predictDeterministicAddress()`), a factory contract that deploys many
+      lightweight instances via `create`/`create2` which all `delegatecall`
+      into a single shared, immutable implementation address, or a contract
+      that inherits `Initializable` / exposes an `initialize()` function in
+      place of a constructor specifically because it is meant to be deployed
+      as a clone. This tag applies regardless of which role the contract
+      under review plays — the FACTORY that deploys clones, the
+      IMPLEMENTATION/logic contract every clone delegates to, or the clone
+      instance itself.

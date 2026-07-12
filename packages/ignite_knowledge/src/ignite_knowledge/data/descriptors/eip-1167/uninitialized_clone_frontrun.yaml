@@ -1,0 +1,92 @@
+id: uninitialized_clone_frontrun
+name: Front-Runnable Initializer on Freshly Deployed Clone
+granularity: contract
+ 
+tags:
+  - eip1167_minimal_proxy_clone
+  - access_control
+ 
+scenario: |
+  EIP-1167 clones have no constructor — the deploying transaction (`create`/
+  `create2`) only copies ~45 bytes of runtime code and cannot run
+  constructor logic against the clone's own storage. Because of this, clone
+  systems almost universally rely on a separate `initialize()` call, made in
+  a second transaction after deployment, to set the owner, admin, token
+  parameters, or any other "constructor-equivalent" state.
+ 
+  This creates a window between deployment and initialization. If the
+  factory deploys the clone and initializes it in two separate transactions
+  (rather than atomically in one), or if `initialize()` has no restriction
+  on who may call it, an attacker monitoring the mempool (or simply
+  front-running a known deterministic clone address) can call
+  `initialize()` themselves before the legitimate caller does. The attacker
+  becomes the owner/admin of the clone, or sets malicious parameters
+  (fee recipient, price feed, signer key, etc.), permanently hijacking that
+  instance.
+ 
+properties:
+  - id: deploy_and_init_not_atomic
+    check: |
+      Find the factory function that deploys clones (look for
+      `Clones.clone(...)`, `Clones.cloneDeterministic(...)`, or raw
+      `create`/`create2` of the EIP-1167 bytecode).
+ 
+      Determine whether the SAME transaction that deploys the clone also
+      calls `initialize()` on it, or whether initialization happens in a
+      separate, later transaction/call.
+ 
+      If deployment and initialization are not atomic (same tx, same call
+      stack, with the factory itself invoking `initialize()` right after
+      `clone()`), the clone is exposed to a front-running window.
+    confirm_with: |
+      shell: rg "clone\(|cloneDeterministic\(" src/ -n -A 10
+      shell: rg "function initialize" src/ -n -A 15
+      Trace whether the factory function that calls clone()/cloneDeterministic()
+      also calls initialize() on the returned address within the same
+      function body.
+    severity: high
+ 
+  - id: unrestricted_initializer
+    check: |
+      Even when deployment and initialization ARE meant to be atomic, verify
+      that `initialize()` cannot be called by an arbitrary third party
+      instead of the intended caller.
+ 
+      VULNERABLE: `initialize()` is `external`/`public` with no check that
+      `msg.sender == factory` (or equivalent), relying only on the
+      `initializer` modifier (which just prevents re-initialization, not
+      unauthorized first initialization).
+ 
+      SECURE: `initialize()` either restricts the caller (e.g.
+      `require(msg.sender == factory)`), or the factory's deploy function
+      passes all constructor-equivalent arguments to `clone()`/an
+      immediately-following call in a way that leaves no attacker-reachable
+      gap, and initialize() still cannot be meaningfully front-run because
+      the values that matter are supplied by the deployer, not by whoever
+      calls first.
+    confirm_with: |
+      shell: rg "function initialize" src/ -n -A 20
+      shell: rg "initializer\b" src/ -n
+      Check whether initialize() has any caller restriction beyond the
+      OpenZeppelin `initializer` modifier.
+    severity: critical
+ 
+exploitation_context: |
+  Do not attempt to bypass access control cryptographically — this is a
+  pure transaction-ordering race.
+ 
+  1. Identify (or predict, if `cloneDeterministic` is used) the address the
+     next clone will be deployed to.
+  2. In a Foundry test, simulate two transactions targeting that address:
+     one from the legitimate deployer calling `initialize(legitParams)`,
+     and one from the attacker calling `initialize(attackerParams)`.
+  3. Execute the attacker's `initialize()` call first (simulating mempool
+     front-running or simply calling it before the legitimate second
+     transaction lands).
+  4. Show that the legitimate deployer's later `initialize()` call reverts
+     (already initialized) while the clone is now owned/configured by the
+     attacker — proving the instance is permanently compromised.
+ 
+references:
+  - https://eips.ethereum.org/EIPS/eip-1167
+  - https://docs.openzeppelin.com/contracts/4.x/api/proxy

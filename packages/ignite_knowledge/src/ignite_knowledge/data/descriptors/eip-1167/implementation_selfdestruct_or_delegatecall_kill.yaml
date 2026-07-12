@@ -1,0 +1,93 @@
+id: implementation_selfdestruct_or_delegatecall_kill
+name: Implementation Self-Destruct / Arbitrary Delegatecall Bricks All Clones
+granularity: contract
+ 
+tags:
+  - eip1167_minimal_proxy_clone
+  - makes_untrusted_calls
+ 
+scenario: |
+  Every EIP-1167 clone hardcodes the implementation's address directly into
+  its 45-byte runtime bytecode and forwards every call to it via
+  `delegatecall`. This binding is permanent and cannot be changed after
+  deployment (this is the whole point of the standard — clones are
+  intentionally non-upgradeable).
+ 
+  This has a systemic consequence: the security of every single clone,
+  present and future, is entirely dependent on the implementation contract
+  never becoming non-functional or malicious. Two concrete failure modes:
+ 
+    1. SELFDESTRUCT: if the implementation contract contains a reachable
+       `selfdestruct` (directly, or via a `delegatecall` to an
+       attacker-supplied address that itself selfdestructs — which destroys
+       the CALLER of delegatecall, i.e. the implementation), the
+       implementation's bytecode is erased. Every clone that delegatecalls
+       into an address with no code will now revert (or silently
+       return/succeed with empty data depending on the calling contract's
+       handling), permanently bricking the entire fleet of clones. This is
+       the same root cause as the 2017 Parity multi-sig library freeze.
+ 
+    2. ARBITRARY DELEGATECALL SURFACE: if the implementation itself exposes
+       a function that performs `delegatecall` to a caller-supplied
+       address (e.g. a generic "execute" or module/plugin pattern), an
+       attacker can call that function directly on the implementation
+       (bypassing any clone) and use it to trigger `selfdestruct` inside the
+       implementation's own execution context, or otherwise corrupt the
+       implementation's storage/behavior in ways every clone then inherits.
+ 
+properties:
+  - id: reachable_selfdestruct_in_implementation
+    check: |
+      Search the implementation contract (and anything it delegatecalls to)
+      for `selfdestruct`/`suicide`.
+ 
+      Determine whether that code path is reachable by ANY external/public
+      function, under ANY access-control configuration, including
+      misconfigured ownership (e.g. `onlyOwner` where owner can be
+      reassigned via a bug elsewhere, or no access control at all).
+    confirm_with: |
+      shell: rg "selfdestruct\(|suicide\(" src/ -n -B 10
+      For each hit, trace the call path back to an external/public entry
+      point and note what access control (if any) gates it.
+    severity: critical
+ 
+  - id: implementation_delegatecalls_arbitrary_target
+    check: |
+      Search for `delegatecall` where the target address is a function
+      parameter, a value read from calldata, or otherwise not a
+      compile-time-fixed/immutable, protocol-owned address.
+ 
+      VULNERABLE: `target.delegatecall(data)` where `target` is
+      attacker-supplied.
+ 
+      This is dangerous specifically in an implementation contract because
+      it lets an attacker execute arbitrary code (including
+      `selfdestruct`) with the implementation's own storage/context as the
+      execution frame — not a clone's.
+    confirm_with: |
+      shell: rg "\.delegatecall\(" src/ -n -B 8
+      For each match, confirm whether the target address is fixed at
+      compile/deploy time or is caller-controlled.
+    severity: critical
+ 
+exploitation_context: |
+  1. Deploy the implementation contract exactly as it is deployed in
+     production, and deploy at least one clone pointing to it (via
+     `Clones.clone(implementation)` or the raw EIP-1167 bytecode).
+  2. Confirm the clone works normally (call a simple view/state-changing
+     function through it).
+  3. Call the vulnerable function DIRECTLY on the implementation address
+     (not through the clone) to trigger `selfdestruct`, either directly or
+     via a helper contract supplied to an arbitrary-delegatecall function.
+  4. After the implementation is destroyed, call the SAME function again
+     through the clone and show it now reverts / returns empty data,
+     because `extcodesize(implementation) == 0`.
+  5. This demonstrates a single transaction against the implementation
+     address permanently bricks every clone that has ever been or will
+     ever be deployed against it — with no possible remediation, since
+     EIP-1167 clones are non-upgradeable by design.
+ 
+references:
+  - https://eips.ethereum.org/EIPS/eip-1167
+  - https://www.parity.io/blog/a-postmortem-on-the-parity-multi-sig-library-self-destruct/
+  - https://blog.openzeppelin.com/on-the-parity-wallet-multisig-hack-405a8c12e8f7
