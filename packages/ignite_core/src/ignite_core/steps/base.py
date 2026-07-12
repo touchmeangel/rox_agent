@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import re
 import json
 from dataclasses import dataclass, field
+from typing import Any
 
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
 from ignite_core.graph import Graph, get_or_build_graph
@@ -158,6 +160,46 @@ If the failure is unfamiliar, investigate the exact error message rather than gu
 
     return "\n".join(parts)
 
+
+_JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL)
+
+def _coerce_findings(raw: Any) -> tuple[Any, str | None]:
+    if isinstance(raw, dict):
+        return raw, None
+
+    if not isinstance(raw, str):
+        return raw, f"findings must be a JSON object, got {type(raw).__name__}."
+
+    text = raw.strip()
+
+    fence_match = _JSON_FENCE_RE.match(text)
+    if fence_match:
+        text = fence_match.group(1).strip()
+
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if match:
+            try:
+                parsed = json.loads(match.group(0))
+            except json.JSONDecodeError:
+                return raw, (
+                    f"findings was a string and could not be parsed as JSON ({exc}). "
+                    "Call submit_findings again with findings as a native JSON object — "
+                    "not a string, and not wrapped in ```json fences."
+                )
+        else:
+            return raw, (
+                f"findings was a string and could not be parsed as JSON ({exc}). "
+                "Call submit_findings again with findings as a native JSON object — "
+                "not a string, and not wrapped in ```json fences."
+            )
+
+    if not isinstance(parsed, dict):
+        return raw, f"findings parsed but was a {type(parsed).__name__}, not an object."
+
+    return parsed, None
 
 def _extension_tool_spec(remaining_extension_budget: int) -> dict:
     return {
@@ -1109,12 +1151,12 @@ prefer completing the assigned objective.
                         TOOL_SPECS + [UPDATE_PLAN_SPEC] + self._terminal_tool_specs()
                     )
 
-                def _log(category: str, *, _iteration: int = i, **fields) -> None:
+                def _log(self, i: int, category: str, **fields) -> None:
                     default_debug_logger.log_event(
-                        category, step=self.name, iteration=_iteration + 1, **fields
+                        category, step=self.name, iteration=i + 1, **fields
                     )
 
-                _log("iteration_start", iterations_left=iterations_left)
+                _log(self, i, "iteration_start", iterations_left=iterations_left)
 
                 reporter = RichReporter(window)
                 turn = self.llm.chat_with_tools(
@@ -1140,12 +1182,14 @@ prefer completing the assigned objective.
                     thinking_trace.append(rationale)
 
                 if not turn.tool_calls:
-                    _log("no_tool_call", text=turn.text)
+                    _log(self, i, "no_tool_call", text=turn.text)
 
                     consecutive_no_tool_call_repeats += 1
 
                     if consecutive_no_tool_call_repeats >= NO_TOOL_CALL_REPEAT_LIMIT:
                         _log(
+                            self,
+                            i,
                             "no_tool_call_stuck",
                             repeats=consecutive_no_tool_call_repeats,
                             text=turn.text,
@@ -1193,15 +1237,31 @@ prefer completing the assigned objective.
 
                 for call in turn.tool_calls:
                     if call.name == "submit_findings":
-                        findings = call.input.get("findings", {})
-                        if isinstance(findings, str):
-                            try:
-                                findings = json.loads(findings)
-                            except json.JSONDecodeError:
-                                pass
+                        findings, parse_error = _coerce_findings(
+                            call.input.get("findings", {})
+                        )
+                        if parse_error is not None:
+                            _log(
+                                self,
+                                i,
+                                "findings_parse_failed",
+                                raw=call.input.get("findings", ""),
+                                error=parse_error,
+                            )
+                            tool_results.append(
+                                ToolResultEntry(
+                                    call.id,
+                                    f"Findings rejected: {parse_error}",
+                                    is_error=True,
+                                )
+                            )
+                            continue
+                            
                         validation = self.validate_complete(findings)
                         if validation is None:
                             _log(
+                                self,
+                                i,
                                 "step_complete",
                                 summary=call.input.get("summary", ""),
                                 findings=findings,
@@ -1218,6 +1278,8 @@ prefer completing the assigned objective.
                             )
                         else:
                             _log(
+                                self,
+                                i,
                                 "incomplete_findings",
                                 validation=validation,
                                 findings=findings,
@@ -1243,7 +1305,7 @@ prefer completing the assigned objective.
                             "can_continue": bool(call.input.get("can_continue", False)),
                         }
                         blockers.append(blocker)
-                        _log("step_blocked", blocker=blocker)
+                        _log(self, i, "step_blocked", blocker=blocker)
                         if blocker["fallback_action"] and blocker["can_continue"]:
                             tool_results.append(
                                 ToolResultEntry(
@@ -1268,6 +1330,8 @@ prefer completing the assigned objective.
 
                     elif call.name == "report_failed":
                         _log(
+                            self,
+                            i,
                             "step_failed",
                             error=call.input.get("error"),
                             reason=call.input.get("reason"),
@@ -1335,6 +1399,8 @@ prefer completing the assigned objective.
                         if signature == last_failed_signature:
                             consecutive_repeat_blocks += 1
                             _log(
+                                self,
+                                i,
                                 "repeat_call_blocked",
                                 tool=call.name,
                                 args=call.input,
@@ -1370,7 +1436,7 @@ prefer completing the assigned objective.
                                 )
                             continue
 
-                        _log("tool_call_issued", tool=call.name, args=call.input)
+                        _log(self, i, "tool_call_issued", tool=call.name, args=call.input)
                         result = dispatch(
                             call.name,
                             call.input,

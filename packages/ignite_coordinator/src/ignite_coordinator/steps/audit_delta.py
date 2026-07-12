@@ -221,6 +221,7 @@ class AuditDeltaStep(BaseStep):
     def validate_complete(self, findings: dict) -> str | None:
         if not isinstance(findings, dict):
             return "findings must be a dict"
+
         required = {
             "audit_found",
             "audit",
