@@ -7,6 +7,7 @@ from ignite_core.graph import Graph
 from ignite_core.reporting import Reporter
 from ignite_core.search_state import SearchState
 from ignite_core.steps.base import BaseStep, StepResult
+from ignite_core.steps.mixins import GitHistoryAccessMixin
 from ignite_core.tools import dispatch
 
 
@@ -152,7 +153,7 @@ def _fmt_prefetch(results: list[str], protocol_name: str) -> str:
     return f"{header}\n\n{body}"
 
 
-class AuditDeltaStep(BaseStep):
+class AuditDeltaStep(GitHistoryAccessMixin, BaseStep):
     name = "audit_delta"
 
     def run(self, context: dict) -> StepResult:

@@ -7,6 +7,7 @@ from ignite_core.debug_logger import DebugLogger
 from ignite_core.graph import Graph
 from ignite_core.reporting import Reporter
 from ignite_core.steps.base import BaseStep, StepResult
+from ignite_core.steps.mixins import GitHistoryAccessMixin
 from ignite_core.tools import dispatch
 
 _FORK_README_KEYWORDS = [
@@ -126,7 +127,7 @@ def _fmt_signals(signals: ForkSignals) -> str:
     return "\n".join(lines)
 
 
-class ForkAnalysisStep(BaseStep):
+class ForkAnalysisStep(GitHistoryAccessMixin, BaseStep):
     name = "fork_analysis"
 
     def run(self, context: dict) -> StepResult:

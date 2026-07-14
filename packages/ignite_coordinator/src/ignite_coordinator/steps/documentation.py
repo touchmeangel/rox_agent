@@ -253,7 +253,7 @@ class DocumentationStep(BaseStep):
     def initial_prompt(
         self, context: dict, reporter: Reporter, debug_logger: DebugLogger
     ) -> str:
-        repo_map = _generate_repo_tree(self.github_repo_path)
+        repo_map = _generate_repo_tree(self.project_path)
         architecture_section = _fmt_architecture(self.repo_graph)
 
         return f"""<audit_step name="documentation">
@@ -267,7 +267,7 @@ in the worker phase.
 </scope>
 
 <repository>
-<repo_location>{self.github_repo_path}</repo_location>
+<repo_location>{self.project_path}</repo_location>
 <project_path note="tooling executes here">{self.project_path}</project_path>
 
 <repo_map note="use this to find documentation, build configs, and source directories; you must still read_file/shell into anything of interest">

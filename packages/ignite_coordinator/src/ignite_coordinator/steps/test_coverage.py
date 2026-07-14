@@ -199,7 +199,7 @@ write or reference exploit or PoC code. Flag gaps as coverage gaps; a later step
 what, if anything, they mean for security.
 </scope>
 
-<repository>{self.github_repo_path}</repository>
+<repository>{self.project_path}</repository>
 
 <expected_targets>
 <protocol_name>{protocol_name or "(unknown)"}</protocol_name>

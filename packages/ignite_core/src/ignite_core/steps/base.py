@@ -236,7 +236,6 @@ class BaseStep:
         self.cfg = cfg
         self.llm: LLMClient = get_llm(*cfg.models)
         self.project_path: str = ""
-        self.github_repo_path: str = ""
 
     def _iteration_budget(self) -> int:
         if not self.cfg.scales_with_code:

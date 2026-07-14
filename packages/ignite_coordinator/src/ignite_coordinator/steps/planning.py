@@ -310,7 +310,6 @@ report_blocker, no report_failed, and no follow-up turn to add anything afterwar
 
     def environment_prompt(self) -> str:
         return (
-            f"- Repository: {self.github_repo_path}\n"
             f"- Workspace:  {self.project_path}\n"
             "- Role: Triage coordinator. You have full prior-step context. "
             "No file access — all evidence is already in this prompt."
