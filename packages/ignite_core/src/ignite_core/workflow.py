@@ -38,11 +38,11 @@ class Workflow:
             )
 
             for step in self.pipeline:
-                self.reporter.step_started(step.name)
-
                 if isinstance(step, GitHistoryAccessMixin):
                     step.github_repo_path = repo_path
                 step.project_path = work_path
+                
+                self.reporter.step_started(step.name, budget=step._iteration_budget())
 
                 filtered_context = step.select_context(context)
 

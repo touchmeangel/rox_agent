@@ -61,7 +61,7 @@ class Reporter(ABC):
     ) -> None: ...
 
     @abstractmethod
-    def step_started(self, name: str) -> None: ...
+    def step_started(self, name: str, budget: int | None = None) -> None: ...
 
     @abstractmethod
     def step_finished(
@@ -116,7 +116,7 @@ class NullReporter(Reporter):
     ) -> None:
         pass
 
-    def step_started(self, name: str) -> None:
+    def step_started(self, name: str, budget: int | None = None) -> None:
         pass
 
     def step_finished(
@@ -227,8 +227,9 @@ class RichReporter(Reporter):
             f"({type(error).__name__}) → trying {to_model}[/dim]\n"
         )
 
-    def step_started(self, name: str) -> None:
-        self.console.print(f"\n[#1dcccc]●[/#1dcccc] [bold white]{name}[/bold white]")
+    def step_started(self, name: str, budget: int | None = None) -> None:
+        budget_str = f"  [dim]·  max {budget} iterations[/dim]" if budget is not None else ""
+        self.console.print(f"\n[#1dcccc]●[/#1dcccc] [bold white]{name}[/bold white]{budget_str}")
 
     def step_finished(
         self,
