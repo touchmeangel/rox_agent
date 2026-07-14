@@ -254,6 +254,10 @@ class BaseStep:
 
     def select_context(self, global_context: dict) -> dict:
         return global_context
+    
+    @property
+    def execution_path(self) -> str:
+        return self.project_path
 
     @property
     def repo_graph(self) -> Graph:
@@ -1443,7 +1447,7 @@ prefer completing the assigned objective.
                         result = dispatch(
                             call.name,
                             call.input,
-                            self.project_path,
+                            self.execution_path,
                             self.repo_graph,
                             reporter=reporter,
                             search_state=search_state,

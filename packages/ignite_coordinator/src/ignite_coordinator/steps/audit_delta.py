@@ -156,9 +156,9 @@ def _fmt_prefetch(results: list[str], protocol_name: str) -> str:
 class AuditDeltaStep(GitHistoryAccessMixin, BaseStep):
     name = "audit_delta"
 
-    def run(self, context: dict) -> StepResult:
-        self.project_path = self.github_repo_path
-        return super().run(context)
+    @property
+    def execution_path(self) -> str:
+        return self.github_repo_path
 
     def select_context(self, global_context: dict) -> dict:
         return {

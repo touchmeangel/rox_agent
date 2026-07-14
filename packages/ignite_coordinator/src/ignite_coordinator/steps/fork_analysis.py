@@ -130,9 +130,9 @@ def _fmt_signals(signals: ForkSignals) -> str:
 class ForkAnalysisStep(GitHistoryAccessMixin, BaseStep):
     name = "fork_analysis"
 
-    def run(self, context: dict) -> StepResult:
-        self.project_path = self.github_repo_path
-        return super().run(context)
+    @property
+    def execution_path(self) -> str:
+        return self.github_repo_path
 
     def select_context(self, global_context: dict) -> dict:
         return {"documentation": global_context.get("documentation", {})}
