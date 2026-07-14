@@ -213,11 +213,37 @@ def run_command(
         return ToolResult(command, "", str(exc), 1)
 
 
+def graph_query(
+    repo_graph: Graph, relation: str, node: str = "", timeout: int = 10
+) -> ToolResult:
+    # Local graph lookups are instantaneous, but we wrap them for consistency
+    t_start = time.monotonic()
+    method = {
+        "callers": repo_graph.callers,
+        "callees": repo_graph.callees,
+        "inherits": repo_graph.inherits,
+        "inherited_by": repo_graph.inherited_by,
+        "dead_code": lambda _n: repo_graph.dead_code(),
+        "search": lambda n: repo_graph.search(n),
+    }.get(relation)
+
+    if method is None:
+        return ToolResult("graph_query", "", f"Unknown relation '{relation}'.", 1)
+
+    if time.monotonic() - t_start > timeout:
+        return ToolResult("graph_query", "", f"Timed out after {timeout}s", 1)
+
+    return ToolResult("graph_query", json.dumps(method(node)), "", 0)
+
+
 def slither(
-    project_path: str, args: str = "./", reporter: Reporter | None = None
+    project_path: str,
+    args: str = "./",
+    timeout: int = 240,
+    reporter: Reporter | None = None,
 ) -> ToolResult:
     result = run_command(
-        f"slither {args}", cwd=project_path, timeout=240, reporter=reporter
+        f"slither {args}", cwd=project_path, timeout=timeout, reporter=reporter
     )
     if not result.success:
         data = result.json_data()
@@ -227,17 +253,23 @@ def slither(
 
 
 def aderyn(
-    project_path: str, flags: str = "", reporter: Reporter | None = None
+    project_path: str,
+    flags: str = "",
+    timeout: int = 180,
+    reporter: Reporter | None = None,
 ) -> ToolResult:
     cmd_str = f"aderyn {flags}".strip() if flags else "aderyn"
-    return run_command(cmd_str, cwd=project_path, timeout=180, reporter=reporter)
+    return run_command(cmd_str, cwd=project_path, timeout=timeout, reporter=reporter)
 
 
 def cast(
-    project_path: str, subcommand: str, reporter: Reporter | None = None
+    project_path: str,
+    subcommand: str,
+    timeout: int = 30,
+    reporter: Reporter | None = None,
 ) -> ToolResult:
     return run_command(
-        f"cast {subcommand}", cwd=project_path, timeout=30, reporter=reporter
+        f"cast {subcommand}", cwd=project_path, timeout=timeout, reporter=reporter
     )
 
 
@@ -256,12 +288,13 @@ def evm_decode_constructor(
     project_path: str,
     creation_input: str,
     constructor_types: str,
+    timeout: int = 180,
     reporter: Reporter | None = None,
 ) -> ToolResult:
     return run_command(
         f"evm_decode_constructor {creation_input} {constructor_types}",
         cwd=project_path,
-        timeout=180,
+        timeout=timeout,
         reporter=reporter,
     )
 
@@ -269,12 +302,16 @@ def evm_decode_constructor(
 def git(
     project_path: str,
     args: str = "log --oneline -10",
+    timeout: int = 30,
     reporter: Reporter | None = None,
 ) -> ToolResult:
-    return run_command(f"git {args}", cwd=project_path, timeout=30, reporter=reporter)
+    return run_command(
+        f"git {args}", cwd=project_path, timeout=timeout, reporter=reporter
+    )
 
 
-def read_file(project_path: str, relative_path: str) -> ToolResult:
+def read_file(project_path: str, relative_path: str, timeout: int = 10) -> ToolResult:
+    t_start = time.monotonic()
     full = Path(project_path) / relative_path
     if not full.exists():
         return ToolResult(
@@ -285,6 +322,8 @@ def read_file(project_path: str, relative_path: str) -> ToolResult:
             1,
         )
     try:
+        if time.monotonic() - t_start > timeout:
+            raise subprocess.TimeoutExpired(f"cat {relative_path}", timeout)
         return ToolResult(
             f"cat {relative_path}", full.read_text(errors="replace"), "", 0
         )
@@ -292,9 +331,14 @@ def read_file(project_path: str, relative_path: str) -> ToolResult:
         return ToolResult(f"cat {relative_path}", "", str(exc), 1)
 
 
-def list_sol_files(project_path: str, pattern: str = "**/*.sol") -> ToolResult:
+def list_sol_files(
+    project_path: str, pattern: str = "**/*.sol", timeout: int = 10
+) -> ToolResult:
+    t_start = time.monotonic()
     path = Path(project_path)
     files = sorted(str(f.relative_to(path)) for f in path.glob(pattern))
+    if time.monotonic() - t_start > timeout:
+        return ToolResult("find . -name '*.sol'", "", f"Timed out after {timeout}s", 1)
     return ToolResult(
         "find . -name '*.sol'",
         "\n".join(files) if files else "(no .sol files found)",
@@ -304,12 +348,17 @@ def list_sol_files(project_path: str, pattern: str = "**/*.sol") -> ToolResult:
 
 
 def shell(
-    project_path: str, command: str, reporter: Reporter | None = None
+    project_path: str,
+    command: str,
+    timeout: int = 120,
+    reporter: Reporter | None = None,
 ) -> ToolResult:
-    return run_command(command, cwd=project_path, timeout=120, reporter=reporter)
+    return run_command(command, cwd=project_path, timeout=timeout, reporter=reporter)
 
 
-def _web_search_ddgs(query: str, max_results: int = 5) -> ToolResult:
+def _web_search_ddgs(
+    query: str, max_results: int = 5, timeout: int = 15
+) -> ToolResult:
     query = query.strip()
     label = f"web_search {query!r}"
     if not query:
@@ -317,8 +366,12 @@ def _web_search_ddgs(query: str, max_results: int = 5) -> ToolResult:
 
     results = None
     last_exc: Exception | None = None
+    t_start = time.monotonic()
+
     for attempt in range(2):
         try:
+            if time.monotonic() - t_start > timeout:
+                raise subprocess.TimeoutExpired(label, timeout)
             results = DDGS().text(query, max_results=max_results, backend="auto")
             last_exc = None
             break
@@ -357,12 +410,15 @@ def _web_search_ddgs(query: str, max_results: int = 5) -> ToolResult:
     return ToolResult(label, "\n".join(lines), "", 0)
 
 
-def web_search(query: str, max_results: int = 5) -> ToolResult:
-    return _web_search_ddgs(query, max_results)
+def web_search(query: str, max_results: int = 5, timeout: int = 15) -> ToolResult:
+    return _web_search_ddgs(query, max_results, timeout=timeout)
 
 
 def github_search(
-    query: str, search_type: str = "repositories", max_results: int = 5
+    query: str,
+    search_type: str = "repositories",
+    max_results: int = 5,
+    timeout: int = 15,
 ) -> ToolResult:
     query = query.strip()
     label = f"github_search [{search_type}] {query!r}"
@@ -385,7 +441,7 @@ def github_search(
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         if exc.code == 403:
@@ -423,17 +479,13 @@ def github_search(
 
 
 def _truncate(text: str, limit: int, note: str) -> str:
-    """Hard-cut `text` at `limit` chars and append `note` explaining what got
-    cut and how to see the rest. Every truncation in this module — tool
-    stdout/stderr, extracted document text — funnels through here so there's
-    one place that decides what a truncation notice looks like."""
     if len(text) <= limit:
         return text
     omitted = len(text) - limit
     return text[:limit] + f"\n\n...[truncated — {omitted} more chars omitted. {note}]"
 
 
-def _pdftotext(path: Path, max_chars: int) -> tuple[str, str]:
+def _pdftotext(path: Path, max_chars: int, timeout: int = 60) -> tuple[str, str]:
     if shutil.which("pdftotext") is None:
         return "", (
             "pdftotext not found in PATH. The Docker image needs poppler-utils: "
@@ -444,10 +496,13 @@ def _pdftotext(path: Path, max_chars: int) -> tuple[str, str]:
             ["pdftotext", "-layout", str(path), "-"],  # noqa: S607
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        return "", "pdftotext timed out after 60s — the PDF may be unusually large."
+        return (
+            "",
+            f"pdftotext timed out after {timeout}s — the PDF may be unusually large.",
+        )
     except Exception as exc:
         return "", str(exc)
 
@@ -469,7 +524,9 @@ def _pdftotext(path: Path, max_chars: int) -> tuple[str, str]:
     return text, ""
 
 
-def download_file(url: str, filename: str | None = None) -> ToolResult:
+def download_file(
+    url: str, filename: str | None = None, timeout: int = 60
+) -> ToolResult:
     url = url.strip()
     label = f"download_file {url}"
 
@@ -487,7 +544,7 @@ def download_file(url: str, filename: str | None = None) -> ToolResult:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
             content_type = resp.headers.get_content_type() or "application/octet-stream"
             raw = resp.read(_MAX_DOWNLOAD_BYTES + 1)
     except urllib.error.HTTPError as exc:
@@ -529,10 +586,10 @@ def download_file(url: str, filename: str | None = None) -> ToolResult:
 
 
 def _resolve_source_path(
-    source: str, label: str
+    source: str, label: str, timeout: int = 60
 ) -> tuple[Path | None, ToolResult | None]:
     if source.startswith(("http://", "https://")):
-        dl = download_file(source)
+        dl = download_file(source, timeout=timeout)
         if not dl.success:
             return None, ToolResult(
                 label, "", f"Could not download file: {dl.stderr}", 1
@@ -628,10 +685,12 @@ def _guess_doc_ext(url: str, content_type: str) -> str | None:
     return url_ext if url_ext in _DOC_DISPATCH else None
 
 
-def read_document(source: str, max_chars: int = 15_000) -> ToolResult:
+def read_document(
+    source: str, max_chars: int = 15_000, timeout: int = 60
+) -> ToolResult:
     source = source.strip()
     label = f"read_document {source}"
-    path, err = _resolve_source_path(source, label)
+    path, err = _resolve_source_path(source, label, timeout=timeout)
     if err:
         return err
 
@@ -646,13 +705,19 @@ def read_document(source: str, max_chars: int = 15_000) -> ToolResult:
             1,
         )
 
-    text, error = extractor(path, max_chars)
+    if extractor == _pdftotext:
+        text, error = _pdftotext(path, max_chars, timeout=timeout)
+    else:
+        text, error = extractor(path, max_chars)
+
     if error:
         return ToolResult(label, "", error, 1)
     return ToolResult(label, text, "", 0)
 
 
-def browser_fetch(url: str, max_chars: int = 8_000, wait_ms: int = 0) -> ToolResult:
+def browser_fetch(
+    url: str, max_chars: int = 8_000, wait_ms: int = 0, timeout: int = 25
+) -> ToolResult:
     url = url.strip()
     label = f"browser_fetch {url}"
 
@@ -671,7 +736,7 @@ def browser_fetch(url: str, max_chars: int = 8_000, wait_ms: int = 0) -> ToolRes
                 page = browser.new_page(
                     user_agent="Mozilla/5.0 (compatible; ignite-agent/1.0)"
                 )
-                page.goto(url, timeout=25_000, wait_until="networkidle")
+                page.goto(url, timeout=timeout * 1000, wait_until="networkidle")
                 if wait_ms:
                     page.wait_for_timeout(wait_ms)
                 text = page.inner_text("body")
@@ -692,7 +757,7 @@ def browser_fetch(url: str, max_chars: int = 8_000, wait_ms: int = 0) -> ToolRes
     return ToolResult(label, text + note, "", 0)
 
 
-def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
+def web_fetch(url: str, max_chars: int = 6000, timeout: int = 20) -> ToolResult:
     url = url.strip()
     label = f"web_fetch {url}"
 
@@ -711,7 +776,7 @@ def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
             content_type = resp.headers.get_content_type() or ""
             charset = resp.headers.get_content_charset() or "utf-8"
             raw = resp.read()
@@ -729,7 +794,12 @@ def web_fetch(url: str, max_chars: int = 6000) -> ToolResult:
         tmp_path = _download_store.write_bytes(
             raw, f"{hashlib.sha256(url.encode()).hexdigest()[:8]}{doc_ext}"
         )
-        text, error = _DOC_DISPATCH[doc_ext](tmp_path, max_chars)
+        extractor = _DOC_DISPATCH[doc_ext]
+        if extractor == _pdftotext:
+            text, error = _pdftotext(tmp_path, max_chars, timeout=timeout)
+        else:
+            text, error = extractor(tmp_path, max_chars)
+
         if error:
             return ToolResult(
                 label, "", f"Detected {doc_ext} but extraction failed: {error}", 1
@@ -783,6 +853,13 @@ TOOL_SPECS: list[dict] = [
                         "search",
                     ],
                 },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Max execution time for the graph query lookup. Default 10.",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 30,
+                },
             },
             "required": ["relation"],
         },
@@ -806,7 +883,14 @@ TOOL_SPECS: list[dict] = [
                     "type": "string",
                     "description": "CLI flags + target, e.g. './ --json -' or './ --exclude-dependencies --detect reentrancy-eth'.",
                     "default": "./",
-                }
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Max wall-clock time execution limits for Slither execution pass. Default 240.",
+                    "default": 240,
+                    "minimum": 10,
+                    "maximum": 600,
+                },
             },
         },
     },
@@ -827,7 +911,14 @@ TOOL_SPECS: list[dict] = [
                     "type": "string",
                     "description": "CLI argument configurations, e.g., '-o aderyn_report.json'.",
                     "default": "",
-                }
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Max wall-clock runtime metric allocated for Aderyn analyzer loop execution. Default 180.",
+                    "default": 180,
+                    "minimum": 10,
+                    "maximum": 600,
+                },
             },
         },
     },
@@ -876,7 +967,14 @@ TOOL_SPECS: list[dict] = [
                 "subcommand": {
                     "type": "string",
                     "description": "Full cast invocation after 'cast', e.g. '4byte 0xa9059cbb'.",
-                }
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Max execution block duration runtime for Cast utility commands. Default 30.",
+                    "default": 30,
+                    "minimum": 5,
+                    "maximum": 120,
+                },
             },
             "required": ["subcommand"],
         },
@@ -912,6 +1010,13 @@ TOOL_SPECS: list[dict] = [
                         '"bytes32", "address,uint256", or "address,uint256,bool".'
                     ),
                 },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Max execution allocation window for EVM bytecode constructor decodes. Default 180.",
+                    "default": 180,
+                    "minimum": 10,
+                    "maximum": 300,
+                },
             },
             "required": ["creation_input", "constructor_types"],
         },
@@ -929,7 +1034,14 @@ TOOL_SPECS: list[dict] = [
                     "type": "string",
                     "description": "git subcommand + flags, e.g. 'log --oneline -20' or 'log -p -- src/Vault.sol'.",
                     "default": "log --oneline -10",
-                }
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Max threshold timeout metrics allowed for read-only Git calls. Default 30.",
+                    "default": 30,
+                    "minimum": 5,
+                    "maximum": 120,
+                },
             },
         },
     },
@@ -942,7 +1054,14 @@ TOOL_SPECS: list[dict] = [
                 "path": {
                     "type": "string",
                     "description": "Path relative to the project root, e.g. 'src/Vault.sol'.",
-                }
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Max allocation frame for local disk stream parsing. Default 10.",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 60,
+                },
             },
             "required": ["path"],
         },
@@ -957,7 +1076,14 @@ TOOL_SPECS: list[dict] = [
                     "type": "string",
                     "description": "Glob pattern relative to the project root.",
                     "default": "**/*.sol",
-                }
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Max safe allocation scope for file system structure glob mapping. Default 10.",
+                    "default": 10,
+                    "minimum": 1,
+                    "maximum": 60,
+                },
             },
         },
     },
@@ -983,7 +1109,14 @@ TOOL_SPECS: list[dict] = [
                 "command": {
                     "type": "string",
                     "description": "Full shell command string.",
-                }
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Max wall-clock limit metric allocated for shell session commands. Default 120.",
+                    "default": 120,
+                    "minimum": 5,
+                    "maximum": 600,
+                },
             },
             "required": ["command"],
         },
@@ -1001,6 +1134,13 @@ TOOL_SPECS: list[dict] = [
                     "default": 5,
                     "minimum": 1,
                     "maximum": 10,
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Network call limit index for DuckDuckGo endpoint engine. Default 15.",
+                    "default": 15,
+                    "minimum": 2,
+                    "maximum": 60,
                 },
             },
             "required": ["query"],
@@ -1023,7 +1163,14 @@ TOOL_SPECS: list[dict] = [
                 "url": {
                     "type": "string",
                     "description": "Exact URL to fetch, taken from a prior web_search result.",
-                }
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Network request processing timeout duration constraints. Default 20.",
+                    "default": 20,
+                    "minimum": 2,
+                    "maximum": 120,
+                },
             },
             "required": ["url"],
         },
@@ -1051,6 +1198,13 @@ TOOL_SPECS: list[dict] = [
                     "default": 0,
                     "description": "Extra wait after page load, ms — only needed if content finishes rendering after network-idle.",
                 },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Max allocation duration for headless Chromium execution page routing steps. Default 25.",
+                    "default": 25,
+                    "minimum": 5,
+                    "maximum": 120,
+                },
             },
             "required": ["url"],
         },
@@ -1073,6 +1227,13 @@ TOOL_SPECS: list[dict] = [
                 "filename": {
                     "type": "string",
                     "description": "Optional filename override; inferred from the URL if omitted.",
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Network timeout limit threshold for raw server binary downloads. Default 60.",
+                    "default": 60,
+                    "minimum": 5,
+                    "maximum": 300,
                 },
             },
             "required": ["url"],
@@ -1099,6 +1260,13 @@ TOOL_SPECS: list[dict] = [
                     "type": "integer",
                     "description": "Max characters of extracted text to return.",
                     "default": 15000,
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Combined network extraction or pdftotext execution runtime ceiling limit. Default 60.",
+                    "default": 60,
+                    "minimum": 5,
+                    "maximum": 300,
                 },
             },
             "required": ["source"],
@@ -1132,6 +1300,13 @@ TOOL_SPECS: list[dict] = [
                     "default": 5,
                     "minimum": 1,
                     "maximum": 10,
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Network connectivity timeout metric threshold targeting GitHub APIs. Default 15.",
+                    "default": 15,
+                    "minimum": 2,
+                    "maximum": 60,
                 },
             },
             "required": ["query"],
@@ -1174,44 +1349,45 @@ def dispatch(
         reporter.tool_started(tool_name, cmd_display)
 
         t0 = time.monotonic()
+        t_seconds = tool_input.get("timeout_seconds")
 
         match tool_name:
             case "graph_query":
                 node = tool_input.get("node", "")
                 relation = tool_input.get("relation", "")
-                method = {
-                    "callers": repo_graph.callers,
-                    "callees": repo_graph.callees,
-                    "inherits": repo_graph.inherits,
-                    "inherited_by": repo_graph.inherited_by,
-                    "dead_code": lambda _n: repo_graph.dead_code(),
-                    "search": lambda n: repo_graph.search(n),
-                }.get(relation)
-                if method is None:
-                    result = ToolResult(
-                        "graph_query", "", f"Unknown relation '{relation}'.", 1
-                    )
-                else:
-                    result = ToolResult("graph_query", json.dumps(method(node)), "", 0)
+                result = graph_query(
+                    repo_graph, relation, node, timeout=t_seconds or 10
+                )
             case "slither":
                 result = slither(
-                    project_path, tool_input.get("flags") or "./", reporter=reporter
+                    project_path,
+                    tool_input.get("flags") or "./",
+                    timeout=t_seconds or 240,
+                    reporter=reporter,
                 )
             case "aderyn":
                 result = aderyn(
-                    project_path, tool_input.get("flags") or "", reporter=reporter
+                    project_path,
+                    tool_input.get("flags") or "",
+                    timeout=t_seconds or 180,
+                    reporter=reporter,
                 )
             case "forge":
                 result = forge(
                     project_path,
                     tool_input.get("subcommand") or "build",
-                    tool_input.get("timeout_seconds") or 600,
+                    timeout=t_seconds or 600,
                     reporter=reporter,
                 )
             case "cast":
                 subcommand = tool_input.get("subcommand", "")
                 result = (
-                    cast(project_path, subcommand, reporter=reporter)
+                    cast(
+                        project_path,
+                        subcommand,
+                        timeout=t_seconds or 30,
+                        reporter=reporter,
+                    )
                     if subcommand
                     else ToolResult("cast", "", "Missing required 'subcommand'.", 1)
                 )
@@ -1220,71 +1396,92 @@ def dispatch(
                     project_path,
                     tool_input.get("creation_input", ""),
                     tool_input.get("constructor_types", ""),
+                    timeout=t_seconds or 180,
                     reporter=reporter,
                 )
             case "git":
                 result = git(
                     project_path,
                     tool_input.get("args") or "log --oneline -10",
+                    timeout=t_seconds or 30,
                     reporter=reporter,
                 )
             case "read_file":
                 path = tool_input.get("path", "")
                 result = (
-                    read_file(project_path, path)
+                    read_file(project_path, path, timeout=t_seconds or 10)
                     if path
                     else ToolResult("read_file", "", "Missing required 'path'.", 1)
                 )
             case "list_sol_files":
                 result = list_sol_files(
-                    project_path, tool_input.get("pattern") or "**/*.sol"
+                    project_path,
+                    tool_input.get("pattern") or "**/*.sol",
+                    timeout=t_seconds or 10,
                 )
             case "shell":
                 command = tool_input.get("command", "")
                 result = (
-                    shell(project_path, command, reporter=reporter)
+                    shell(
+                        project_path,
+                        command,
+                        timeout=t_seconds or 120,
+                        reporter=reporter,
+                    )
                     if command
                     else ToolResult("shell", "", "Missing required 'command'.", 1)
                 )
             case "web_search":
                 query = tool_input.get("query", "")
                 max_results = tool_input.get("max_results", 5)
+                timeout_val = t_seconds or 15
                 with reporter.spinner("Searching…"):
                     result = (
                         search_state.consume(
-                            "web_search", query, lambda: web_search(query, max_results)
+                            "web_search",
+                            query,
+                            lambda: web_search(query, max_results, timeout_val),
                         )
                         if search_state is not None
-                        else web_search(query, max_results)
+                        else web_search(query, max_results, timeout_val)
                     )
             case "web_fetch":
                 url = tool_input.get("url", "")
+                timeout_val = t_seconds or 20
                 with reporter.spinner("Fetching…"):
                     result = (
-                        search_state.consume("web_fetch", url, lambda: web_fetch(url))
+                        search_state.consume(
+                            "web_fetch", url, lambda: web_fetch(url, timeout=timeout_val)
+                        )
                         if search_state is not None
-                        else web_fetch(url)
+                        else web_fetch(url, timeout=timeout_val)
                     )
             case "browser_fetch":
                 url = tool_input.get("url", "")
                 max_chars = tool_input.get("max_chars", 8_000)
                 wait_ms = tool_input.get("wait_ms", 0)
+                timeout_val = t_seconds or 25
                 with reporter.spinner("Rendering page…"):
                     result = (
                         search_state.consume(
                             "browser_fetch",
                             url,
-                            lambda: browser_fetch(url, max_chars, wait_ms),
+                            lambda: browser_fetch(
+                                url, max_chars, wait_ms, timeout=timeout_val
+                            ),
                         )
                         if search_state is not None
-                        else browser_fetch(url, max_chars, wait_ms)
+                        else browser_fetch(
+                            url, max_chars, wait_ms, timeout=timeout_val
+                        )
                     )
             case "download_file":
                 url = tool_input.get("url", "")
                 filename = tool_input.get("filename")
+                timeout_val = t_seconds or 60
                 with reporter.spinner("Downloading…"):
                     result = (
-                        download_file(url, filename)
+                        download_file(url, filename, timeout=timeout_val)
                         if url
                         else ToolResult(
                             "download_file", "", "Missing required 'url'.", 1
@@ -1293,9 +1490,10 @@ def dispatch(
             case "read_document":
                 source = tool_input.get("source", "")
                 max_chars = tool_input.get("max_chars", 15_000)
+                timeout_val = t_seconds or 60
                 with reporter.spinner("Reading document…"):
                     result = (
-                        read_document(source, max_chars)
+                        read_document(source, max_chars, timeout=timeout_val)
                         if source
                         else ToolResult(
                             "read_document", "", "Missing required 'source'.", 1
@@ -1305,12 +1503,19 @@ def dispatch(
                 query = tool_input.get("query", "")
                 search_type = tool_input.get("search_type", "repositories")
                 max_results = tool_input.get("max_results", 5)
+                timeout_val = t_seconds or 15
                 with reporter.spinner("Searching GitHub…"):
                     result = (
-                        github_search(query, search_type, max_results)
-                        if query
-                        else ToolResult(
-                            "github_search", "", "Missing required 'query'.", 1
+                        search_state.consume(
+                            "github_search",
+                            query,
+                            lambda: github_search(
+                                query, search_type, max_results, timeout_val
+                            ),
+                        )
+                        if search_state is not None
+                        else github_search(
+                            query, search_type, max_results, timeout_val
                         )
                     )
             case _:
