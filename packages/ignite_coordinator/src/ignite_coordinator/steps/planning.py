@@ -14,7 +14,6 @@ from ignite_core.steps.base import BaseStep, StepResult
 from ignite_knowledge.descriptor import Descriptor
 from ignite_knowledge.descriptors import load_descriptors
 
-
 @dataclass
 class _Candidate:
     contract: str
@@ -58,21 +57,9 @@ def _candidates_for_context(context: dict) -> list[_Candidate]:
             if not matching:
                 continue
 
-            static_hints = _static_hints_for(
-                contract,
-                descriptor,
-                static_findings,
-            )
-
-            ki_hints = _known_issue_hints_for(
-                descriptor,
-                known_issues,
-            )
-
-            delta_hint = _audit_delta_hint_for(
-                contract,
-                audit_delta,
-            )
+            static_hints = _static_hints_for(contract, descriptor, static_findings)
+            ki_hints = _known_issue_hints_for(descriptor, known_issues)
+            delta_hint = _audit_delta_hint_for(contract, audit_delta)
 
             candidates.append(
                 _Candidate(
@@ -92,11 +79,7 @@ def _candidates_for_context(context: dict) -> list[_Candidate]:
     return candidates
 
 
-def _static_hints_for(
-    contract: str,
-    descriptor: Descriptor,
-    static_findings: dict,
-) -> list[str]:
+def _static_hints_for(contract: str, descriptor: Descriptor, static_findings: dict) -> list[str]:
     hints: list[str] = []
     descriptor_tags = set(getattr(descriptor, "tags", []))
     contract_name = contract.split("/")[-1].replace(".sol", "").lower()
@@ -105,27 +88,19 @@ def _static_hints_for(
         for finding in static_findings.get(bucket, []):
             loc = finding.get("location", {})
             finding_file = loc.get("file", "").lower()
-            if (
-                contract_name not in finding_file
-                and contract.lower() not in finding_file
-            ):
+            if contract_name not in finding_file and contract.lower() not in finding_file:
                 continue
 
             check = finding.get("check", "")
             title = finding.get("title", "")
-            if any(
-                tag in check.lower() or tag in title.lower() for tag in descriptor_tags
-            ):
+            if any(tag in check.lower() or tag in title.lower() for tag in descriptor_tags):
                 hint = f"[{bucket.upper()}] {check}: {title} @ {loc.get('file')}:{loc.get('lines', '?')}"
                 hints.append(hint)
 
     return hints[:6]
 
 
-def _known_issue_hints_for(
-    descriptor: Descriptor,
-    known_issues: dict,
-) -> list[str]:
+def _known_issue_hints_for(descriptor: Descriptor, known_issues: dict) -> list[str]:
     hints: list[str] = []
     descriptor_tags = set(getattr(descriptor, "tags", []))
 
@@ -166,15 +141,11 @@ def _fmt_candidate(i: int, c: _Candidate) -> str:
 
     for tag in c.matching_tags:
         lines.append(f'    <tag id="{tag}">')
-
         observations = c.tag_evidence.get(tag, [])
         if observations:
             lines.append("      <evidence>")
-            lines.extend(
-                f"        <observation>{obs}</observation>" for obs in observations
-            )
+            lines.extend(f"        <observation>{obs}</observation>" for obs in observations)
             lines.append("      </evidence>")
-
         lines.append("    </tag>")
 
     lines.append("  </matched_semantic_tags>")
@@ -184,14 +155,12 @@ def _fmt_candidate(i: int, c: _Candidate) -> str:
         lines.extend(f"    <protocol>{p}</protocol>" for p in c.detected_protocols)
         lines.append("  </protocols>")
 
-    lines.extend(
-        [
-            "  <scenario>",
-            "  " + c.descriptor.scenario.strip().replace("\n", "\n  "),
-            "  </scenario>",
-            "  <properties>",
-        ]
-    )
+    lines.extend([
+        "  <scenario>",
+        "  " + c.descriptor.scenario.strip().replace("\n", "\n  "),
+        "  </scenario>",
+        "  <properties>",
+    ])
 
     for prop in getattr(c.descriptor, "properties", []):
         lines.append(
@@ -216,7 +185,6 @@ def _fmt_candidate(i: int, c: _Candidate) -> str:
         lines.append(f"  <audit_delta>{c.audit_delta_hint}</audit_delta>")
 
     lines.append("</candidate>")
-
     return "\n".join(lines)
 
 
@@ -229,11 +197,79 @@ _CONTEXT_KEYS = (
     "known_issues",
 )
 
+_READ_FILE_TRIAGE_SPEC: dict = {
+    "name": "read_file",
+    "description": (
+        "Read one source file in full. path is relative to the project root. "
+        "USE SPARINGLY: Only use this when a candidate's provided evidence is genuinely "
+        "ambiguous (e.g., you need to check if the file is just an empty scaffold, a mock, "
+        "or a pure interface) and a quick look will change your create-vs-skip decision. "
+        "Do NOT use this to verify semantic tags or hunt for vulnerabilities."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path relative to the project root, e.g. 'src/Vault.sol'.",
+            },
+            "timeout_seconds": {
+                "type": "integer",
+                "description": "Max allocation frame for local disk stream parsing. Default 10.",
+                "default": 10,
+                "minimum": 1,
+                "maximum": 60,
+            },
+        },
+        "required": ["path"],
+    },
+}
+
+_GRAPH_QUERY_TRIAGE_SPEC: dict = {
+    "name": "graph_query",
+    "description": (
+        "Query the pre-built structural graph of this repo (contracts, inheritance, "
+        "function call graph, storage reads/writes) to quickly answer structural questions. "
+        "USE SPARINGLY: Only use this when a candidate's role is genuinely ambiguous "
+        "(e.g., checking if a contract is actually inherited, if it's isolated dead code, "
+        "or if a target function has callers) and it directly impacts your create-vs-skip decision. "
+        "Do NOT use this to map out exploit paths or audit the code."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "node": {
+                "type": "string",
+                "description": "e.g. 'Vault' or 'Vault.withdraw'. Ignored for dead_code.",
+            },
+            "relation": {
+                "type": "string",
+                "enum": [
+                    "callers",
+                    "callees",
+                    "inherits",
+                    "inherited_by",
+                    "dead_code",
+                    "search",
+                ],
+            },
+            "timeout_seconds": {
+                "type": "integer",
+                "description": "Max execution time for the graph query lookup. Default 10.",
+                "default": 10,
+                "minimum": 1,
+                "maximum": 30,
+            },
+        },
+        "required": ["relation"],
+    },
+}
+
 _SUBMIT_SPEC: dict = {
     "name": "submit_missions",
     "description": (
-        "Submit the list of missions to create. Call this once, after you have "
-        "decided which candidates warrant investigation."
+        "Submit the final list of prioritized worker missions. Call this once "
+        "after resolving target ambiguities using the peeking tools."
     ),
     "input_schema": {
         "type": "object",
@@ -243,34 +279,28 @@ _SUBMIT_SPEC: dict = {
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "required": [
-                        "candidate_index",
-                        "property_ids",
-                        "hints",
-                        "rationale",
-                    ],
+                    "required": ["candidate_index", "property_ids", "hints", "rationale"],
                     "properties": {
                         "candidate_index": {
                             "type": "integer",
-                            "description": "The 0-based index into the CANDIDATES list above.",
+                            "description": "The 0-based index into the CANDIDATES list.",
                         },
                         "property_ids": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Which property ids within the descriptor to focus on. Use [] for all.",
+                            "description": "Specific property IDs within the descriptor to target. Use [] for all.",
                         },
                         "hints": {
                             "type": "array",
                             "items": {"type": "string"},
                             "description": (
-                                "Concrete, actionable hints for the worker: specific line numbers, "
-                                "function names, or patterns to check first. Distill what you know "
-                                "from prior steps that the worker doesn't have time to rediscover."
+                                "Concrete, actionable hints for the worker: specific lines, functions, "
+                                "or storage states. Incorporate your findings from peeking if relevant."
                             ),
                         },
                         "rationale": {
                             "type": "string",
-                            "description": "One sentence: why this candidate warrants a mission.",
+                            "description": "One sentence stating why this candidate warrants a full investigation.",
                         },
                     },
                 },
@@ -284,7 +314,7 @@ _SUBMIT_SPEC: dict = {
                         "candidate_index": {"type": "integer"},
                         "reason": {
                             "type": "string",
-                            "description": "Concrete reason this candidate is not worth investigating.",
+                            "description": "Clear structural justification for skipping this candidate.",
                         },
                     },
                 },
@@ -297,260 +327,171 @@ _SUBMIT_SPEC: dict = {
 class PlanningStep(BaseStep):
     name = "planning"
 
-    def select_context(self, global_context: dict) -> dict:
-        return {k: v for k, v in global_context.items() if k in _CONTEXT_KEYS}
+    @property
+    def is_single_turn(self) -> bool:
+        return False
 
-    def termination_criteria_prompt(self) -> str:
-        return """<termination_criteria>
-You have exactly ONE tool available: `submit_missions`. This is not an iterative
-loop — call it once, with your complete set of decisions for every candidate listed
-in <candidates> above, and you are done. There is no submit_findings, no
-report_blocker, no report_failed, and no follow-up turn to add anything afterward.
-</termination_criteria>"""
+    @property
+    def submission_tool_name(self) -> str:
+        return "submit_missions"
+
+    def submission_tool_spec(self) -> dict:
+        return _SUBMIT_SPEC
+
+    def step_tools(self) -> list[dict]:
+        return [_READ_FILE_TRIAGE_SPEC, _GRAPH_QUERY_TRIAGE_SPEC]
+
+    def terminal_tools(self) -> list[dict]:
+        return [
+            self.submission_tool_spec(),
+            *self._non_submission_terminal_tool_specs()
+        ]
+
+    def _iteration_budget(self) -> int:
+        return 6
+
+    def select_context(self, global_context: dict) -> dict:
+        self._context = {k: v for k, v in global_context.items() if k in _CONTEXT_KEYS}
+        return self._context
+
+    def initial_prompt(self, context: dict, reporter: Reporter, debug_logger: DebugLogger) -> str:
+        self._context = context
+        self._candidates = _candidates_for_context(context)
+        return self.initial_prompt_with_candidates(context, self._candidates)
+
+    def validate_complete(self, findings: dict) -> str | None:
+        if not isinstance(findings, dict):
+            return "Findings must be a JSON object (python dict)."
+
+        missions = findings.get("missions", [])
+        skipped = findings.get("skipped", [])
+
+        if not isinstance(missions, list) or not isinstance(skipped, list):
+            return "'missions' and 'skipped' must be lists."
+
+        candidates = getattr(self, "_candidates", [])
+        n_candidates = len(candidates)
+        covered_indices = set()
+
+        for i, m in enumerate(missions):
+            if not isinstance(m, dict):
+                return f"Mission at index {i} must be a JSON object."
+            idx = m.get("candidate_index")
+            if not isinstance(idx, int) or idx < 0 or idx >= n_candidates:
+                return f"Mission at index {i} has an out-of-bounds or invalid 'candidate_index'."
+            if idx in covered_indices:
+                return f"Candidate index {idx} is duplicated across selections."
+            covered_indices.add(idx)
+
+        for i, s in enumerate(skipped):
+            if not isinstance(s, dict):
+                return f"Skipped entry at index {i} must be a JSON object."
+            idx = s.get("candidate_index")
+            if not isinstance(idx, int) or idx < 0 or idx >= n_candidates:
+                return f"Skipped entry at index {i} has an out-of-bounds or invalid 'candidate_index'."
+            if idx in covered_indices:
+                return f"Candidate index {idx} is duplicated across selections."
+            covered_indices.add(idx)
+
+        missing = set(range(n_candidates)) - covered_indices
+        if missing:
+            return f"Missing candidate indices: {sorted(list(missing))}. Every single candidate index must appear."
+
+        return None
+
+    def post_process_findings(self, findings: dict) -> dict:
+        candidates = getattr(self, "_candidates", [])
+        context = getattr(self, "_context", {})
+        missions = _build_missions(findings.get("missions", []), candidates, context, self.name)
+        return {
+            "missions": missions,
+            "skipped": findings.get("skipped", []),
+        }
+
+    def get_success_summary(self, tool_input: dict, findings: dict) -> str:
+        candidates = getattr(self, "_candidates", [])
+        missions = findings.get("missions", [])
+        skipped = findings.get("skipped", [])
+        return (
+            f"Successfully organized {len(missions)} worker mission(s) "
+            f"and skipped {len(skipped)} out of {len(candidates)} total candidates."
+        )
 
     def environment_prompt(self) -> str:
         return (
-            f"- Workspace:  {self.project_path}\n"
-            "- Role: Triage coordinator. You have full prior-step context. "
-            "No file access — all evidence is already in this prompt."
+            f"- Workspace Project Path: {self.project_path}\n"
+            "- Role: Triage Coordinator. You have full context summaries from prior stages.\n"
+            "- Capabilities: You can read targeted source file excerpts via tools to resolve structural ambiguities."
         )
 
-    def run(self, context: dict) -> StepResult:
-        default_debug_logger.log_event("step_start", step=self.name, max_iterations=1)
+    def termination_criteria_prompt(self) -> str:
+        return """<termination_criteria>
+You have two operational phases:
+1. (Optional) Resolve uncertainties by issuing individual `peek_contract_source` calls to review contract wrappers, scaffolds, or interfaces.
+2. Complete your allocation by executing `submit_missions` exactly once. Your submission must explicitly account for every candidate.
+</termination_criteria>"""
 
-        candidates = _candidates_for_context(context)
-
-        if not candidates:
-            return StepResult(
-                step_name=self.name,
-                success=True,
-                findings={"missions": [], "skipped": []},
-                summary="No tag-matched candidates found — no missions created.",
-                iterations_used=0,
-            )
-
-        with RollingWindow(max_lines=8) as window:
-            prompt = self.initial_prompt_with_candidates(context, candidates)
-            reporter = RichReporter(window)
-            turn = self.llm.chat_with_tools(
-                messages=[{"role": "user", "content": prompt}],
-                tools=[_SUBMIT_SPEC],
-                system=self.system_prompt(),
-                reporter=reporter,
-                step_name=self.name,
-                show_thinking=True,
-            )
-
-        default_debug_logger.log_event(
-            "iteration_start", step=self.name, iteration=1, iterations_left=0
-        )
-
-        raw: dict = {"missions": [], "skipped": []}
-        if turn.tool_calls:
-            call = turn.tool_calls[0]
-            if call.name == "submit_missions":
-                raw = call.input
-        elif turn.text:
-            try:
-                raw = json.loads(turn.text)
-            except json.JSONDecodeError:
-                pass
-
-        missions = _build_missions(
-            raw.get("missions", []), candidates, context, self.name
-        )
-        skipped = raw.get("skipped", [])
-
-        default_debug_logger.log_event(
-            "step_complete",
-            step=self.name,
-            iteration=1,
-            missions_created=len(missions),
-            skipped=len(skipped),
-        )
-
-        return StepResult(
-            step_name=self.name,
-            success=True,
-            findings={"missions": missions, "skipped": skipped},
-            summary=(
-                f"Created {len(missions)} mission(s) from {len(candidates)} candidates "
-                f"({len(skipped)} skipped)."
-            ),
-            iterations_used=1,
-        )
-
-    def initial_prompt(
-        self, context: dict, reporter: Reporter, debug_logger: DebugLogger
-    ) -> str:
-        return self.initial_prompt_with_candidates(context, [])
-
-    def initial_prompt_with_candidates(
-        self, context: dict, candidates: list[_Candidate]
-    ) -> str:
-        candidates_section = "\n\n".join(
-            _fmt_candidate(i, c) for i, c in enumerate(candidates)
-        )
+    def initial_prompt_with_candidates(self, context: dict, candidates: list[_Candidate]) -> str:
+        candidates_section = "\n\n".join(_fmt_candidate(i, c) for i, c in enumerate(candidates))
 
         return f"""<scope>
-
 You are the mission planner for this audit.
-
-Your responsibility is to decide which pre-generated investigation candidates
-should receive a dedicated worker mission.
+Your responsibility is to decide which pre-generated investigation candidates should receive a dedicated worker mission.
 
 You do NOT verify whether a descriptor matches a contract.
 You do NOT investigate vulnerabilities.
 You do NOT confirm or reject findings.
 
 Your only responsibility is allocating worker time efficiently.
-
 </scope>
 
-<candidates
-    total="{len(candidates)}"
-    note="Generated automatically by matching descriptor semantic requirements against the repository semantic index. SemanticTagging has already verified why the required semantic tags apply."
->
-
+<candidates total="{len(candidates)}">
 {candidates_section}
-
 </candidates>
 
+<investigation_capabilities>
+If the metadata provided for a candidate leaves you highly uncertain whether the file is just an empty scaffold, a mockup, or a pure interface, you can call `peek_contract_source` to read its structural definition lines. 
+
+CRITICAL: Do NOT use peeking to perform the audit yourself or look for security vulnerabilities. Trust the semantic tagging metrics completely. Use peeking exclusively to rule out empty implementation frameworks.
+</investigation_capabilities>
+
 <output_format>
+When ready, call `submit_missions` exactly once. Every single candidate index must appear exactly once across your selections.
 
-Call submit_missions exactly once.
-
-Every candidate must appear exactly once.
-
-For every created mission provide:
-
-- candidate_index
-- property_ids ([] means investigate the full descriptor)
-- hints
-- rationale
-
-For every skipped candidate provide:
-
-- candidate_index
-- reason
-
-Example call:
-
+Example final payload:
 {{
   "missions": [
     {{
       "candidate_index": 0,
       "property_ids": [],
       "hints": [
-        "SA-003 (suspected) already flags withdraw() at Vault.sol:120-140 for this same pattern",
-        "totalAssets is updated in a separate transaction from share minting — check ordering"
+        "SA-003 flags withdraw() at Vault.sol:120. Verified file contains matching active logic.",
+        "Ensure states are balanced correctly when calling external targets."
       ],
-      "rationale": "Confirmed pooled_share_vault with a suspected static-analysis hit on the exact function; worth dedicated verification."
+      "rationale": "High semantic risk matching active, multi-layered structural logic."
     }}
   ],
   "skipped": [
     {{
       "candidate_index": 1,
-      "reason": "IVault.sol is a pure interface — no executable logic to investigate."
+      "reason": "Peeked code confirmed target source file is a pure interface containing zero executable paths."
     }}
   ]
 }}
-
 </output_format>
 
 <task>
+Bias toward creating missions. A missed investigation path is permanent, whereas a false positive only utilizes a single worker round.
 
-Each candidate already passed semantic matching.
-
-The SemanticTagging step determined that the descriptor's required architectural
-properties are present in the contract and collected factual implementation
-evidence explaining those matches.
-
-Do NOT spend time deciding whether a descriptor applies to a contract.
-Assume the semantic classification is correct.
-
-Your job is only to decide whether allocating worker time to investigate this
-candidate is worthwhile.
-
-Bias toward creating missions.
-
-A missed investigation is permanent.
-A false positive only costs one worker.
-
-Create a mission whenever investigation is likely to produce useful security
-coverage.
-
-Strong reasons include:
-
-- Relevant static-analysis findings exist.
-- A dependency has known issues related to this descriptor.
-- The contract changed after a previous audit.
-- The contract is security-critical or economically important.
-- Strong semantic evidence indicates meaningful implementation complexity.
-- You are uncertain.
-
-When uncertain, create the mission.
-
-Skip a candidate only when worker time would almost certainly be wasted.
-
-Examples include:
-
-- Pure interface.
-- Pure library with no meaningful implementation.
-- Abstract contract containing no executable logic.
-- The supplied evidence already proves the descriptor cannot be investigated
-  meaningfully.
-
+Create a mission whenever an investigation is likely to produce useful security coverage.
+Skip a candidate only when worker time would almost certainly be wasted (e.g., pure interfaces, completely abstract wrappers with zero implementation complexity, or empty mock targets).
 </task>
 
-<output_format>
-
-Call submit_missions exactly once.
-
-Every candidate must appear exactly once.
-
-For every created mission provide:
-
-- candidate_index
-- property_ids ([] means investigate the full descriptor)
-- hints
-- rationale
-
-For every skipped candidate provide:
-
-- candidate_index
-- reason
-
-</output_format>
-
-<hints>
-
-Workers read your hints before reading the contract.
-
-Use hints to save investigation time.
-
-Prefer pointing workers toward:
-
-- semantic evidence collected during classification
-- relevant static-analysis findings
-- protocol-specific known issues
-- recently modified code
-- concrete functions or implementation details
-
-Avoid repeating the descriptor itself.
-
-</hints>
-
 <rules>
-
-- Every candidate index must appear in either missions or skipped.
-- Treat SemanticTagging output as trusted input; do not re-classify contracts.
-- Keep rationales concise.
-- Hints should be concrete and actionable.
-- Do not investigate vulnerabilities yourself.
-- Do not describe attacks, exploits, or PoCs.
-- This is a single tool call with no follow-up.
-
+- Every candidate index must appear exactly once inside either `missions` or `skipped`.
+- Keep rationales concise and straightforward.
+- Hints should be concrete, utilizing metadata or peeking insights to orient workers immediately.
+- Never issue a follow-up action after calling `submit_missions`.
 </rules>"""
 
 
@@ -589,8 +530,7 @@ def _build_knowledge(context: dict, candidate: _Candidate) -> RepositoryKnowledg
         previous_audits=previous_audits,
         diff=diff,
         investigation_scope=InvestigationScope(
-            contracts=[candidate.contract]
-            + [c for c in related if c != candidate.contract],
+            contracts=[candidate.contract] + [c for c in related if c != candidate.contract],
             entrypoints=[],
             ignore=[],
         ),
@@ -627,11 +567,7 @@ def _build_missions(
             hints=[
                 *candidate.static_hints,
                 *candidate.known_issue_hints,
-                *(
-                    []
-                    if not candidate.audit_delta_hint
-                    else [candidate.audit_delta_hint]
-                ),
+                *([] if not candidate.audit_delta_hint else [candidate.audit_delta_hint]),
                 *raw.get("hints", []),
             ],
         )

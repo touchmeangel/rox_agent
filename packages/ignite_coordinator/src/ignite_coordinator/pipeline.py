@@ -50,10 +50,10 @@ PIPELINE: list[BaseStep] = [
         )
     ),
     ForkAnalysisStep(
-        StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=32)
+        StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=64)
     ),
     AuditDeltaStep(
-        StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=32)
+        StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=64)
     ),
     # InvariantTestingStep(
     #     StepConfig(
@@ -73,11 +73,11 @@ PIPELINE: list[BaseStep] = [
     ),
     KnownIssuesStep(
         StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=32)
-    ),
+    ), # depends on amount of protocols
     PlanningStep(
         StepConfig(
             models=MODELS["reasoning"],
             max_iterations=64,
         )
-    ),
+    ), # depends on amount appliable descriptors
 ]

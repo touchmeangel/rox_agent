@@ -251,6 +251,158 @@ class BaseStep:
             + kloc * self.cfg.per_kloc
         )
         return int(min(self.cfg.max_iterations, budget))
+    
+    @property
+    def is_single_turn(self) -> bool:
+        return False
+    
+    @property
+    def submission_tool_name(self) -> str:
+        return "submit_findings"
+
+    def submission_tool_spec(self) -> dict:
+        return {
+            "name": "submit_findings",
+            "description": (
+                "Finish this step successfully. Only call this once you've actually "
+                "completed the task this step's instructions define. Never call this "
+                "with placeholder, empty, or minimal content just to see what the "
+                "validation error says — read the schema and any worked example in "
+                "the initial prompt and get it right on the first attempt."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "findings": {
+                        **self.findings_schema(),
+                        "description": (
+                            "The structured findings object. "
+                            "Pass a native JSON object — NOT a serialized JSON string. "
+                            "Do not call json.dumps(), do not wrap in quotes. "
+                            "The value of this field must be an object, not a string."
+                        ),
+                    },
+                    "summary": {
+                        "type": "string",
+                        "description": "Concise paragraph summarizing what you found.",
+                    },
+                },
+                "required": ["findings", "summary"],
+            },
+        }
+
+    def step_tools(self) -> list[dict]:
+        return TOOL_SPECS
+
+    def terminal_tools(self) -> list[dict]:
+        return [
+            self.submission_tool_spec(),
+            *self._non_submission_terminal_tool_specs()
+        ]
+
+    def get_tools(self, iterations_left: int, extension_budget_remaining: int) -> list[dict]:
+        if self.is_single_turn:
+            return self.terminal_tools()
+        
+        if iterations_left <= 1:
+            return (
+                self.terminal_tools()
+                + [UPDATE_PLAN_SPEC]
+                + [_extension_tool_spec(extension_budget_remaining)]
+            )
+        return (
+            self.step_tools() + [UPDATE_PLAN_SPEC] + self.terminal_tools()
+        )
+
+    def extract_findings(self, tool_name: str, tool_input: dict) -> tuple[dict, str | None]:
+        if tool_name == "submit_findings":
+            return _coerce_findings(tool_input.get("findings", {}))
+        return tool_input, None
+
+    def post_process_findings(self, findings: dict) -> dict:
+        return findings
+
+    def get_success_summary(self, tool_input: dict, findings: dict) -> str:
+        return tool_input.get("summary", "Step completed successfully.")
+
+    def _non_submission_terminal_tool_specs(self) -> list[dict]:
+        """Returns terminal tools other than the successful submission tool."""
+        return [
+            {
+                "name": "report_blocker",
+                "description": (
+                    "Report a genuine environment issue that needs the user to act before "
+                    "this step can finish (missing tool, broken install, missing credentials, "
+                    "permissions, etc) — not a finding about the audited code itself."
+                ),
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "issue": {
+                            "type": "string",
+                            "description": "What is blocking, specifically.",
+                        },
+                        "suggested_fix": {
+                            "type": "string",
+                            "description": "Exact command or step the user should run.",
+                        },
+                        "fallback_action": {
+                            "type": ["string", "null"],
+                            "description": "What you'll try instead, or null if there isn't one.",
+                        },
+                        "can_continue": {
+                            "type": "boolean",
+                            "description": "True if you can proceed with fallback_action right now without waiting for the user.",
+                        },
+                    },
+                    "required": ["issue", "suggested_fix", "can_continue"],
+                },
+            },
+            {
+                "name": "report_failed",
+                "description": "Report that this step is unrecoverable after exhausting every reasonable option.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "error": {"type": "string", "description": "Technical error."},
+                        "reason": {
+                            "type": "string",
+                            "description": "Why this cannot be recovered automatically.",
+                        },
+                    },
+                    "required": ["error", "reason"],
+                },
+            },
+        ]
+
+    def system_prompt(self) -> str:
+        sections = [
+            self.identity_prompt(),
+            self.phase_scope_note(),
+            """<objective>
+Your responsibility is to complete the objective assigned to this step.
+Do not attempt to complete future stages of the pipeline.
+Avoid expanding scope simply because additional questions appear interesting.
+A narrowly completed investigation is more valuable than a partially completed comprehensive one.
+When uncertain whether to continue exploring or summarize existing evidence,
+prefer completing the assigned objective.
+</objective>""",
+            f"<environment>\n{self.environment_prompt()}\n</environment>",
+        ]
+        
+        if not self.is_single_turn:
+            sections.extend([
+                self.reasoning_prompt(),
+                self.investigation_modes_prompt(),
+                self.evidence_prompt(),
+                self.tool_philosophy_prompt(),
+                self.planning_prompt(),
+                self.failure_recovery_prompt(),
+                self.completion_prompt(),
+            ])
+            
+        sections.append(self.termination_criteria_prompt())
+        return "\n\n".join(sections)
 
     def select_context(self, global_context: dict) -> dict:
         return global_context
@@ -922,42 +1074,6 @@ Use the terminal tools as follows:
 
 </termination_criteria>"""
 
-    def system_prompt(self) -> str:
-        return f"""
-{self.identity_prompt()}
-
-{self.phase_scope_note()}
-
-<objective>
-Your responsibility is to complete the objective assigned to this step.
-Do not attempt to complete future stages of the pipeline.
-Avoid expanding scope simply because additional questions appear interesting.
-A narrowly completed investigation is more valuable than a partially completed comprehensive one.
-When uncertain whether to continue exploring or summarize existing evidence,
-prefer completing the assigned objective.
-</objective>
-
-<environment>
-{self.environment_prompt()}
-</environment>
-
-{self.reasoning_prompt()}
-
-{self.investigation_modes_prompt()}
-
-{self.evidence_prompt()}
-
-{self.tool_philosophy_prompt()}
-
-{self.planning_prompt()}
-
-{self.failure_recovery_prompt()}
-
-{self.completion_prompt()}
-
-{self.termination_criteria_prompt()}
-"""
-
     def prompt_sections(self) -> list[str]:
         return [
             self.identity_prompt(),
@@ -1145,16 +1261,7 @@ prefer completing the assigned objective.
             while i < effective_max:
                 iterations_left = effective_max - i - 1
 
-                if iterations_left <= 1:
-                    tools = (
-                        self._terminal_tool_specs()
-                        + [UPDATE_PLAN_SPEC]
-                        + [_extension_tool_spec(extension_cap - extension_budget_used)]
-                    )
-                else:
-                    tools = (
-                        TOOL_SPECS + [UPDATE_PLAN_SPEC] + self._terminal_tool_specs()
-                    )
+                tools = self.get_tools(iterations_left, extension_cap - extension_budget_used)
 
                 def _log(self, i: int, category: str, **fields) -> None:
                     default_debug_logger.log_event(
@@ -1188,7 +1295,6 @@ prefer completing the assigned objective.
 
                 if not turn.tool_calls:
                     _log(self, i, "no_tool_call", text=turn.text)
-
                     consecutive_no_tool_call_repeats += 1
 
                     if consecutive_no_tool_call_repeats >= NO_TOOL_CALL_REPEAT_LIMIT:
@@ -1213,8 +1319,7 @@ prefer completing the assigned objective.
                                         "reason": (
                                             "No native tool_calls were ever populated for this "
                                             "provider/model — this usually means the model or provider "
-                                            "isn't emitting structured tool calls. Check the model's "
-                                            "tool-calling support."
+                                            "isn't emitting structured tool calls."
                                         ),
                                     }
                                 },
@@ -1236,21 +1341,18 @@ prefer completing the assigned objective.
                     continue
 
                 consecutive_no_tool_call_repeats = 0
-
                 tool_results: list[ToolResultEntry] = []
                 terminal_result: StepResult | None = None
 
                 for call in turn.tool_calls:
-                    if call.name == "submit_findings":
-                        findings, parse_error = _coerce_findings(
-                            call.input.get("findings", {})
-                        )
+                    if call.name == self.submission_tool_name:
+                        findings, parse_error = self.extract_findings(call.name, call.input)
                         if parse_error is not None:
                             _log(
                                 self,
                                 i,
                                 "findings_parse_failed",
-                                raw=call.input.get("findings", ""),
+                                raw=call.input,
                                 error=parse_error,
                             )
                             tool_results.append(
@@ -1264,18 +1366,20 @@ prefer completing the assigned objective.
 
                         validation = self.validate_complete(findings)
                         if validation is None:
+                            final_findings = self.post_process_findings(findings)
+                            summary = self.get_success_summary(call.input, final_findings)
                             _log(
                                 self,
                                 i,
                                 "step_complete",
-                                summary=call.input.get("summary", ""),
-                                findings=findings,
+                                summary=summary,
+                                findings=final_findings,
                             )
                             terminal_result = StepResult(
                                 step_name=self.name,
                                 success=True,
-                                findings=findings,
-                                summary=call.input.get("summary", ""),
+                                findings=final_findings,
+                                summary=summary,
                                 iterations_used=i + 1,
                             )
                             tool_results.append(
@@ -1297,7 +1401,7 @@ prefer completing the assigned objective.
                             tool_results.append(
                                 ToolResultEntry(
                                     call.id,
-                                    f"Findings rejected: {reason}\nFix only this issue and call submit_findings again.",
+                                    f"Findings rejected: {reason}\nFix only this issue and call {self.submission_tool_name} again.",
                                     is_error=True,
                                 )
                             )
@@ -1390,7 +1494,7 @@ prefer completing the assigned objective.
                         else:
                             extension_budget_used += granted
                             effective_max += (
-                                granted  # while-loop condition re-checks this next pass
+                                granted
                             )
                             tool_results.append(
                                 ToolResultEntry(
@@ -1486,9 +1590,9 @@ prefer completing the assigned objective.
                 pacing_note = _pacing_note(i + 1, effective_max, plan)
                 messages.append({"role": "tool_results", "results": tool_results})
                 messages.append({"role": "user", "content": pacing_note})
-
                 i += 1
 
+            # Hit iteration limit without success
             default_debug_logger.log_event(
                 "step_iteration_limit",
                 step=self.name,
