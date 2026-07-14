@@ -242,10 +242,10 @@ def cast(
 
 
 def forge(
-    project_path: str, args: str = "build", reporter: Reporter | None = None
+    project_path: str, args: str = "build", timeout: int = 600, reporter: Reporter | None = None
 ) -> ToolResult:
     return run_command(
-        f"forge {args}", cwd=project_path, timeout=180, reporter=reporter
+        f"forge {args}", cwd=project_path, timeout=timeout, reporter=reporter
     )
 
 
@@ -844,7 +844,14 @@ TOOL_SPECS: list[dict] = [
                     "type": "string",
                     "description": "forge subcommand + flags, e.g. 'build', 'test -vvv', 'coverage'.",
                     "default": "build",
-                }
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "description": "Max wall-clock time for this command. Default 600. Raise for large repos or heavy fuzz/invariant suites.",
+                    "default": 600,
+                    "minimum": 30,
+                    "maximum": 3600,
+                },
             },
         },
     },
@@ -1195,6 +1202,7 @@ def dispatch(
                 result = forge(
                     project_path,
                     tool_input.get("subcommand") or "build",
+                    tool_input.get("timeout_seconds") or 600,
                     reporter=reporter,
                 )
             case "cast":
