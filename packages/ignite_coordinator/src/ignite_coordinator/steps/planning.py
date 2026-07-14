@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-import json
 import uuid
 from dataclasses import dataclass
 from typing import Any
 
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
 from ignite_core.mission import Mission
-from ignite_core.reporting import Reporter, RichReporter
+from ignite_core.reporting import Reporter
 from ignite_core.repository_knowledge import InvestigationScope, RepositoryKnowledge
-from ignite_core.rolling_window import RollingWindow
-from ignite_core.steps.base import BaseStep, StepResult
+from ignite_core.steps.base import BaseStep
 from ignite_knowledge.descriptor import Descriptor
 from ignite_knowledge.descriptors import load_descriptors
+
 
 @dataclass
 class _Candidate:
@@ -79,7 +78,9 @@ def _candidates_for_context(context: dict) -> list[_Candidate]:
     return candidates
 
 
-def _static_hints_for(contract: str, descriptor: Descriptor, static_findings: dict) -> list[str]:
+def _static_hints_for(
+    contract: str, descriptor: Descriptor, static_findings: dict
+) -> list[str]:
     hints: list[str] = []
     descriptor_tags = set(getattr(descriptor, "tags", []))
     contract_name = contract.split("/")[-1].replace(".sol", "").lower()
@@ -88,12 +89,17 @@ def _static_hints_for(contract: str, descriptor: Descriptor, static_findings: di
         for finding in static_findings.get(bucket, []):
             loc = finding.get("location", {})
             finding_file = loc.get("file", "").lower()
-            if contract_name not in finding_file and contract.lower() not in finding_file:
+            if (
+                contract_name not in finding_file
+                and contract.lower() not in finding_file
+            ):
                 continue
 
             check = finding.get("check", "")
             title = finding.get("title", "")
-            if any(tag in check.lower() or tag in title.lower() for tag in descriptor_tags):
+            if any(
+                tag in check.lower() or tag in title.lower() for tag in descriptor_tags
+            ):
                 hint = f"[{bucket.upper()}] {check}: {title} @ {loc.get('file')}:{loc.get('lines', '?')}"
                 hints.append(hint)
 
@@ -144,7 +150,9 @@ def _fmt_candidate(i: int, c: _Candidate) -> str:
         observations = c.tag_evidence.get(tag, [])
         if observations:
             lines.append("      <evidence>")
-            lines.extend(f"        <observation>{obs}</observation>" for obs in observations)
+            lines.extend(
+                f"        <observation>{obs}</observation>" for obs in observations
+            )
             lines.append("      </evidence>")
         lines.append("    </tag>")
 
@@ -155,12 +163,14 @@ def _fmt_candidate(i: int, c: _Candidate) -> str:
         lines.extend(f"    <protocol>{p}</protocol>" for p in c.detected_protocols)
         lines.append("  </protocols>")
 
-    lines.extend([
-        "  <scenario>",
-        "  " + c.descriptor.scenario.strip().replace("\n", "\n  "),
-        "  </scenario>",
-        "  <properties>",
-    ])
+    lines.extend(
+        [
+            "  <scenario>",
+            "  " + c.descriptor.scenario.strip().replace("\n", "\n  "),
+            "  </scenario>",
+            "  <properties>",
+        ]
+    )
 
     for prop in getattr(c.descriptor, "properties", []):
         lines.append(
@@ -279,7 +289,12 @@ _SUBMIT_SPEC: dict = {
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "required": ["candidate_index", "property_ids", "hints", "rationale"],
+                    "required": [
+                        "candidate_index",
+                        "property_ids",
+                        "hints",
+                        "rationale",
+                    ],
                     "properties": {
                         "candidate_index": {
                             "type": "integer",
@@ -344,7 +359,7 @@ class PlanningStep(BaseStep):
     def terminal_tools(self) -> list[dict]:
         return [
             self.submission_tool_spec(),
-            *self._non_submission_terminal_tool_specs()
+            *self._non_submission_terminal_tool_specs(),
         ]
 
     def _iteration_budget(self) -> int:
@@ -354,7 +369,9 @@ class PlanningStep(BaseStep):
         self._context = {k: v for k, v in global_context.items() if k in _CONTEXT_KEYS}
         return self._context
 
-    def initial_prompt(self, context: dict, reporter: Reporter, debug_logger: DebugLogger) -> str:
+    def initial_prompt(
+        self, context: dict, reporter: Reporter, debug_logger: DebugLogger
+    ) -> str:
         self._context = context
         self._candidates = _candidates_for_context(context)
         return self.initial_prompt_with_candidates(context, self._candidates)
@@ -395,14 +412,16 @@ class PlanningStep(BaseStep):
 
         missing = set(range(n_candidates)) - covered_indices
         if missing:
-            return f"Missing candidate indices: {sorted(list(missing))}. Every single candidate index must appear."
+            return f"Missing candidate indices: {sorted(missing)}. Every single candidate index must appear."
 
         return None
 
     def post_process_findings(self, findings: dict) -> dict:
         candidates = getattr(self, "_candidates", [])
         context = getattr(self, "_context", {})
-        missions = _build_missions(findings.get("missions", []), candidates, context, self.name)
+        missions = _build_missions(
+            findings.get("missions", []), candidates, context, self.name
+        )
         return {
             "missions": missions,
             "skipped": findings.get("skipped", []),
@@ -431,8 +450,12 @@ You have two operational phases:
 2. Complete your allocation by executing `submit_missions` exactly once. Your submission must explicitly account for every candidate.
 </termination_criteria>"""
 
-    def initial_prompt_with_candidates(self, context: dict, candidates: list[_Candidate]) -> str:
-        candidates_section = "\n\n".join(_fmt_candidate(i, c) for i, c in enumerate(candidates))
+    def initial_prompt_with_candidates(
+        self, context: dict, candidates: list[_Candidate]
+    ) -> str:
+        candidates_section = "\n\n".join(
+            _fmt_candidate(i, c) for i, c in enumerate(candidates)
+        )
 
         return f"""<scope>
 You are the mission planner for this audit.
@@ -450,7 +473,7 @@ Your only responsibility is allocating worker time efficiently.
 </candidates>
 
 <investigation_capabilities>
-If the metadata provided for a candidate leaves you highly uncertain whether the file is just an empty scaffold, a mockup, or a pure interface, you can call `peek_contract_source` to read its structural definition lines. 
+If the metadata provided for a candidate leaves you highly uncertain whether the file is just an empty scaffold, a mockup, or a pure interface, you can call `peek_contract_source` to read its structural definition lines.
 
 CRITICAL: Do NOT use peeking to perform the audit yourself or look for security vulnerabilities. Trust the semantic tagging metrics completely. Use peeking exclusively to rule out empty implementation frameworks.
 </investigation_capabilities>
@@ -530,7 +553,8 @@ def _build_knowledge(context: dict, candidate: _Candidate) -> RepositoryKnowledg
         previous_audits=previous_audits,
         diff=diff,
         investigation_scope=InvestigationScope(
-            contracts=[candidate.contract] + [c for c in related if c != candidate.contract],
+            contracts=[candidate.contract]
+            + [c for c in related if c != candidate.contract],
             entrypoints=[],
             ignore=[],
         ),
@@ -567,7 +591,11 @@ def _build_missions(
             hints=[
                 *candidate.static_hints,
                 *candidate.known_issue_hints,
-                *([] if not candidate.audit_delta_hint else [candidate.audit_delta_hint]),
+                *(
+                    []
+                    if not candidate.audit_delta_hint
+                    else [candidate.audit_delta_hint]
+                ),
                 *raw.get("hints", []),
             ],
         )

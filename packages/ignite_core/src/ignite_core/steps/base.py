@@ -251,11 +251,11 @@ class BaseStep:
             + kloc * self.cfg.per_kloc
         )
         return int(min(self.cfg.max_iterations, budget))
-    
+
     @property
     def is_single_turn(self) -> bool:
         return False
-    
+
     @property
     def submission_tool_name(self) -> str:
         return "submit_findings"
@@ -297,24 +297,26 @@ class BaseStep:
     def terminal_tools(self) -> list[dict]:
         return [
             self.submission_tool_spec(),
-            *self._non_submission_terminal_tool_specs()
+            *self._non_submission_terminal_tool_specs(),
         ]
 
-    def get_tools(self, iterations_left: int, extension_budget_remaining: int) -> list[dict]:
+    def get_tools(
+        self, iterations_left: int, extension_budget_remaining: int
+    ) -> list[dict]:
         if self.is_single_turn:
             return self.terminal_tools()
-        
+
         if iterations_left <= 1:
             return (
                 self.terminal_tools()
                 + [UPDATE_PLAN_SPEC]
                 + [_extension_tool_spec(extension_budget_remaining)]
             )
-        return (
-            self.step_tools() + [UPDATE_PLAN_SPEC] + self.terminal_tools()
-        )
+        return self.step_tools() + [UPDATE_PLAN_SPEC] + self.terminal_tools()
 
-    def extract_findings(self, tool_name: str, tool_input: dict) -> tuple[dict, str | None]:
+    def extract_findings(
+        self, tool_name: str, tool_input: dict
+    ) -> tuple[dict, str | None]:
         if tool_name == "submit_findings":
             return _coerce_findings(tool_input.get("findings", {}))
         return tool_input, None
@@ -389,18 +391,20 @@ prefer completing the assigned objective.
 </objective>""",
             f"<environment>\n{self.environment_prompt()}\n</environment>",
         ]
-        
+
         if not self.is_single_turn:
-            sections.extend([
-                self.reasoning_prompt(),
-                self.investigation_modes_prompt(),
-                self.evidence_prompt(),
-                self.tool_philosophy_prompt(),
-                self.planning_prompt(),
-                self.failure_recovery_prompt(),
-                self.completion_prompt(),
-            ])
-            
+            sections.extend(
+                [
+                    self.reasoning_prompt(),
+                    self.investigation_modes_prompt(),
+                    self.evidence_prompt(),
+                    self.tool_philosophy_prompt(),
+                    self.planning_prompt(),
+                    self.failure_recovery_prompt(),
+                    self.completion_prompt(),
+                ]
+            )
+
         sections.append(self.termination_criteria_prompt())
         return "\n\n".join(sections)
 
@@ -1261,7 +1265,9 @@ Use the terminal tools as follows:
             while i < effective_max:
                 iterations_left = effective_max - i - 1
 
-                tools = self.get_tools(iterations_left, extension_cap - extension_budget_used)
+                tools = self.get_tools(
+                    iterations_left, extension_cap - extension_budget_used
+                )
 
                 def _log(self, i: int, category: str, **fields) -> None:
                     default_debug_logger.log_event(
@@ -1346,7 +1352,9 @@ Use the terminal tools as follows:
 
                 for call in turn.tool_calls:
                     if call.name == self.submission_tool_name:
-                        findings, parse_error = self.extract_findings(call.name, call.input)
+                        findings, parse_error = self.extract_findings(
+                            call.name, call.input
+                        )
                         if parse_error is not None:
                             _log(
                                 self,
@@ -1367,7 +1375,9 @@ Use the terminal tools as follows:
                         validation = self.validate_complete(findings)
                         if validation is None:
                             final_findings = self.post_process_findings(findings)
-                            summary = self.get_success_summary(call.input, final_findings)
+                            summary = self.get_success_summary(
+                                call.input, final_findings
+                            )
                             _log(
                                 self,
                                 i,
@@ -1493,9 +1503,7 @@ Use the terminal tools as follows:
                             )
                         else:
                             extension_budget_used += granted
-                            effective_max += (
-                                granted
-                            )
+                            effective_max += granted
                             tool_results.append(
                                 ToolResultEntry(
                                     call.id,

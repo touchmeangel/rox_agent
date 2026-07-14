@@ -73,11 +73,11 @@ PIPELINE: list[BaseStep] = [
     ),
     KnownIssuesStep(
         StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=32)
-    ), # depends on amount of protocols
+    ),  # depends on amount of protocols
     PlanningStep(
         StepConfig(
             models=MODELS["reasoning"],
             max_iterations=64,
         )
-    ), # depends on amount appliable descriptors
+    ),  # depends on amount appliable descriptors
 ]
