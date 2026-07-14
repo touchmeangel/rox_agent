@@ -8,6 +8,11 @@ from ignite_core.foundry_config import FoundryConfig, load_foundry_config
 from slither.detectors import all_detectors
 from slither.detectors.abstract_detector import AbstractDetector
 from slither.slither import Slither
+from slither.core.declarations.function import Function
+from slither.core.variables.state_variable import StateVariable
+from slither.slithir.operations import LibraryCall
+from slither.core.declarations.solidity_variables import SolidityFunction
+from slither.slithir.operations import InternalCall
 
 _GRAPH_CACHE: dict[str, "Graph"] = {}
 
@@ -23,6 +28,30 @@ _EXCLUDED_CHECKS = frozenset(
 
 SlocKind = Literal["src", "test", "script", "lib", "other"]
 
+
+def _target_name(tgt) -> str | None:
+    if isinstance(tgt, (Function, StateVariable)):
+        return tgt.name
+    if isinstance(tgt, LibraryCall):
+        if tgt.function is not None:
+            return tgt.function.name
+        return str(tgt.function_name)
+    return None
+
+
+def _target_label(src) -> str | None:
+    if src is None:
+        return None
+    return getattr(src, "name", None) or str(src)
+
+def _callee_name(callee) -> str | None:
+    if isinstance(callee, (Function, SolidityFunction)):
+        return callee.name
+    if isinstance(callee, InternalCall):
+        if callee.function is not None:
+            return callee.function.name
+        return str(callee.function_name)
+    return None
 
 def get_or_build_graph(path: str) -> "Graph | None":
     if not path:
@@ -197,10 +226,14 @@ def build_graph(project_path: str) -> Graph:
             for var in fn.state_variables_read:
                 g.add_edge(fnode, f"{var.contract.name}.{var.name}", "reads")
             for callee in fn.internal_calls:
-                if hasattr(callee, "name"):
-                    g.add_edge(fnode, f"{c.name}.{callee.name}", "calls")
+                name = _callee_name(callee)
+                if name:
+                    g.add_edge(fnode, f"{c.name}.{name}", "calls")
             for tgt_c, tgt_fn in fn.high_level_calls:
-                g.add_edge(fnode, f"{tgt_c.name}.{tgt_fn.name}", "calls_external")
+                c_name = _target_label(tgt_c)
+                f_name = _target_name(tgt_fn)
+                if c_name and f_name:
+                    g.add_edge(fnode, f"{c_name}.{f_name}", "calls_external")
 
     g.detectors = run_detectors(sl)
 
