@@ -228,8 +228,12 @@ class RichReporter(Reporter):
         )
 
     def step_started(self, name: str, budget: int | None = None) -> None:
-        budget_str = f"  [dim]·  max {budget} iterations[/dim]" if budget is not None else ""
-        self.console.print(f"\n[#1dcccc]●[/#1dcccc] [bold white]{name}[/bold white]{budget_str}")
+        budget_str = (
+            f"  [dim]·  max {budget} iterations[/dim]" if budget is not None else ""
+        )
+        self.console.print(
+            f"\n[#1dcccc]●[/#1dcccc] [bold white]{name}[/bold white]{budget_str}"
+        )
 
     def step_finished(
         self,

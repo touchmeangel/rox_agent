@@ -356,9 +356,7 @@ def shell(
     return run_command(command, cwd=project_path, timeout=timeout, reporter=reporter)
 
 
-def _web_search_ddgs(
-    query: str, max_results: int = 5, timeout: int = 15
-) -> ToolResult:
+def _web_search_ddgs(query: str, max_results: int = 5, timeout: int = 15) -> ToolResult:
     query = query.strip()
     label = f"web_search {query!r}"
     if not query:
@@ -1451,7 +1449,9 @@ def dispatch(
                 with reporter.spinner("Fetching…"):
                     result = (
                         search_state.consume(
-                            "web_fetch", url, lambda: web_fetch(url, timeout=timeout_val)
+                            "web_fetch",
+                            url,
+                            lambda: web_fetch(url, timeout=timeout_val),
                         )
                         if search_state is not None
                         else web_fetch(url, timeout=timeout_val)
@@ -1471,9 +1471,7 @@ def dispatch(
                             ),
                         )
                         if search_state is not None
-                        else browser_fetch(
-                            url, max_chars, wait_ms, timeout=timeout_val
-                        )
+                        else browser_fetch(url, max_chars, wait_ms, timeout=timeout_val)
                     )
             case "download_file":
                 url = tool_input.get("url", "")
@@ -1514,9 +1512,7 @@ def dispatch(
                             ),
                         )
                         if search_state is not None
-                        else github_search(
-                            query, search_type, max_results, timeout_val
-                        )
+                        else github_search(query, search_type, max_results, timeout_val)
                     )
             case _:
                 result = ToolResult(

@@ -4,8 +4,8 @@ from collections.abc import Sequence
 from ignite_core.debug_logger import default_debug_logger
 from ignite_core.reporting import Reporter, RichReporter
 from ignite_core.rolling_window import RollingWindow
-from ignite_core.steps.mixins import GitHistoryAccessMixin
 from ignite_core.steps.base import BaseStep, StepResult
+from ignite_core.steps.mixins import GitHistoryAccessMixin
 from ignite_core.tools import _download_store, _overflow_store
 
 
@@ -41,7 +41,7 @@ class Workflow:
                 if isinstance(step, GitHistoryAccessMixin):
                     step.github_repo_path = repo_path
                 step.project_path = work_path
-                
+
                 self.reporter.step_started(step.name, budget=step._iteration_budget())
 
                 filtered_context = step.select_context(context)
