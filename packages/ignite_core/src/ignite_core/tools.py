@@ -242,7 +242,10 @@ def cast(
 
 
 def forge(
-    project_path: str, args: str = "build", timeout: int = 600, reporter: Reporter | None = None
+    project_path: str,
+    args: str = "build",
+    timeout: int = 600,
+    reporter: Reporter | None = None,
 ) -> ToolResult:
     return run_command(
         f"forge {args}", cwd=project_path, timeout=timeout, reporter=reporter
