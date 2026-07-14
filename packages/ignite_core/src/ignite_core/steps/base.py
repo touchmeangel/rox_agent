@@ -254,7 +254,7 @@ class BaseStep:
 
     def select_context(self, global_context: dict) -> dict:
         return global_context
-    
+
     @property
     def execution_path(self) -> str:
         return self.project_path

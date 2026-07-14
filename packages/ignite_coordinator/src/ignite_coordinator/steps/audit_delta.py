@@ -6,7 +6,7 @@ from ignite_core.debug_logger import DebugLogger
 from ignite_core.graph import Graph
 from ignite_core.reporting import Reporter
 from ignite_core.search_state import SearchState
-from ignite_core.steps.base import BaseStep, StepResult
+from ignite_core.steps.base import BaseStep
 from ignite_core.steps.mixins import GitHistoryAccessMixin
 from ignite_core.tools import dispatch
 
