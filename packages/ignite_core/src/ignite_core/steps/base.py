@@ -258,9 +258,9 @@ class BaseStep:
 
     @property
     def repo_graph(self) -> Graph:
-        graph = get_or_build_graph(self.github_repo_path)
+        graph = get_or_build_graph(self.project_path)
         if graph is None:
-            raise RuntimeError(f"invalid repo path: {self.github_repo_path}")
+            raise RuntimeError(f"invalid repo path: {self.project_path}")
         return graph
 
     def identity_prompt(self) -> str:
