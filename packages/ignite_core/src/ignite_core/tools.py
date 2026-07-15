@@ -76,60 +76,56 @@ def _smart_process_output(
     if len(stdout) <= limit:
         return stdout
 
-    run_hash = hashlib.sha256(stdout.encode()).hexdigest()[:6]
-
     try:
         data = json.loads(stdout)
-        log_path = _overflow_store.write(
-            stdout, f"ignite_{tool_name}_{run_hash}", ".json"
-        )
-        log_file = log_path.name
+        pretty = json.dumps(data, indent=2)  # pretty-print so line-based paging works
+    except json.JSONDecodeError:
+        pretty = None
+
+    if pretty is not None:
+        key, _ = _overflow_store.write(pretty, tool_name, ".json")
 
         summary_data = {}
         if isinstance(data, dict):
             for k, v in data.items():
                 if isinstance(v, list) and len(v) > 5:
                     summary_data[k] = v[:5] + [
-                        f"... <{len(v) - 5} more items omitted in {log_file}>"
+                        f"... <{len(v) - 5} more items omitted, reveal key='{key}'>"
                     ]
                 else:
                     summary_data[k] = v
         elif isinstance(data, list) and len(data) > 5:
             summary_data = data[:5] + [
-                f"... <{len(data) - 5} more items omitted in {log_file}>"
+                f"... <{len(data) - 5} more items omitted, reveal key='{key}'>"
             ]
         else:
             summary_data = data
 
         summary_str = json.dumps(summary_data, indent=2)
+        total_lines = pretty.count("\n") + 1
         prompt_msg = (
-            f"[SYSTEM: Massive JSON output intercepted ({len(stdout)} chars).]\n"
-            f"[Full raw JSON saved to '{log_path}'. Use `shell` with `jq` to query the full file if needed.]\n"
+            f"[SYSTEM: Massive JSON output intercepted ({len(stdout)} chars, ~{total_lines} lines).]\n"
+            f"[Do NOT repeat this exact command. Call `reveal` with key='{key}' "
+            f"(offset/limit) to page through the full JSON.]\n"
             f"[Preview below:]\n\n{summary_str}"
         )
-        return _truncate(
-            prompt_msg, limit, "The full file path is already noted above."
-        )
-    except json.JSONDecodeError:
-        pass
+        return _truncate(prompt_msg, limit, f"Call `reveal` key='{key}' to see more.")
 
-    log_path = _overflow_store.write(stdout, f"ignite_{tool_name}_{run_hash}", ".json")
-    log_file = log_path.name
-
+    key, _ = _overflow_store.write(stdout, tool_name, ".txt")
+    total_lines = stdout.count("\n") + 1
     preview_size = 3000
     head = stdout[:preview_size]
     tail = stdout[-preview_size:] if len(stdout) > (preview_size * 2) else ""
 
     prompt_msg = (
-        f"[SYSTEM: Output exceeded context limits ({len(stdout)} chars). Full output saved to '{log_file}'.]\n"
-        f"[Do NOT repeat this exact command. Use `shell` with `rg` to search '{log_path}', or `tail` to view specific errors.]\n\n"
+        f"[SYSTEM: Output exceeded context limits ({len(stdout)} chars, ~{total_lines} lines).]\n"
+        f"[Do NOT repeat this exact command. Call `reveal` with key='{key}' (offset/limit) "
+        f"to page through it — negative offset reads from the end.]\n\n"
         f"--- PREVIEW (first {preview_size} chars) ---\n{head}\n"
     )
     if tail:
         prompt_msg += f"\n--- TAIL (last {preview_size} chars) ---\n{tail}\n"
-
     return prompt_msg
-
 
 def _stream_subprocess(
     args: list[str],
@@ -309,64 +305,103 @@ def git(
         f"git {args}", cwd=project_path, timeout=timeout, reporter=reporter
     )
 
+def _line_snap_window(
+    text: str, offset: int | None, limit: int
+) -> tuple[str, int, int, int, int]:
+    total_chars = len(text)
+
+    if offset is None:
+        start_char = 0
+    elif offset < 0:
+        start_char = max(0, total_chars + offset)
+    else:
+        start_char = min(offset, total_chars)
+
+    if start_char > 0:
+        prev_nl = text.rfind("\n", 0, start_char)
+        start_char = prev_nl + 1 if prev_nl != -1 else 0
+
+    end_char = min(total_chars, start_char + max(limit, 0))
+    if end_char < total_chars:
+        next_nl = text.find("\n", end_char)
+        end_char = next_nl + 1 if next_nl != -1 else total_chars
+
+    sliced = text[start_char:end_char]
+    start_line = text.count("\n", 0, start_char) + 1
+    line_count = sliced.count("\n") + (1 if sliced and not sliced.endswith("\n") else 0)
+    end_line = start_line + max(line_count - 1, 0)
+
+    return sliced, start_char, end_char, start_line, end_line
 
 def read_file(
     project_path: str,
     relative_path: str,
     offset: int | None = None,
-    limit: int | None = None,
-    timeout: int = 10,
+    limit: int = 10_000,
 ) -> ToolResult:
     t_start = time.monotonic()
     full = Path(project_path) / relative_path
     if not full.exists():
         return ToolResult(
-            f"cat {relative_path}",
-            "",
+            f"cat {relative_path}", "",
             f"File not found: {relative_path}. Use list_sol_files or shell('find . -iname ...') "
             f"to locate the right path — relative paths are resolved against the project root.",
             1,
         )
     try:
-        if time.monotonic() - t_start > timeout:
-            raise subprocess.TimeoutExpired(f"cat {relative_path}", timeout)
-
         text = full.read_text(errors="replace")
-
         if offset is None and limit is None:
             return ToolResult(f"cat {relative_path}", text, "", 0)
 
-        lines = text.splitlines()
-        total = len(lines)
+        sliced, start_char, end_char, start_line, end_line = _line_snap_window(
+            text, offset, limit
+        )
+        total_chars = len(text)
+        header = f"[chars {start_char}-{end_char} of {total_chars} total | lines {start_line}-{end_line}]\n"
+        if end_char < total_chars:
+            header += f"[continue with offset={end_char}]\n"
 
-        if offset is not None and offset < 0:
-            start_idx = max(0, total + offset)
-        else:
-            start_idx = max(0, (offset - 1) if offset else 0)
-
-        if start_idx >= total:
-            return ToolResult(
-                f"cat {relative_path} [offset={offset} limit={limit}]",
-                "",
-                f"offset {offset} is past the end of the file ({total} lines total).",
-                1,
-            )
-
-        end_idx = total if limit is None else min(total, start_idx + limit)
-
-        numbered = "\n".join(f"{i + 1:>6}\t{lines[i]}" for i in range(start_idx, end_idx))
-        header = f"[lines {start_idx + 1}-{end_idx} of {total} total]\n"
+        numbered = "\n".join(
+            f"{start_line + i:>6}\t{line}" for i, line in enumerate(sliced.splitlines())
+        )
 
         cmd = f"cat {relative_path}"
         if offset is not None:
             cmd += f" [offset={offset}]"
-        if limit is not None:
-            cmd += f" [limit={limit}]"
 
+        cmd += f" [limit={limit}]"
         return ToolResult(cmd, header + numbered, "", 0)
     except Exception as exc:
         return ToolResult(f"cat {relative_path}", "", str(exc), 1)
 
+def reveal(
+    key: str, offset: int | None = None, limit: int = 10_000
+) -> ToolResult:
+    key = key.strip()
+    label = f"reveal key={key!r} offset={offset} limit={limit}"
+    if not key:
+        return ToolResult(label, "", "Missing required 'key'.", 1)
+
+    path = _overflow_store.read(key)
+    if path is None:
+        return ToolResult(
+            label, "", f"No stored output for key '{key}' — keys come from a prior "
+            f"truncation notice, they aren't guessable.", 1,
+        )
+
+    text = path.read_text(errors="replace")
+    total_chars = len(text)
+    if offset is not None and offset >= 0 and offset >= total_chars:
+        return ToolResult(label, "", f"offset {offset} is past EOF ({total_chars} chars total).", 1)
+
+    sliced, start_char, end_char, start_line, end_line = _line_snap_window(text, offset, limit)
+    numbered = "\n".join(
+        f"{start_line + i:>6}\t{line}" for i, line in enumerate(sliced.splitlines())
+    )
+    header = f"[chars {start_char}-{end_char} of {total_chars} total | lines {start_line}-{end_line} | key='{key}']\n"
+    if end_char < total_chars:
+        header += f"[continue with offset={end_char}]\n"
+    return ToolResult(label, header + numbered, "", 0)
 
 def list_sol_files(
     project_path: str, pattern: str = "**/*.sol", timeout: int = 10
@@ -861,13 +896,44 @@ def web_fetch(url: str, max_chars: int = 6000, timeout: int = 20) -> ToolResult:
     return ToolResult(label, text + note, "", 0)
 
 
+REVEAL_TOOL_SPEC: dict = {
+    "name": "reveal",
+    "description": (
+        "Page through content that was previously truncated — a key appears in the "
+        "truncation notice of any tool's output. offset/limit are in characters "
+        "(snapped to line boundaries, so you always get whole lines back), like "
+        "'reveal key=\"a1b2c3...\" limit=10000'. Negative offset reads from the end. "
+        "The response tells you the next offset to continue from. Use this instead "
+        "of shell/rg/tail — it's the one recovery path for any tool's overflowed output."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "key": {"type": "string", "description": "The key from a prior truncation notice."},
+            "offset": {
+                "type": "integer",
+                "description": "Char offset to start from. Negative counts back from EOF. Omit for the start.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max characters to return, snapped out to whole lines. Default 8000.",
+                "default": 10_000,
+            }
+        },
+        "required": ["key"],
+    },
+}
+
 READ_FILE_SPEC = {
     "name": "read_file",
     "description": (
         "Read one source file. path is relative to the project root. "
         "By default reads the whole file; if that's truncated, or the file is large, "
-        "pass offset/limit to page through a specific line range instead of falling "
-        "back to shell. A negative offset reads from the end, like `tail -n`."
+        "pass offset/limit to page through it instead of falling back to shell. "
+        "offset/limit are in characters (snapped to line boundaries, so you always "
+        "get whole lines back), like `read_file path=\"src/Vault.sol\" limit=10000`. "
+        "Negative offset reads from the end, like `tail -c`. The response tells you "
+        "the next offset to continue from."
     ),
     "input_schema": {
         "type": "object",
@@ -879,21 +945,15 @@ READ_FILE_SPEC = {
             "offset": {
                 "type": "integer",
                 "description": (
-                    "1-indexed line to start from. Negative values count back from "
-                    "the end of the file (e.g. -100 = last 100 lines). Omit to start at line 1."
+                    "Char offset to start from. Negative counts back from EOF "
+                    "(e.g. -5000 = last 5000 chars). Omit to start at the beginning."
                 ),
             },
             "limit": {
                 "type": "integer",
-                "description": "Max lines to return starting at offset. Omit to read to EOF.",
-            },
-            "timeout_seconds": {
-                "type": "integer",
-                "description": "Max allocation frame for local disk stream parsing. Default 10.",
-                "default": 10,
-                "minimum": 1,
-                "maximum": 60,
-            },
+                "description": "Max characters to return, snapped out to whole lines. Default 10000.",
+                "default": 10_000,
+            }
         },
         "required": ["path"],
     },
@@ -938,6 +998,7 @@ GRAPH_QUERY_SPEC = {
 }
 
 TOOL_SPECS: list[dict] = [
+    REVEAL_TOOL_SPEC,
     READ_FILE_SPEC,
     GRAPH_QUERY_SPEC,
     {
