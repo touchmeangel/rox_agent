@@ -31,9 +31,11 @@ class StepResult:
 
 
 _REPEAT_CALL_HINT = (
-    "BLOCKED: this exact call (same tool, same arguments) just failed and was not re-run — "
-    "repeating it would produce the same failure. Choose one:\n"
+    "BLOCKED: this exact call (same tool, same arguments) was just made in the previous "
+    "turn — repeating it will not produce new information, whether it succeeded or failed. "
+    "Choose one:\n"
     "  - a materially different command (different tool, different args, different strategy)\n"
+    "  - if it succeeded: use the output you already have, it's in your context above\n"
     "  - report_blocker if this needs the user to act\n"
     "  - report_failed if you've exhausted every reasonable option"
 )
@@ -1240,7 +1242,7 @@ Use the terminal tools as follows:
                 entry["input_tokens"] += turn.usage.input_tokens
                 entry["output_tokens"] += turn.usage.output_tokens
 
-            last_failed_signature: tuple[str, str] | None = None
+            last_signature: tuple[str, str] | None = None
             consecutive_repeat_blocks = 0
             search_state = SearchState(max_calls=self.cfg.max_web_calls)
 
@@ -1421,7 +1423,7 @@ Use the terminal tools as follows:
                                     f"stated fallback now: {blocker['fallback_action']}",
                                 )
                             )
-                            last_failed_signature = None
+                            last_signature = None
                             consecutive_repeat_blocks = 0
                         else:
                             terminal_result = StepResult(
@@ -1501,7 +1503,7 @@ Use the terminal tools as follows:
 
                     else:
                         signature = (call.name, json.dumps(call.input, sort_keys=True))
-                        if signature == last_failed_signature:
+                        if signature == last_signature:
                             consecutive_repeat_blocks += 1
                             _log(
                                 self,
@@ -1528,9 +1530,9 @@ Use the terminal tools as follows:
                                                 f"{consecutive_repeat_blocks} times in a row."
                                             ),
                                             "reason": (
-                                                "After the first real failure, every retry was the exact "
-                                                "same call with the exact same arguments — each one was "
-                                                "blocked client-side without re-executing."
+                                                "Every retry was the exact same call with the exact "
+                                                "same arguments — each one was blocked client-side "
+                                                "without re-executing."
                                             ),
                                         }
                                     },
@@ -1553,9 +1555,10 @@ Use the terminal tools as follows:
                             search_state=search_state,
                         )
 
+                        last_signature = signature
+                        consecutive_repeat_blocks = 0
+
                         if result.success:
-                            last_failed_signature = None
-                            consecutive_repeat_blocks = 0
                             payload = {
                                 "tool": call.name,
                                 "success": True,
@@ -1566,7 +1569,6 @@ Use the terminal tools as follows:
                                 ToolResultEntry(call.id, json.dumps(payload, indent=2))
                             )
                         else:
-                            last_failed_signature = signature
                             tool_results.append(
                                 ToolResultEntry(
                                     call.id, _tool_failure_hint(result), is_error=True
