@@ -77,7 +77,7 @@ class Workflow:
                         "success": result.success,
                     }
                     self.reporter.step_finished(step.name, False, 0, None, None)
-                    raise
+                    continue
 
                 self.results[step.name] = result
 

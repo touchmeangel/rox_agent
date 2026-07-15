@@ -928,6 +928,11 @@ TOOL_SPECS: list[dict] = [
             "traces, or 'coverage' to see which branches tests actually exercise. A clean "
             "build is a prerequisite for trusting slither output — if build fails, fix or "
             "note that before treating static-analysis results as reliable."
+            
+            "<rule>Never pass --no-cache when retrying a failed forge command. The first compile"
+            "populates Foundry's build cache; --no-cache discards it and forces a full recompile of"
+            "every dependency on every attempt, which is why repeated attempts get slower, not faster."
+            "Only the very first invocation in this step should use --no-cache, if at all.</rule>"
         ),
         "input_schema": {
             "type": "object",
@@ -1112,8 +1117,8 @@ TOOL_SPECS: list[dict] = [
                     "type": "integer",
                     "description": "Max wall-clock limit metric allocated for shell session commands. Default 120.",
                     "default": 120,
-                    "minimum": 5,
-                    "maximum": 600,
+                    "minimum": 30,
+                    "maximum": 3600,
                 },
             },
             "required": ["command"],
