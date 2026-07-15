@@ -310,7 +310,13 @@ def git(
     )
 
 
-def read_file(project_path: str, relative_path: str, timeout: int = 10) -> ToolResult:
+def read_file(
+    project_path: str,
+    relative_path: str,
+    offset: int | None = None,
+    limit: int | None = None,
+    timeout: int = 10,
+) -> ToolResult:
     t_start = time.monotonic()
     full = Path(project_path) / relative_path
     if not full.exists():
@@ -324,9 +330,40 @@ def read_file(project_path: str, relative_path: str, timeout: int = 10) -> ToolR
     try:
         if time.monotonic() - t_start > timeout:
             raise subprocess.TimeoutExpired(f"cat {relative_path}", timeout)
-        return ToolResult(
-            f"cat {relative_path}", full.read_text(errors="replace"), "", 0
-        )
+
+        text = full.read_text(errors="replace")
+
+        if offset is None and limit is None:
+            return ToolResult(f"cat {relative_path}", text, "", 0)
+
+        lines = text.splitlines()
+        total = len(lines)
+
+        if offset is not None and offset < 0:
+            start_idx = max(0, total + offset)
+        else:
+            start_idx = max(0, (offset - 1) if offset else 0)
+
+        if start_idx >= total:
+            return ToolResult(
+                f"cat {relative_path} [offset={offset} limit={limit}]",
+                "",
+                f"offset {offset} is past the end of the file ({total} lines total).",
+                1,
+            )
+
+        end_idx = total if limit is None else min(total, start_idx + limit)
+
+        numbered = "\n".join(f"{i + 1:>6}\t{lines[i]}" for i in range(start_idx, end_idx))
+        header = f"[lines {start_idx + 1}-{end_idx} of {total} total]\n"
+
+        cmd = f"cat {relative_path}"
+        if offset is not None:
+            cmd += f" [offset={offset}]"
+        if limit is not None:
+            cmd += f" [limit={limit}]"
+
+        return ToolResult(cmd, header + numbered, "", 0)
     except Exception as exc:
         return ToolResult(f"cat {relative_path}", "", str(exc), 1)
 
@@ -824,44 +861,85 @@ def web_fetch(url: str, max_chars: int = 6000, timeout: int = 20) -> ToolResult:
     return ToolResult(label, text + note, "", 0)
 
 
-TOOL_SPECS: list[dict] = [
-    {
-        "name": "graph_query",
-        "description": (
-            "Query the pre-built structural graph of this repo (contracts, inheritance, "
-            "function call graph, storage reads/writes) instead of grepping or reading "
-            "files to answer structural questions. Cheaper and more reliable than "
-            "shell/read_file for these. Not available every run — check for an error."
-        ),
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "node": {
-                    "type": "string",
-                    "description": "e.g. 'Vault' or 'Vault.withdraw'. Ignored for dead_code.",
-                },
-                "relation": {
-                    "type": "string",
-                    "enum": [
-                        "callers",
-                        "callees",
-                        "inherits",
-                        "inherited_by",
-                        "dead_code",
-                        "search",
-                    ],
-                },
-                "timeout_seconds": {
-                    "type": "integer",
-                    "description": "Max execution time for the graph query lookup. Default 10.",
-                    "default": 10,
-                    "minimum": 1,
-                    "maximum": 30,
-                },
+READ_FILE_SPEC = {
+    "name": "read_file",
+    "description": (
+        "Read one source file. path is relative to the project root. "
+        "By default reads the whole file; if that's truncated, or the file is large, "
+        "pass offset/limit to page through a specific line range instead of falling "
+        "back to shell. A negative offset reads from the end, like `tail -n`."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "Path relative to the project root, e.g. 'src/Vault.sol'.",
             },
-            "required": ["relation"],
+            "offset": {
+                "type": "integer",
+                "description": (
+                    "1-indexed line to start from. Negative values count back from "
+                    "the end of the file (e.g. -100 = last 100 lines). Omit to start at line 1."
+                ),
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Max lines to return starting at offset. Omit to read to EOF.",
+            },
+            "timeout_seconds": {
+                "type": "integer",
+                "description": "Max allocation frame for local disk stream parsing. Default 10.",
+                "default": 10,
+                "minimum": 1,
+                "maximum": 60,
+            },
         },
+        "required": ["path"],
     },
+}
+
+GRAPH_QUERY_SPEC = {
+    "name": "graph_query",
+    "description": (
+        "Query the pre-built structural graph of this repo (contracts, inheritance, "
+        "function call graph, storage reads/writes) instead of grepping or reading "
+        "files to answer structural questions. Cheaper and more reliable than "
+        "shell/read_file for these. Not available every run — check for an error."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "node": {
+                "type": "string",
+                "description": "e.g. 'Vault' or 'Vault.withdraw'. Ignored for dead_code.",
+            },
+            "relation": {
+                "type": "string",
+                "enum": [
+                    "callers",
+                    "callees",
+                    "inherits",
+                    "inherited_by",
+                    "dead_code",
+                    "search",
+                ],
+            },
+            "timeout_seconds": {
+                "type": "integer",
+                "description": "Max execution time for the graph query lookup. Default 10.",
+                "default": 10,
+                "minimum": 1,
+                "maximum": 30,
+            },
+        },
+        "required": ["relation"],
+    },
+}
+
+TOOL_SPECS: list[dict] = [
+    READ_FILE_SPEC,
+    GRAPH_QUERY_SPEC,
     {
         "name": "slither",
         "description": (
@@ -1046,27 +1124,6 @@ TOOL_SPECS: list[dict] = [
                     "maximum": 600,
                 },
             },
-        },
-    },
-    {
-        "name": "read_file",
-        "description": "Read one source file in full. path is relative to the project root.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Path relative to the project root, e.g. 'src/Vault.sol'.",
-                },
-                "timeout_seconds": {
-                    "type": "integer",
-                    "description": "Max allocation frame for local disk stream parsing. Default 10.",
-                    "default": 10,
-                    "minimum": 1,
-                    "maximum": 60,
-                },
-            },
-            "required": ["path"],
         },
     },
     {

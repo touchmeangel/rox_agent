@@ -9,6 +9,7 @@ from ignite_core.mission import Mission
 from ignite_core.reporting import Reporter
 from ignite_core.repository_knowledge import InvestigationScope, RepositoryKnowledge
 from ignite_core.steps.base import BaseStep
+from ignite_core.tools import READ_FILE_SPEC, GRAPH_QUERY_SPEC
 from ignite_knowledge.descriptor import Descriptor
 from ignite_knowledge.descriptors import load_descriptors
 
@@ -207,60 +208,6 @@ _CONTEXT_KEYS = (
     "known_issues",
 )
 
-_READ_FILE_TRIAGE_SPEC: dict = {
-    "name": "read_file",
-    "description": (
-        "Read one source file in full. path is relative to the project root. "
-        "USE SPARINGLY: Only use this when a candidate's provided evidence is genuinely "
-        "ambiguous (e.g., you need to check if the file is just an empty scaffold, a mock, "
-        "or a pure interface) and a quick look will change your create-vs-skip decision. "
-        "Do NOT use this to verify semantic tags or hunt for vulnerabilities."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "path": {
-                "type": "string",
-                "description": "Path relative to the project root, e.g. 'src/Vault.sol'.",
-            },
-        },
-        "required": ["path"],
-    },
-}
-
-_GRAPH_QUERY_TRIAGE_SPEC: dict = {
-    "name": "graph_query",
-    "description": (
-        "Query the pre-built structural graph of this repo (contracts, inheritance, "
-        "function call graph, storage reads/writes) to quickly answer structural questions. "
-        "USE SPARINGLY: Only use this when a candidate's role is genuinely ambiguous "
-        "(e.g., checking if a contract is actually inherited, if it's isolated dead code, "
-        "or if a target function has callers) and it directly impacts your create-vs-skip decision. "
-        "Do NOT use this to map out exploit paths or audit the code."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "node": {
-                "type": "string",
-                "description": "e.g. 'Vault' or 'Vault.withdraw'. Ignored for dead_code.",
-            },
-            "relation": {
-                "type": "string",
-                "enum": [
-                    "callers",
-                    "callees",
-                    "inherits",
-                    "inherited_by",
-                    "dead_code",
-                    "search",
-                ],
-            }
-        },
-        "required": ["relation"],
-    },
-}
-
 _SUBMIT_SPEC: dict = {
     "name": "submit_missions",
     "description": (
@@ -336,7 +283,7 @@ class PlanningStep(BaseStep):
         return _SUBMIT_SPEC
 
     def step_tools(self) -> list[dict]:
-        return [_READ_FILE_TRIAGE_SPEC, _GRAPH_QUERY_TRIAGE_SPEC]
+        return [READ_FILE_SPEC, GRAPH_QUERY_SPEC]
 
     def terminal_tools(self) -> list[dict]:
         return [
