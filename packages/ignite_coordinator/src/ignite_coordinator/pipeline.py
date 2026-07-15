@@ -50,10 +50,10 @@ PIPELINE: list[BaseStep] = [
         )
     ),
     ForkAnalysisStep(
-        StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=64)
+        StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=None)
     ),
     AuditDeltaStep(
-        StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=64)
+        StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=None)
     ),
     # InvariantTestingStep(
     #     StepConfig(
