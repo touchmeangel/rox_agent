@@ -7,6 +7,7 @@ from ignite_core.graph import Graph
 from ignite_core.reporting import Reporter
 from ignite_core.search_state import SearchState
 from ignite_core.steps.base import BaseStep, StepResult
+from ignite_core.steps.config import StepConfig
 from ignite_core.tools import dispatch
 from ignite_knowledge.descriptor import Descriptor
 from ignite_knowledge.descriptors import load_descriptors
@@ -142,6 +143,21 @@ def _fmt_target(target: ProtocolTarget, curated: list[Descriptor]) -> str:
 
 class KnownIssuesStep(BaseStep):
     name = "known_issues"
+    
+    def __init__(self, cfg: StepConfig, per_target: float = 2.0):
+        self.per_target = per_target
+        super().__init__(cfg)
+    
+    def iteration_budget(self, context: dict) -> int:
+        targets = _build_targets(context)
+
+        return int(min(
+            self.cfg.max_iterations,
+            max(
+                self.cfg.min_iterations,
+                len(targets) * self.per_target,
+            ),
+        ))
 
     def select_context(self, global_context: dict) -> dict:
         return {

@@ -59,7 +59,7 @@ PIPELINE: list[BaseStep] = [
     #     StepConfig(
     #         models=MODELS["reasoning"], max_iterations=64, max_web_calls=12
     #     )
-    # ), # Needs to be moved to POC step
+    # ), # Needs to be moved to POC agent
     SemanticTaggingStep(
         StepConfig(
             models=MODELS["reasoning"],
@@ -72,8 +72,13 @@ PIPELINE: list[BaseStep] = [
         )
     ),
     KnownIssuesStep(
-        StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=32)
-    ),  # depends on amount of protocols
+        StepConfig(
+            models=MODELS["reasoning"],
+            max_iterations=SCALABLE_ITERATIONS_MAX_LIMIT,
+            min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
+            max_web_calls=None
+        )
+    ),  # depends on amount of protocols to look up (max_web_calls should scale aswell)
     PlanningStep(
         StepConfig(
             models=MODELS["reasoning"],
