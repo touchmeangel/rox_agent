@@ -913,11 +913,14 @@ REVEAL_TOOL_SPEC: dict = {
             "offset": {
                 "type": "integer",
                 "description": "Char offset to start from. Negative counts back from EOF. Omit for the start.",
+                "minimum": 0
             },
             "limit": {
                 "type": "integer",
                 "description": "Max characters to return, snapped out to whole lines. Default 8000.",
-                "default": 10_000,
+                "default": 10000,
+                "minimum": 1,
+                "maximum": 50000
             }
         },
         "required": ["key"],
@@ -948,11 +951,14 @@ READ_FILE_SPEC = {
                     "Char offset to start from. Negative counts back from EOF "
                     "(e.g. -5000 = last 5000 chars). Omit to start at the beginning."
                 ),
+                "minimum": 0
             },
             "limit": {
                 "type": "integer",
                 "description": "Max characters to return, snapped out to whole lines. Default 10000.",
-                "default": 10_000,
+                "default": 10000,
+                "minimum": 1,
+                "maximum": 50000
             }
         },
         "required": ["path"],
@@ -1444,6 +1450,18 @@ _STDOUT_LIMITS: dict[str, int] = {
 }
 _DEFAULT_STDOUT_LIMIT = 10_000
 
+def clamp_int(value, default: int, min_val: int | None = None, max_val: int | None = None) -> int:
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+        if min_val is not None:
+            parsed = max(parsed, min_val)
+        if max_val is not None:
+            parsed = min(parsed, max_val)
+        return parsed
+    except (ValueError, TypeError):
+        return default
 
 def dispatch(
     tool_name: str,
@@ -1476,77 +1494,149 @@ def dispatch(
             case "graph_query":
                 node = tool_input.get("node", "")
                 relation = tool_input.get("relation", "")
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=10,
+                    min_val=1,
+                    max_val=30,
+                )
                 result = graph_query(
-                    repo_graph, relation, node, timeout=t_seconds or 10
+                    repo_graph,
+                    relation,
+                    node,
+                    timeout=timeout_val,
                 )
             case "slither":
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=240,
+                    min_val=30,
+                    max_val=3600,
+                )
                 result = slither(
                     project_path,
                     tool_input.get("flags") or "./",
-                    timeout=t_seconds or 240,
+                    timeout=timeout_val,
                     reporter=reporter,
                 )
             case "aderyn":
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=180,
+                    min_val=30,
+                    max_val=3600,
+                )
                 result = aderyn(
                     project_path,
                     tool_input.get("flags") or "",
-                    timeout=t_seconds or 180,
+                    timeout=timeout_val,
                     reporter=reporter,
                 )
             case "forge":
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=600,
+                    min_val=30,
+                    max_val=3600,
+                )
                 result = forge(
                     project_path,
                     tool_input.get("subcommand") or "build",
-                    timeout=t_seconds or 600,
+                    timeout=timeout_val,
                     reporter=reporter,
                 )
             case "cast":
                 subcommand = tool_input.get("subcommand", "")
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=30,
+                    min_val=5,
+                    max_val=120,
+                )
                 result = (
                     cast(
                         project_path,
                         subcommand,
-                        timeout=t_seconds or 30,
+                        timeout=timeout_val,
                         reporter=reporter,
                     )
                     if subcommand
                     else ToolResult("cast", "", "Missing required 'subcommand'.", 1)
                 )
             case "evm_decode_constructor":
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=180,
+                    min_val=10,
+                    max_val=300,
+                )
                 result = evm_decode_constructor(
                     project_path,
                     tool_input.get("creation_input", ""),
                     tool_input.get("constructor_types", ""),
-                    timeout=t_seconds or 180,
+                    timeout=timeout_val,
                     reporter=reporter,
                 )
             case "git":
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=30,
+                    min_val=20,
+                    max_val=600,
+                )
                 result = git(
                     project_path,
                     tool_input.get("args") or "log --oneline -10",
-                    timeout=t_seconds or 30,
+                    timeout=timeout_val,
                     reporter=reporter,
                 )
             case "read_file":
                 path = tool_input.get("path", "")
+                offset_val = tool_input.get("offset")
+                if offset_val is not None:
+                    offset_val = clamp_int(offset_val, default=0)
+                limit_val = clamp_int(tool_input.get("limit"), default=10_000, min_val=1, max_val=50_000)
                 result = (
-                    read_file(project_path, path, timeout=t_seconds or 10)
+                    read_file(project_path, path, offset=offset_val, limit=limit_val)
                     if path
                     else ToolResult("read_file", "", "Missing required 'path'.", 1)
                 )
+            case "reveal":
+                key = tool_input.get("key", "")
+                offset_val = tool_input.get("offset")
+                if offset_val is not None:
+                    offset_val = clamp_int(offset_val, default=0)
+                limit_val = clamp_int(tool_input.get("limit"), default=10_000, min_val=1, max_val=50_000)
+                result = (
+                    reveal(key, offset=offset_val, limit=limit_val)
+                    if key
+                    else ToolResult("reveal", "", "Missing required 'key'.", 1)
+                )
             case "list_sol_files":
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=10,
+                    min_val=1,
+                    max_val=60,
+                )
                 result = list_sol_files(
                     project_path,
                     tool_input.get("pattern") or "**/*.sol",
-                    timeout=t_seconds or 10,
+                    timeout=timeout_val,
                 )
             case "shell":
                 command = tool_input.get("command", "")
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=120,
+                    min_val=30,
+                    max_val=3600,
+                )
                 result = (
                     shell(
                         project_path,
                         command,
-                        timeout=t_seconds or 120,
+                        timeout=timeout_val,
                         reporter=reporter,
                     )
                     if command
@@ -1554,8 +1644,19 @@ def dispatch(
                 )
             case "web_search":
                 query = tool_input.get("query", "")
-                max_results = tool_input.get("max_results", 5)
-                timeout_val = t_seconds or 15
+                max_results = clamp_int(
+                    tool_input.get("max_results"),
+                    default=5,
+                    min_val=1,
+                    max_val=10,
+                )
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=15,
+                    min_val=2,
+                    max_val=60,
+                )
+
                 with reporter.spinner("Searching…"):
                     result = (
                         search_state.consume(
@@ -1568,7 +1669,13 @@ def dispatch(
                     )
             case "web_fetch":
                 url = tool_input.get("url", "")
-                timeout_val = t_seconds or 20
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=20,
+                    min_val=2,
+                    max_val=120,
+                )
+
                 with reporter.spinner("Fetching…"):
                     result = (
                         search_state.consume(
@@ -1581,61 +1688,143 @@ def dispatch(
                     )
             case "browser_fetch":
                 url = tool_input.get("url", "")
-                max_chars = tool_input.get("max_chars", 8_000)
-                wait_ms = tool_input.get("wait_ms", 0)
-                timeout_val = t_seconds or 25
+
+                max_chars = clamp_int(
+                    tool_input.get("max_chars"),
+                    default=8000,
+                    min_val=100,
+                    max_val=100000,
+                )
+
+                wait_ms = clamp_int(
+                    tool_input.get("wait_ms"),
+                    default=0,
+                    min_val=0,
+                    max_val=60000,
+                )
+
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=25,
+                    min_val=5,
+                    max_val=120,
+                )
+
                 with reporter.spinner("Rendering page…"):
                     result = (
                         search_state.consume(
                             "browser_fetch",
                             url,
                             lambda: browser_fetch(
-                                url, max_chars, wait_ms, timeout=timeout_val
+                                url,
+                                max_chars=max_chars,
+                                wait_ms=wait_ms,
+                                timeout=timeout_val,
                             ),
                         )
                         if search_state is not None
-                        else browser_fetch(url, max_chars, wait_ms, timeout=timeout_val)
+                        else browser_fetch(
+                            url,
+                            max_chars=max_chars,
+                            wait_ms=wait_ms,
+                            timeout=timeout_val,
+                        )
                     )
             case "download_file":
                 url = tool_input.get("url", "")
                 filename = tool_input.get("filename")
-                timeout_val = t_seconds or 60
+
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=60,
+                    min_val=5,
+                    max_val=300,
+                )
+
                 with reporter.spinner("Downloading…"):
                     result = (
-                        download_file(url, filename, timeout=timeout_val)
+                        download_file(
+                            url,
+                            filename,
+                            timeout=timeout_val,
+                        )
                         if url
                         else ToolResult(
-                            "download_file", "", "Missing required 'url'.", 1
+                            "download_file",
+                            "",
+                            "Missing required 'url'.",
+                            1,
                         )
                     )
             case "read_document":
                 source = tool_input.get("source", "")
-                max_chars = tool_input.get("max_chars", 15_000)
-                timeout_val = t_seconds or 60
+
+                max_chars = clamp_int(
+                    tool_input.get("max_chars"),
+                    default=15_000,
+                    min_val=100,
+                    max_val=200_000,
+                )
+
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=60,
+                    min_val=5,
+                    max_val=300,
+                )
+
                 with reporter.spinner("Reading document…"):
                     result = (
-                        read_document(source, max_chars, timeout=timeout_val)
+                        read_document(
+                            source,
+                            max_chars=max_chars,
+                            timeout=timeout_val,
+                        )
                         if source
                         else ToolResult(
-                            "read_document", "", "Missing required 'source'.", 1
+                            "read_document",
+                            "",
+                            "Missing required 'source'.",
+                            1,
                         )
                     )
             case "github_search":
                 query = tool_input.get("query", "")
                 search_type = tool_input.get("search_type", "repositories")
-                max_results = tool_input.get("max_results", 5)
-                timeout_val = t_seconds or 15
+
+                max_results = clamp_int(
+                    tool_input.get("max_results"),
+                    default=5,
+                    min_val=1,
+                    max_val=10,
+                )
+
+                timeout_val = clamp_int(
+                    tool_input.get("timeout_seconds"),
+                    default=15,
+                    min_val=2,
+                    max_val=60,
+                )
+
                 with reporter.spinner("Searching GitHub…"):
                     result = (
                         search_state.consume(
                             "github_search",
                             query,
                             lambda: github_search(
-                                query, search_type, max_results, timeout_val
+                                query,
+                                search_type,
+                                max_results,
+                                timeout_val,
                             ),
                         )
                         if search_state is not None
-                        else github_search(query, search_type, max_results, timeout_val)
+                        else github_search(
+                            query,
+                            search_type,
+                            max_results,
+                            timeout_val,
+                        )
                     )
             case _:
                 result = ToolResult(
