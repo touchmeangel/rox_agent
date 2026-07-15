@@ -156,7 +156,7 @@ class KnownIssuesStep(BaseStep):
 
         return min(
             self.cfg.max_iterations,
-            self.base_iterations + int(len(targets) * self.per_target)
+            self.base_iterations + int(len(targets) * self.per_target),
         )
 
     def select_context(self, global_context: dict) -> dict:
