@@ -72,7 +72,7 @@ PIPELINE: list[BaseStep] = [
             max_iterations=SCALABLE_ITERATIONS_MAX_LIMIT,
             max_web_calls=None,
         ),
-        min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
+        base_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
         per_target=5.0,
     ),
     PlanningStep(
