@@ -65,9 +65,9 @@ class AssistantTurn:
     stop_reason: str = ""
     raw: object = None
     model: str = ""
+    provider: str = ""
     account_key: str = ""
     usage: TokenUsage = field(default_factory=TokenUsage)
-
 
 class LLMClient:
     def __init__(self, chain: list[ModelConfig]):
@@ -156,6 +156,7 @@ class LLMClient:
                 )
                 turn.model = cfg.model
                 turn.account_key = self._account_key(cfg)
+                turn.provider = cfg.provider
                 return turn
             except Exception as exc:
                 reporter.stop_spinner()
@@ -474,28 +475,16 @@ def _to_anthropic_messages(messages: list[dict]) -> list[dict]:
     for entry in messages:
         role = entry["role"]
         if role == "user":
-            out.append(
-                {
-                    "role": "user",
-                    "content": [{"type": "text", "text": entry["content"]}],
-                }
-            )
+            out.append({"role": "user", "content": [{"type": "text", "text": entry["content"]}]})
         elif role == "assistant":
-            if entry.get("raw") is not None:
+            if entry.get("raw") is not None and entry.get("provider") == "anthropic":
                 out.append({"role": "assistant", "content": entry["raw"]})
             else:
                 blocks: list[dict] = []
                 if entry.get("text"):
                     blocks.append({"type": "text", "text": entry["text"]})
                 for tc in entry.get("tool_calls", []):
-                    blocks.append(
-                        {
-                            "type": "tool_use",
-                            "id": tc.id,
-                            "name": tc.name,
-                            "input": tc.input,
-                        }
-                    )
+                    blocks.append({"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.input})
                 out.append({"role": "assistant", "content": blocks})
         elif role == "tool_results":
             blocks = []
@@ -525,7 +514,7 @@ def _to_openai_messages(messages: list[dict], system: str) -> list[dict]:
         if role == "user":
             out.append({"role": "user", "content": entry["content"]})
         elif role == "assistant":
-            if entry.get("raw") is not None:
+            if entry.get("raw") is not None and entry.get("provider") == "openai":
                 raw = dict(entry["raw"])
                 if raw.get("tool_calls") is None:
                     raw.pop("tool_calls", None)
@@ -534,23 +523,14 @@ def _to_openai_messages(messages: list[dict], system: str) -> list[dict]:
                 out.append(raw)
             else:
                 tool_calls = [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {
-                            "name": tc.name,
-                            "arguments": json.dumps(tc.input),
-                        },
-                    }
+                    {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.input)}}
                     for tc in entry.get("tool_calls", [])
                 ]
-                out.append(
-                    {
-                        "role": "assistant",
-                        "content": entry.get("text") or None,
-                        "tool_calls": tool_calls or None,
-                    }
-                )
+                out.append({
+                    "role": "assistant",
+                    "content": entry.get("text") or None,
+                    "tool_calls": tool_calls or None,
+                })
         elif role == "tool_results":
             for r in entry["results"]:
                 content = f"ERROR: {r.content}" if r.is_error else r.content
