@@ -7,7 +7,9 @@ from ignite_core.storages.base import TempStorage
 class OverflowStore(TempStorage):
     _PREFIX = "ignite_overflow_"
 
-    def write(self, content: str, tool_name: str, suffix: str = ".txt") -> tuple[str, Path]:
+    def write(
+        self, content: str, tool_name: str, suffix: str = ".txt"
+    ) -> tuple[str, Path]:
         base = self._ensure_dir()
         key = hashlib.sha256(content.encode()).hexdigest()[:16]
         safe_tool = "".join(c if c.isalnum() else "_" for c in tool_name)[:40]
@@ -25,5 +27,7 @@ class OverflowStore(TempStorage):
 
     def read(self, key: str) -> Path | None:
         base = self._ensure_dir()
-        matches = sorted(p for p in base.glob(f"*_{key}.*") if p.stem.endswith(f"_{key}"))
+        matches = sorted(
+            p for p in base.glob(f"*_{key}.*") if p.stem.endswith(f"_{key}")
+        )
         return matches[0] if matches else None

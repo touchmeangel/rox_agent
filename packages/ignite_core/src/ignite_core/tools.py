@@ -127,6 +127,7 @@ def _smart_process_output(
         prompt_msg += f"\n--- TAIL (last {preview_size} chars) ---\n{tail}\n"
     return prompt_msg
 
+
 def _stream_subprocess(
     args: list[str],
     cwd: str,
@@ -305,6 +306,7 @@ def git(
         f"git {args}", cwd=project_path, timeout=timeout, reporter=reporter
     )
 
+
 def _line_snap_window(
     text: str, offset: int | None, limit: int
 ) -> tuple[str, int, int, int, int]:
@@ -333,17 +335,18 @@ def _line_snap_window(
 
     return sliced, start_char, end_char, start_line, end_line
 
+
 def read_file(
     project_path: str,
     relative_path: str,
     offset: int | None = None,
     limit: int = 10_000,
 ) -> ToolResult:
-    t_start = time.monotonic()
     full = Path(project_path) / relative_path
     if not full.exists():
         return ToolResult(
-            f"cat {relative_path}", "",
+            f"cat {relative_path}",
+            "",
             f"File not found: {relative_path}. Use list_sol_files or shell('find . -iname ...') "
             f"to locate the right path — relative paths are resolved against the project root.",
             1,
@@ -374,9 +377,8 @@ def read_file(
     except Exception as exc:
         return ToolResult(f"cat {relative_path}", "", str(exc), 1)
 
-def reveal(
-    key: str, offset: int | None = None, limit: int = 10_000
-) -> ToolResult:
+
+def reveal(key: str, offset: int | None = None, limit: int = 10_000) -> ToolResult:
     key = key.strip()
     label = f"reveal key={key!r} offset={offset} limit={limit}"
     if not key:
@@ -385,16 +387,23 @@ def reveal(
     path = _overflow_store.read(key)
     if path is None:
         return ToolResult(
-            label, "", f"No stored output for key '{key}' — keys come from a prior "
-            f"truncation notice, they aren't guessable.", 1,
+            label,
+            "",
+            f"No stored output for key '{key}' — keys come from a prior "
+            f"truncation notice, they aren't guessable.",
+            1,
         )
 
     text = path.read_text(errors="replace")
     total_chars = len(text)
     if offset is not None and offset >= 0 and offset >= total_chars:
-        return ToolResult(label, "", f"offset {offset} is past EOF ({total_chars} chars total).", 1)
+        return ToolResult(
+            label, "", f"offset {offset} is past EOF ({total_chars} chars total).", 1
+        )
 
-    sliced, start_char, end_char, start_line, end_line = _line_snap_window(text, offset, limit)
+    sliced, start_char, end_char, start_line, end_line = _line_snap_window(
+        text, offset, limit
+    )
     numbered = "\n".join(
         f"{start_line + i:>6}\t{line}" for i, line in enumerate(sliced.splitlines())
     )
@@ -402,6 +411,7 @@ def reveal(
     if end_char < total_chars:
         header += f"[continue with offset={end_char}]\n"
     return ToolResult(label, header + numbered, "", 0)
+
 
 def list_sol_files(
     project_path: str, pattern: str = "**/*.sol", timeout: int = 10
@@ -909,19 +919,22 @@ REVEAL_TOOL_SPEC: dict = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "key": {"type": "string", "description": "The key from a prior truncation notice."},
+            "key": {
+                "type": "string",
+                "description": "The key from a prior truncation notice.",
+            },
             "offset": {
                 "type": "integer",
                 "description": "Char offset to start from. Negative counts back from EOF. Omit for the start.",
-                "minimum": 0
+                "minimum": 0,
             },
             "limit": {
                 "type": "integer",
                 "description": "Max characters to return, snapped out to whole lines. Default 8000.",
                 "default": 10000,
                 "minimum": 1,
-                "maximum": 50000
-            }
+                "maximum": 50000,
+            },
         },
         "required": ["key"],
     },
@@ -934,7 +947,7 @@ READ_FILE_SPEC = {
         "By default reads the whole file; if that's truncated, or the file is large, "
         "pass offset/limit to page through it instead of falling back to shell. "
         "offset/limit are in characters (snapped to line boundaries, so you always "
-        "get whole lines back), like `read_file path=\"src/Vault.sol\" limit=10000`. "
+        'get whole lines back), like `read_file path="src/Vault.sol" limit=10000`. '
         "Negative offset reads from the end, like `tail -c`. The response tells you "
         "the next offset to continue from."
     ),
@@ -951,15 +964,15 @@ READ_FILE_SPEC = {
                     "Char offset to start from. Negative counts back from EOF "
                     "(e.g. -5000 = last 5000 chars). Omit to start at the beginning."
                 ),
-                "minimum": 0
+                "minimum": 0,
             },
             "limit": {
                 "type": "integer",
                 "description": "Max characters to return, snapped out to whole lines. Default 10000.",
                 "default": 10000,
                 "minimum": 1,
-                "maximum": 50000
-            }
+                "maximum": 50000,
+            },
         },
         "required": ["path"],
     },
@@ -1073,7 +1086,6 @@ TOOL_SPECS: list[dict] = [
             "traces, or 'coverage' to see which branches tests actually exercise. A clean "
             "build is a prerequisite for trusting slither output — if build fails, fix or "
             "note that before treating static-analysis results as reliable."
-            
             "<rule>Never pass --no-cache when retrying a failed forge command. The first compile"
             "populates Foundry's build cache; --no-cache discards it and forces a full recompile of"
             "every dependency on every attempt, which is why repeated attempts get slower, not faster."
@@ -1450,7 +1462,10 @@ _STDOUT_LIMITS: dict[str, int] = {
 }
 _DEFAULT_STDOUT_LIMIT = 10_000
 
-def clamp_int(value, default: int, min_val: int | None = None, max_val: int | None = None) -> int:
+
+def clamp_int(
+    value, default: int, min_val: int | None = None, max_val: int | None = None
+) -> int:
     if value is None:
         return default
     try:
@@ -1462,6 +1477,7 @@ def clamp_int(value, default: int, min_val: int | None = None, max_val: int | No
         return parsed
     except (ValueError, TypeError):
         return default
+
 
 def dispatch(
     tool_name: str,
@@ -1488,7 +1504,6 @@ def dispatch(
         reporter.tool_started(tool_name, cmd_display)
 
         t0 = time.monotonic()
-        t_seconds = tool_input.get("timeout_seconds")
 
         match tool_name:
             case "graph_query":
@@ -1595,7 +1610,9 @@ def dispatch(
                 offset_val = tool_input.get("offset")
                 if offset_val is not None:
                     offset_val = clamp_int(offset_val, default=0)
-                limit_val = clamp_int(tool_input.get("limit"), default=10_000, min_val=1, max_val=50_000)
+                limit_val = clamp_int(
+                    tool_input.get("limit"), default=10_000, min_val=1, max_val=50_000
+                )
                 result = (
                     read_file(project_path, path, offset=offset_val, limit=limit_val)
                     if path
@@ -1606,7 +1623,9 @@ def dispatch(
                 offset_val = tool_input.get("offset")
                 if offset_val is not None:
                     offset_val = clamp_int(offset_val, default=0)
-                limit_val = clamp_int(tool_input.get("limit"), default=10_000, min_val=1, max_val=50_000)
+                limit_val = clamp_int(
+                    tool_input.get("limit"), default=10_000, min_val=1, max_val=50_000
+                )
                 result = (
                     reveal(key, offset=offset_val, limit=limit_val)
                     if key

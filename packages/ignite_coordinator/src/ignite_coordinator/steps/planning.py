@@ -8,9 +8,9 @@ from ignite_core.debug_logger import DebugLogger, default_debug_logger
 from ignite_core.mission import Mission
 from ignite_core.reporting import Reporter
 from ignite_core.repository_knowledge import InvestigationScope, RepositoryKnowledge
-from ignite_core.steps.config import StepConfig
 from ignite_core.steps.base import BaseStep
-from ignite_core.tools import REVEAL_TOOL_SPEC, READ_FILE_SPEC, GRAPH_QUERY_SPEC
+from ignite_core.steps.config import StepConfig
+from ignite_core.tools import GRAPH_QUERY_SPEC, READ_FILE_SPEC, REVEAL_TOOL_SPEC
 from ignite_knowledge.descriptor import Descriptor
 from ignite_knowledge.descriptors import load_descriptors
 
@@ -275,21 +275,26 @@ _SUBMIT_SPEC: dict = {
 
 class PlanningStep(BaseStep):
     name = "planning"
-    
-    def __init__(self, cfg: StepConfig, per_candidate: float = 2.0):
+
+    def __init__(
+        self, cfg: StepConfig, per_candidate: float = 2.0, min_iterations: int = 10
+    ):
         self.per_candidate = per_candidate
+        self.min_iterations = min_iterations
         super().__init__(cfg)
-    
+
     def iteration_budget(self, context: dict) -> int:
         candidates = _candidates_for_context(context)
 
-        return int(min(
-            self.cfg.max_iterations,
-            max(
-                self.cfg.min_iterations,
-                len(candidates) * self.per_candidate,
-            ),
-        ))
+        return int(
+            min(
+                self.cfg.max_iterations,
+                max(
+                    self.min_iterations,
+                    len(candidates) * self.per_candidate,
+                ),
+            )
+        )
 
     @property
     def submission_tool_name(self) -> str:

@@ -8,7 +8,7 @@ from pathlib import Path
 from ignite_core.debug_logger import DebugLogger
 from ignite_core.graph import Graph
 from ignite_core.reporting import Reporter
-from ignite_core.steps.base import BaseStep
+from ignite_core.steps.codebase_scalable_base import CodebaseScalableBaseStep
 from ignite_core.tools import dispatch
 
 _IMPACT_ORDER = ["High", "Medium", "Low", "Informational", "Optimization"]
@@ -291,7 +291,7 @@ def _pre_scan_project(
     }
 
 
-class StaticAnalysisStep(BaseStep):
+class StaticAnalysisStep(CodebaseScalableBaseStep):
     name = "static_analysis"
 
     def select_context(self, global_context: dict) -> dict:

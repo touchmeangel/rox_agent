@@ -21,33 +21,29 @@ PIPELINE: list[BaseStep] = [
         StepConfig(
             models=MODELS["reasoning"],
             max_iterations=SCALABLE_ITERATIONS_MAX_LIMIT,
-            min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
             max_web_calls=12,
-            scales_with_code=True,
-            per_contract=0.3,
-            per_kloc=1.5,
-        )
+        ),
+        min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
+        per_contract=0.3,
+        per_kloc=1.5,
     ),
     TestCoverageStep(
         StepConfig(
             models=MODELS["reasoning"],
             max_iterations=SCALABLE_ITERATIONS_MAX_LIMIT,
-            min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
-            scales_with_code=True,
-            sloc_kind="test",
-            per_contract=0.3,
-            per_kloc=1.0,
-        )
+        ),
+        min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
+        per_contract=0.3,
+        per_kloc=1.0,
     ),
     StaticAnalysisStep(
         StepConfig(
             models=MODELS["reasoning"],
             max_iterations=SCALABLE_ITERATIONS_MAX_LIMIT,
-            min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
-            scales_with_code=True,
-            per_contract=0.4,
-            per_kloc=0.5,
-        )
+        ),
+        min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
+        per_contract=0.4,
+        per_kloc=0.5,
     ),
     ForkAnalysisStep(
         StepConfig(models=MODELS["reasoning"], max_iterations=64, max_web_calls=None)
@@ -64,26 +60,27 @@ PIPELINE: list[BaseStep] = [
         StepConfig(
             models=MODELS["reasoning"],
             max_iterations=SCALABLE_ITERATIONS_MAX_LIMIT,
-            min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
-            scales_with_code=True,
-            per_contract=1.0,
-            per_kloc=0.3,
             max_web_calls=12,
-        )
+        ),
+        min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
+        per_contract=1.0,
+        per_kloc=0.3,
     ),
     KnownIssuesStep(
         StepConfig(
             models=MODELS["reasoning"],
             max_iterations=SCALABLE_ITERATIONS_MAX_LIMIT,
-            min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
-            max_web_calls=None
-        )
+            max_web_calls=None,
+        ),
+        min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
+        per_target=2.0,
     ),
     PlanningStep(
         StepConfig(
             models=MODELS["reasoning"],
             max_iterations=SCALABLE_ITERATIONS_MAX_LIMIT,
-            min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
-        )
+        ),
+        min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
+        per_candidate=2.0,
     ),
 ]

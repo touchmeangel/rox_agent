@@ -236,9 +236,9 @@ class BaseStep:
         self.cfg = cfg
         self.llm: LLMClient = get_llm(*cfg.models)
         self.project_path: str = ""
-    
+
     def iteration_budget(self, context: dict) -> int:
-        return self.cfg.compute_iteration_budget(self.repo_graph)
+        return self.cfg.max_iterations
 
     @property
     def is_single_turn(self) -> bool:

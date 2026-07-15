@@ -4,7 +4,7 @@ from pathlib import Path
 
 from ignite_core.debug_logger import DebugLogger
 from ignite_core.reporting import Reporter
-from ignite_core.steps.base import BaseStep
+from ignite_core.steps.codebase_scalable_base import CodebaseScalableBaseStep
 
 
 def _generate_repo_tree(repo_path: str) -> str:
@@ -109,7 +109,7 @@ def _fmt_architecture(graph) -> str:
     return "\n".join(lines) if lines else "(no contracts parsed)"
 
 
-class DocumentationStep(BaseStep):
+class DocumentationStep(CodebaseScalableBaseStep):
     name = "documentation"
 
     def select_context(self, global_context: dict) -> dict:

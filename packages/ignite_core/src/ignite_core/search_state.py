@@ -13,7 +13,7 @@ class SearchState:
     def remaining(self) -> int | None:
         if self.max_calls is None:
             return None
-        
+
         return max(0, self.max_calls - self.used)
 
     def consume(
@@ -48,13 +48,9 @@ class SearchState:
 
         if result.success:
             if self.max_calls is None:
-                footer = (
-                    f"\n\n(no limit was set for search calls)"
-                )
+                footer = "\n\n(no limit was set for search calls)"
             else:
-                footer = (
-                    f"\n\n({self.remaining()} of {self.max_calls} step searches remaining)"
-                )
+                footer = f"\n\n({self.remaining()} of {self.max_calls} step searches remaining)"
             result = ToolResult(
                 result.command, result.stdout + footer, result.stderr, result.returncode
             )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from ignite_core.debug_logger import DebugLogger
 from ignite_core.reporting import Reporter
-from ignite_core.steps.base import BaseStep
+from ignite_core.steps.codebase_scalable_base import CodebaseScalableBaseStep
 from ignite_core.tools import list_sol_files
 from ignite_knowledge.protocol_tags import load_protocol_tag_registry
 from ignite_knowledge.tags import load_tag_registry
@@ -14,7 +14,7 @@ def _vuln_tag_ids() -> list[str]:
     return sorted(load_tag_registry().keys())
 
 
-class SemanticTaggingStep(BaseStep):
+class SemanticTaggingStep(CodebaseScalableBaseStep):
     name = "semantic_tagging"
 
     def select_context(self, global_context: dict) -> dict:

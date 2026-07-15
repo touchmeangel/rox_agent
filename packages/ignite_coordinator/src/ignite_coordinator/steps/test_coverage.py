@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 from ignite_core.debug_logger import DebugLogger
+from ignite_core.graph import SlocKind
 from ignite_core.reporting import Reporter
-from ignite_core.steps.base import BaseStep, StepResult
+from ignite_core.steps.base import StepResult
+from ignite_core.steps.codebase_scalable_base import CodebaseScalableBaseStep
 
 
 @dataclass
@@ -51,8 +54,12 @@ def _prescan_tests(workspace_path: str) -> TestSuitePrescan:
     )
 
 
-class TestCoverageStep(BaseStep):
+class TestCoverageStep(CodebaseScalableBaseStep):
     name = "test_coverage"
+
+    @property
+    def sloc_kind(self) -> SlocKind | Literal["all"]:
+        return "test"
 
     def run(self, context: dict) -> StepResult:
         self.scan = _prescan_tests(self.project_path)
