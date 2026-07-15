@@ -78,7 +78,7 @@ PIPELINE: list[BaseStep] = [
             min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
             max_web_calls=None
         )
-    ),  # depends on amount of protocols to look up (max_web_calls should scale aswell)
+    ),
     PlanningStep(
         StepConfig(
             models=MODELS["reasoning"],
