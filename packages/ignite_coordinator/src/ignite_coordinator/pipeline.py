@@ -82,7 +82,8 @@ PIPELINE: list[BaseStep] = [
     PlanningStep(
         StepConfig(
             models=MODELS["reasoning"],
-            max_iterations=64,
+            max_iterations=SCALABLE_ITERATIONS_MAX_LIMIT,
+            min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
         )
-    ),  # depends on amount appliable descriptors
+    ),
 ]
