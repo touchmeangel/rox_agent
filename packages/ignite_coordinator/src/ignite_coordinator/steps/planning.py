@@ -9,7 +9,7 @@ from ignite_core.mission import Mission
 from ignite_core.reporting import Reporter
 from ignite_core.repository_knowledge import InvestigationScope, RepositoryKnowledge
 from ignite_core.steps.base import BaseStep
-from ignite_core.tools import READ_FILE_SPEC, GRAPH_QUERY_SPEC
+from ignite_core.tools import REVEAL_TOOL_SPEC, READ_FILE_SPEC, GRAPH_QUERY_SPEC
 from ignite_knowledge.descriptor import Descriptor
 from ignite_knowledge.descriptors import load_descriptors
 
@@ -283,7 +283,7 @@ class PlanningStep(BaseStep):
         return _SUBMIT_SPEC
 
     def step_tools(self) -> list[dict]:
-        return [READ_FILE_SPEC, GRAPH_QUERY_SPEC]
+        return [REVEAL_TOOL_SPEC, READ_FILE_SPEC, GRAPH_QUERY_SPEC]
 
     def terminal_tools(self) -> list[dict]:
         return [
