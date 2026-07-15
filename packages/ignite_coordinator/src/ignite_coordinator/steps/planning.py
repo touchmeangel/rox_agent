@@ -223,13 +223,6 @@ _READ_FILE_TRIAGE_SPEC: dict = {
                 "type": "string",
                 "description": "Path relative to the project root, e.g. 'src/Vault.sol'.",
             },
-            "timeout_seconds": {
-                "type": "integer",
-                "description": "Max allocation frame for local disk stream parsing. Default 10.",
-                "default": 10,
-                "minimum": 1,
-                "maximum": 60,
-            },
         },
         "required": ["path"],
     },
@@ -262,14 +255,7 @@ _GRAPH_QUERY_TRIAGE_SPEC: dict = {
                     "dead_code",
                     "search",
                 ],
-            },
-            "timeout_seconds": {
-                "type": "integer",
-                "description": "Max execution time for the graph query lookup. Default 10.",
-                "default": 10,
-                "minimum": 1,
-                "maximum": 30,
-            },
+            }
         },
         "required": ["relation"],
     },
@@ -341,10 +327,6 @@ _SUBMIT_SPEC: dict = {
 
 class PlanningStep(BaseStep):
     name = "planning"
-
-    @property
-    def is_single_turn(self) -> bool:
-        return False
 
     @property
     def submission_tool_name(self) -> str:
@@ -446,8 +428,10 @@ class PlanningStep(BaseStep):
     def termination_criteria_prompt(self) -> str:
         return """<termination_criteria>
 You have two operational phases:
-1. (Optional) Resolve uncertainties by issuing individual `peek_contract_source` calls to review contract wrappers, scaffolds, or interfaces.
-2. Complete your allocation by executing `submit_missions` exactly once. Your submission must explicitly account for every candidate.
+1. (Optional) Resolve uncertainties by issuing individual `read_file` or `graph_query`
+   calls to check for empty scaffolds, mocks, pure interfaces, or dead code.
+2. Complete your allocation by executing `submit_missions` exactly once. Your submission
+   must explicitly account for every candidate.
 </termination_criteria>"""
 
     def initial_prompt_with_candidates(
@@ -473,9 +457,18 @@ Your only responsibility is allocating worker time efficiently.
 </candidates>
 
 <investigation_capabilities>
-If the metadata provided for a candidate leaves you highly uncertain whether the file is just an empty scaffold, a mockup, or a pure interface, you can call `peek_contract_source` to read its structural definition lines.
+If a candidate's provided evidence leaves you genuinely uncertain, two tools can resolve it:
 
-CRITICAL: Do NOT use peeking to perform the audit yourself or look for security vulnerabilities. Trust the semantic tagging metrics completely. Use peeking exclusively to rule out empty implementation frameworks.
+- `read_file` — read a source file's actual implementation when you need to check whether
+  it's an empty scaffold, a mock, or a pure interface with zero executable logic.
+- `graph_query` — check structural facts cheaply without reading source: `inherits`/
+  `inherited_by` to confirm a contract is actually part of the inheritance chain, or
+  `dead_code` to check whether a target function has zero callers before allocating a
+  mission to something nothing can reach.
+
+CRITICAL: Do NOT use either tool to perform the audit yourself or look for security
+vulnerabilities. Trust the semantic tagging metrics completely. Use them exclusively to
+rule out empty implementation frameworks or unreachable code.
 </investigation_capabilities>
 
 <output_format>
