@@ -42,7 +42,9 @@ class Workflow:
                     step.github_repo_path = repo_path
                 step.project_path = work_path
 
-                self.reporter.step_started(step.name, budget=step.iteration_budget(context))
+                self.reporter.step_started(
+                    step.name, budget=step.iteration_budget(context)
+                )
 
                 filtered_context = step.select_context(context)
 
