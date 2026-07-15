@@ -312,9 +312,6 @@ class PlanningStep(BaseStep):
             *self._non_submission_terminal_tool_specs(),
         ]
 
-    def _iteration_budget(self) -> int:
-        return 6
-
     def select_context(self, global_context: dict) -> dict:
         self._context = {k: v for k, v in global_context.items() if k in _CONTEXT_KEYS}
         return self._context
