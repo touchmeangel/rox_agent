@@ -277,23 +277,18 @@ class PlanningStep(BaseStep):
     name = "planning"
 
     def __init__(
-        self, cfg: StepConfig, per_candidate: float = 2.0, min_iterations: int = 10
+        self, cfg: StepConfig, per_candidate: float = 2.0, base_iterations: int = 10
     ):
         self.per_candidate = per_candidate
-        self.min_iterations = min_iterations
+        self.base_iterations = base_iterations
         super().__init__(cfg)
 
     def iteration_budget(self, context: dict) -> int:
         candidates = _candidates_for_context(context)
 
-        return int(
-            min(
-                self.cfg.max_iterations,
-                max(
-                    self.min_iterations,
-                    len(candidates) * self.per_candidate,
-                ),
-            )
+        return min(
+            self.cfg.max_iterations,
+            self.base_iterations + int(len(candidates) * self.per_candidate),
         )
 
     @property

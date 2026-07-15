@@ -80,7 +80,7 @@ PIPELINE: list[BaseStep] = [
             models=MODELS["reasoning"],
             max_iterations=SCALABLE_ITERATIONS_MAX_LIMIT,
         ),
-        min_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
+        base_iterations=SCALABLE_ITERATIONS_MIN_LIMIT,
         per_candidate=2.0,
     ),
 ]
