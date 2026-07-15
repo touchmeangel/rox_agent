@@ -236,21 +236,9 @@ class BaseStep:
         self.cfg = cfg
         self.llm: LLMClient = get_llm(*cfg.models)
         self.project_path: str = ""
-
-    def _iteration_budget(self) -> int:
-        if not self.cfg.scales_with_code:
-            return self.cfg.max_iterations
-
-        g = self.repo_graph
-        n_contracts = len(g.contracts())
-        kloc = g.sloc(kind=self.cfg.sloc_kind) / 1000
-
-        budget = (
-            self.cfg.min_iterations
-            + n_contracts * self.cfg.per_contract
-            + kloc * self.cfg.per_kloc
-        )
-        return int(min(self.cfg.max_iterations, budget))
+    
+    def iteration_budget(self, context: dict) -> int:
+        return self.cfg.compute_iteration_budget(self.repo_graph)
 
     @property
     def is_single_turn(self) -> bool:
@@ -1215,7 +1203,7 @@ Use the terminal tools as follows:
         return result
 
     def run(self, context: dict) -> StepResult:
-        effective_max = self._iteration_budget()
+        effective_max = self.iteration_budget(context)
 
         default_debug_logger.log_event(
             "step_start", step=self.name, max_iterations=effective_max
