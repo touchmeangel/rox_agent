@@ -145,7 +145,7 @@ class KnownIssuesStep(BaseStep):
     name = "known_issues"
 
     def __init__(
-        self, cfg: StepConfig, per_target: float = 2.0, min_iterations: int = 10
+        self, cfg: StepConfig, per_target: float = 0.0, min_iterations: int = 10
     ):
         self.per_target = per_target
         self.min_iterations = min_iterations
@@ -154,14 +154,9 @@ class KnownIssuesStep(BaseStep):
     def iteration_budget(self, context: dict) -> int:
         targets = _build_targets(context)
 
-        return int(
-            min(
-                self.cfg.max_iterations,
-                max(
-                    self.min_iterations,
-                    len(targets) * self.per_target,
-                ),
-            )
+        return min(
+            self.cfg.max_iterations,
+            self.min_iterations + int(len(targets) * self.per_target)
         )
 
     def select_context(self, global_context: dict) -> dict:
