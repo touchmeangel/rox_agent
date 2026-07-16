@@ -1,42 +1,55 @@
-id: required_external_call_dos
-name: Denial of Service via Required External Call
+id: protocol_liveness_dos
+name: Protocol Liveness Denial of Service
 granularity: function
 tags:
   - liveness_critical_function
 
 scenario: |
-  The contract requires an external call to succeed in order to continue
-  execution. If any recipient intentionally or unintentionally reverts,
-  the entire operation fails. A malicious participant may permanently
-  block withdrawals, distributions, auctions, rewards, or protocol
-  progress.
+  A protocol-critical function can be made to revert through state or
+  inputs influenced by an untrusted participant. Because successful
+  execution is required for global protocol progress, one participant
+  can indefinitely prevent unrelated users from completing the workflow.
 
 properties:
-  - id: mandatory_call_success
+  - id: protocol_progress_depends_on_single_execution
     check: |
-      Look for external calls whose returned success value is enforced.
-      Examples include:
-        require(success)
-        require(token.transfer(...))
-        require(token.transferFrom(...))
-        SafeERC20 operations that revert on failure.
-      This is only a vulnerability when one failing recipient prevents
-      unrelated users from completing their own operations. Individual
-      user withdrawals reverting are expected behavior and should not be
-      reported.
-    confirm_with: |
-      shell: rg "require\(success" src/ -n
-      shell: rg "\.call\{" src/ -n
-      shell: rg "safeTransfer|safeTransferFrom" src/ -n
-      Determine whether a single malicious recipient can block progress
-      for everyone else.
-    severity: high
+      Confirm the function performs a protocol-wide action rather than an
+      isolated user action. Examples include settlement, liquidation,
+      reward distribution, epoch advancement, auction finalization,
+      withdrawal queue processing, or batch execution.
+
+  - id: attacker_controlled_revert
+    check: |
+      Confirm an attacker can intentionally trigger a revert through
+      external calls, arithmetic, invalid token behavior, malformed state,
+      hook execution, gas exhaustion, or other reachable conditions.
+
+  - id: unrelated_users_blocked
+    check: |
+      Verify failure affects users other than the attacker.
+      Reject findings where only the attacker's own operation fails.
+
+  - id: repeatable
+    check: |
+      Confirm the attacker can repeat the revert whenever protocol
+      progress is attempted.
 
 exploitation_context: |
-  Write a malicious receiver contract that always reverts. Verify whether
-  interacting with that receiver prevents unrelated users from
-  successfully executing the vulnerable function. If only the malicious
-  user's own withdrawal fails, reject the finding.
+  Construct a proof of concept that repeatedly causes the vulnerable
+  function to revert using attacker-controlled state.
+
+  The root cause may include:
+
+  - reverting receiver contracts
+  - malicious ERC20/ERC721/ERC777 implementations
+  - arithmetic overflow or underflow
+  - division by zero
+  - exhausted gas through unbounded iteration
+  - malformed protocol state
+  - hook callbacks
+
+  Demonstrate that unrelated users cannot complete the protected
+  workflow until privileged intervention or protocol changes occur.
 
 references:
   - https://swcregistry.io/docs/SWC-113/
