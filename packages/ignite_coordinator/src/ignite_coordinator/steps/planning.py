@@ -199,6 +199,7 @@ def _fmt_candidate(i: int, c: _Candidate) -> str:
     lines.append("</candidate>")
     return "\n".join(lines)
 
+
 def _fmt_target_file(contract: str, entries: list[tuple[int, _Candidate]]) -> str:
     lines: list[str] = [
         f'<target_file path="{contract}" candidate_count="{len(entries)}">',
@@ -216,6 +217,7 @@ def _fmt_target_file(contract: str, entries: list[tuple[int, _Candidate]]) -> st
     lines.append("</target_file>")
     return "\n".join(lines)
 
+
 def _group_candidates_by_contract(
     candidates: list[_Candidate],
 ) -> list[tuple[str, list[tuple[int, _Candidate]]]]:
@@ -223,6 +225,7 @@ def _group_candidates_by_contract(
     for i, c in enumerate(candidates):
         groups.setdefault(c.contract, []).append((i, c))
     return list(groups.items())
+
 
 _CONTEXT_KEYS = (
     "documentation",
@@ -423,7 +426,7 @@ You have two operational phases:
     ) -> str:
         grouped = _group_candidates_by_contract(candidates)
         unique_files = len(grouped)
-        
+
         candidates_section = "\n\n".join(
             _fmt_target_file(contract, entries) for contract, entries in grouped
         )

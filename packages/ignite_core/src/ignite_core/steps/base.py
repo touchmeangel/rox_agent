@@ -1276,13 +1276,15 @@ Use the terminal tools as follows:
                     show_thinking=True,
                 )
                 _record_usage(turn)
-                messages.append({
-                    "role": "assistant",
-                    "text": turn.text,
-                    "tool_calls": turn.tool_calls,
-                    "raw": turn.raw,
-                    "provider": turn.provider,
-                })
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "text": turn.text,
+                        "tool_calls": turn.tool_calls,
+                        "raw": turn.raw,
+                        "provider": turn.provider,
+                    }
+                )
 
                 rationale = turn.thinking or turn.text
                 if rationale:
