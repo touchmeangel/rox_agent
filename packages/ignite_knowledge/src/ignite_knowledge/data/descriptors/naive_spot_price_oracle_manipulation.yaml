@@ -32,6 +32,8 @@ properties:
       If the contract uses the vulnerable pattern, or derives value straight from 
       a live `getReserves()` or `balanceOf()` call on a pool without TWAP or 
       slippage checks, it is exploitable.
+
+      All the formulas arround slot0 should assume that price can be manipulated
     confirm_with: |
       shell: rg "getReserves\(" src/ -B 2 -A 5 -n
       shell: rg "balanceOf\(" src/ -B 2 -A 5 -n
