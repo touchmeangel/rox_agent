@@ -2,10 +2,21 @@ import json
 import sys
 import threading
 import time
+import gzip
+import shutil
 from pathlib import Path
 
 from ignite_core.tool_result import ToolResult
 
+_MAX_LOG_BYTES = 50 * 1024 * 1024 
+
+def _rotate_if_needed(path: Path) -> None:
+    if not path.exists() or path.stat().st_size < _MAX_LOG_BYTES:
+        return
+    rotated = path.with_suffix(path.suffix + f".{int(time.time())}.gz")
+    with path.open("rb") as src, gzip.open(rotated, "wb") as dst:
+        shutil.copyfileobj(src, dst)
+    path.unlink()
 
 class DebugLogger:
     def __init__(self, target: str | None = None):
@@ -32,6 +43,7 @@ class DebugLogger:
             try:
                 path = Path(self.target)
                 path.parent.mkdir(parents=True, exist_ok=True)
+                _rotate_if_needed(path)
                 with path.open("a", encoding="utf-8") as fh:
                     fh.write(line + "\n")
             except OSError as exc:
