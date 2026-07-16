@@ -59,6 +59,7 @@ class DebugLogger:
         messages: list[dict],
         response: str,
         duration_s: float,
+        message_offset: int = 0,
         error: str | None = None,
     ) -> None:
         self._write(
@@ -69,6 +70,7 @@ class DebugLogger:
                 "provider": provider,
                 "model": model,
                 "duration_s": round(duration_s, 3),
+                "message_offset": message_offset,
                 "messages": messages,
                 "response": response,
                 "error": error,

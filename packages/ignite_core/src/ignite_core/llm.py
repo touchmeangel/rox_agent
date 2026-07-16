@@ -75,6 +75,7 @@ class LLMClient:
         if not chain:
             raise ValueError("LLMClient requires at least one ModelConfig in `chain`.")
         self.chain: list[ModelConfig] = chain
+        self._logged_message_count = 0
 
     @staticmethod
     def thinking_budget(cfg: ModelConfig) -> int | None:
@@ -101,6 +102,10 @@ class LLMClient:
         attempted: list[str] = []
         remaining = list(self.chain)
         previous_model: str | None = None
+        
+        log_offset = self._logged_message_count
+        new_messages = messages[log_offset:]
+        self._logged_message_count = len(messages)
 
         while remaining:
             cfg = _draw(remaining)
@@ -151,7 +156,8 @@ class LLMClient:
                     step=step_name,
                     provider=cfg.provider,
                     model=cfg.model,
-                    messages=messages,
+                    messages=new_messages,
+                    message_offset=log_offset,
                     response=_log_repr(turn),
                     duration_s=time.time() - start,
                 )
@@ -165,7 +171,8 @@ class LLMClient:
                     step=step_name,
                     provider=cfg.provider,
                     model=cfg.model,
-                    messages=messages,
+                    messages=new_messages,
+                    message_offset=log_offset,
                     response="",
                     duration_s=time.time() - start,
                     error=repr(exc),
