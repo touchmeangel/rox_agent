@@ -199,6 +199,30 @@ def _fmt_candidate(i: int, c: _Candidate) -> str:
     lines.append("</candidate>")
     return "\n".join(lines)
 
+def _fmt_target_file(contract: str, entries: list[tuple[int, _Candidate]]) -> str:
+    lines: list[str] = [
+        f'<target_file path="{contract}" candidate_count="{len(entries)}">',
+    ]
+    if len(entries) > 1:
+        lines.append(
+            "  <peek_once_note>"
+            f"All {len(entries)} candidates below share this exact file. "
+            "If you peek it, peek it ONCE — apply that single observation to "
+            "every candidate listed under this file. Do not call read_file on "
+            "this path more than once."
+            "</peek_once_note>"
+        )
+    lines.extend(_fmt_candidate(i, c) for i, c in entries)
+    lines.append("</target_file>")
+    return "\n".join(lines)
+
+def _group_candidates_by_contract(
+    candidates: list[_Candidate],
+) -> list[tuple[str, list[tuple[int, _Candidate]]]]:
+    groups: dict[str, list[tuple[int, _Candidate]]] = {}
+    for i, c in enumerate(candidates):
+        groups.setdefault(c.contract, []).append((i, c))
+    return list(groups.items())
 
 _CONTEXT_KEYS = (
     "documentation",
@@ -397,8 +421,11 @@ You have two operational phases:
     def initial_prompt_with_candidates(
         self, context: dict, candidates: list[_Candidate]
     ) -> str:
+        grouped = _group_candidates_by_contract(candidates)
+        unique_files = len(grouped)
+        
         candidates_section = "\n\n".join(
-            _fmt_candidate(i, c) for i, c in enumerate(candidates)
+            _fmt_target_file(contract, entries) for contract, entries in grouped
         )
 
         return f"""<scope>
@@ -412,7 +439,7 @@ You do NOT confirm or reject findings.
 Your only responsibility is allocating worker time efficiently.
 </scope>
 
-<candidates total="{len(candidates)}">
+<candidates total="{len(candidates)}" unique_files="{unique_files}">
 {candidates_section}
 </candidates>
 
@@ -429,6 +456,12 @@ If a candidate's provided evidence leaves you genuinely uncertain, two tools can
 CRITICAL: Do NOT use either tool to perform the audit yourself or look for security
 vulnerabilities. Trust the semantic tagging metrics completely. Use them exclusively to
 rule out empty implementation frameworks or unreachable code.
+
+You have {len(candidates)} candidates spanning only {unique_files} unique files. Peek each
+unique file at most once, total, for the whole session — the candidates are grouped by
+file under <target_file> above specifically so one peek answers every candidate in that
+group. A tool result stays valid for every candidate sharing that file; scroll up and
+reuse it rather than re-issuing the same read_file call.
 </investigation_capabilities>
 
 <output_format>
