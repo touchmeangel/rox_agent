@@ -1462,6 +1462,8 @@ _STDOUT_LIMITS: dict[str, int] = {
 }
 _DEFAULT_STDOUT_LIMIT = 10_000
 
+_SELF_PAGINATED_TOOLS: frozenset[str] = frozenset({"read_file", "reveal"})
+
 
 def clamp_int(
     value, default: int, min_val: int | None = None, max_val: int | None = None
@@ -1855,10 +1857,13 @@ def dispatch(
 
         elapsed = time.monotonic() - t0
 
-        stdout_limit = _STDOUT_LIMITS.get(tool_name, _DEFAULT_STDOUT_LIMIT)
-        smart_stdout = _smart_process_output(
-            result.stdout, tool_name, project_path, stdout_limit
-        )
+        if tool_name in _SELF_PAGINATED_TOOLS:
+            smart_stdout = result.stdout
+        else:
+            stdout_limit = _STDOUT_LIMITS.get(tool_name, _DEFAULT_STDOUT_LIMIT)
+            smart_stdout = _smart_process_output(
+                result.stdout, tool_name, project_path, stdout_limit
+            )
         smart_stderr = _truncate(
             result.stderr,
             4_000,
