@@ -34,6 +34,7 @@ properties:
       slippage checks, it is exploitable.
 
       All the formulas arround slot0 should assume that price can be manipulated
+      and you must check that it doesnt affect the functionallity
     confirm_with: |
       shell: rg "getReserves\(" src/ -B 2 -A 5 -n
       shell: rg "balanceOf\(" src/ -B 2 -A 5 -n
