@@ -48,6 +48,15 @@ tags:
       Solidity < 0.8.0 without importing/using a SafeMath library, OR if it 
       uses `unchecked { ... }` blocks for arithmetic operations in Solidity 0.8.0+.
 
+  - id: arithmetic_revert_surface
+
+    description: >
+      Contract performs checked arithmetic (Solidity >=0.8 or SafeMath)
+      where overflow/underflow causes an automatic revert. Apply whenever
+      user-controlled inputs, balances, accounting variables, counters,
+      timestamps, or supply values participate in checked arithmetic whose
+      failure aborts execution.
+
   - id: manual_array_length_mutation
     description: >
       Contract directly modifies the `.length` property of a dynamic storage array 
@@ -101,11 +110,14 @@ tags:
       execution cost grows proportionally with stored data rather than remaining
       constant.
 
-  - id: critical_external_call
+  - id: liveness_critical_function
     description: >
-      Contract performs external calls whose success is required for further
-      execution. Apply this tag when execution depends on another contract
-      successfully receiving Ether or completing a call.
+      Contract exposes functionality whose primary security property is
+      guaranteed progress rather than confidentiality or authorization.
+      Failure or reversion of the function can prevent protocol operation,
+      liquidations, settlement, withdrawals, auctions, epoch advancement,
+      reward distribution, keeper execution, or similar globally important
+      actions.
 
   - id: makes_untrusted_calls
     description: >

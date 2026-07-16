@@ -2,7 +2,7 @@ id: required_external_call_dos
 name: Denial of Service via Required External Call
 granularity: function
 tags:
-  - critical_external_call
+  - liveness_critical_function
 
 scenario: |
   The contract requires an external call to succeed in order to continue
