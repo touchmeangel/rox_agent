@@ -102,7 +102,7 @@ class LLMClient:
         attempted: list[str] = []
         remaining = list(self.chain)
         previous_model: str | None = None
-        
+
         log_offset = self._logged_message_count
         new_messages = messages[log_offset:]
         self._logged_message_count = len(messages)
