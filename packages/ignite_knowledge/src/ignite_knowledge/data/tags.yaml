@@ -86,14 +86,6 @@ tags:
       conversions, which silently truncate or reinterpret bits with no
       revert regardless of compiler version.
 
-  - id: arithmetic_revert_surface
-    description: >
-      Contract performs checked arithmetic (Solidity >=0.8 or SafeMath)
-      where overflow/underflow causes an automatic revert. Apply whenever
-      user-controlled inputs, balances, accounting variables, counters,
-      timestamps, or supply values participate in checked arithmetic whose
-      failure aborts execution.
-
   - id: manual_array_length_mutation
     description: >
       Contract directly modifies the `.length` property of a dynamic storage array 

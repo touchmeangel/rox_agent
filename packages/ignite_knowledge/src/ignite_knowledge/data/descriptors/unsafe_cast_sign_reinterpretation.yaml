@@ -3,7 +3,6 @@ name: Unchecked Same-Width uint→int Cast Flips Credit/Debit Direction
 granularity: contract
 tags:
   - unsafe_explicit_cast
-  - arithmetic_revert_surface
 
 scenario: |
   The contract performs internal accounting where a user-suppliable or
