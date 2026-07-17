@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 
 from ignite_core.repository_knowledge import RepositoryKnowledge
 from ignite_knowledge.descriptor import Descriptor

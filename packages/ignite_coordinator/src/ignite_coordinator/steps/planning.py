@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
 from ignite_core.mission import Mission, MissionLeg
@@ -27,7 +27,8 @@ class _Candidate:
     known_issue_hints: list[str]
     audit_delta_hint: str | None
     cross_reference_hints: list[str] = field(default_factory=list)
-    confirmed_related: list[str] = field(default_factory=list) 
+    confirmed_related: list[str] = field(default_factory=list)
+
 
 def _confirmed_chain_pairs(
     semantic_tags: dict[str, list[str]], documentation: dict
@@ -37,22 +38,34 @@ def _confirmed_chain_pairs(
         row.get("contract", ""): (row.get("external_calls") or "").lower()
         for row in risk_matrix
     }
-    consumers = [c for c, t in semantic_tags.items() if "external_rate_price_consumer" in t]
+    consumers = [
+        c for c, t in semantic_tags.items() if "external_rate_price_consumer" in t
+    ]
     sources = [c for c, t in semantic_tags.items() if "pooled_share_vault" in t]
 
     pairs: dict[str, list[str]] = {}
     for consumer in consumers:
         calls_text = calls_by_contract.get(consumer, "")
-        matched = [s for s in sources if s != consumer and Path(s).stem.lower() in calls_text]
+        matched = [
+            s for s in sources if s != consumer and Path(s).stem.lower() in calls_text
+        ]
         if matched:
             pairs[consumer] = matched
     return pairs
 
-def _index_of(candidates: list[_Candidate], contract: str, descriptor_id: str) -> int | None:
+
+def _index_of(
+    candidates: list[_Candidate], contract: str, descriptor_id: str
+) -> int | None:
     return next(
-        (i for i, c in enumerate(candidates) if c.contract == contract and c.descriptor.id == descriptor_id),
+        (
+            i
+            for i, c in enumerate(candidates)
+            if c.contract == contract and c.descriptor.id == descriptor_id
+        ),
         None,
     )
+
 
 def _candidates_for_context(context: dict) -> list[_Candidate]:
     semantic = context.get("semantic_tagging", {}).get("findings", {})
@@ -209,14 +222,16 @@ def _fmt_candidate(i: int, c: _Candidate) -> str:
         )
 
     lines.append("  </properties>")
-    
+
     exploitation_context = getattr(c.descriptor, "exploitation_context", "") or ""
     if exploitation_context.strip():
-        lines.extend([
-            "  <exploitation_context>",
-            "  " + exploitation_context.strip()[:800].replace("\n", "\n  "),
-            "  </exploitation_context>",
-        ])
+        lines.extend(
+            [
+                "  <exploitation_context>",
+                "  " + exploitation_context.strip()[:800].replace("\n", "\n  "),
+                "  </exploitation_context>",
+            ]
+        )
 
     if c.static_hints:
         lines.append("  <static_analysis_hits>")
@@ -285,7 +300,12 @@ _SUBMIT_SPEC: dict = {
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "required": ["candidate_indices", "property_ids", "hints", "rationale"],
+                    "required": [
+                        "candidate_indices",
+                        "property_ids",
+                        "hints",
+                        "rationale",
+                    ],
                     "properties": {
                         "candidate_indices": {
                             "type": "array",
@@ -341,7 +361,10 @@ _SUBMIT_SPEC: dict = {
                     "required": ["candidate_index", "reason"],
                     "properties": {
                         "candidate_index": {"type": "integer"},
-                        "reason": {"type": "string", "description": "Clear structural justification for skipping this candidate."},
+                        "reason": {
+                            "type": "string",
+                            "description": "Clear structural justification for skipping this candidate.",
+                        },
                     },
                 },
             },
@@ -659,7 +682,11 @@ def _build_missions(
                     hints=[
                         *candidate.static_hints,
                         *candidate.known_issue_hints,
-                        *([] if not candidate.audit_delta_hint else [candidate.audit_delta_hint]),
+                        *(
+                            []
+                            if not candidate.audit_delta_hint
+                            else [candidate.audit_delta_hint]
+                        ),
                     ],
                 )
             )

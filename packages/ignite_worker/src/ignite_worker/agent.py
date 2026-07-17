@@ -123,6 +123,7 @@ def from_dict(cls, data):
 
     return cls(**kwargs)
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="EVM Smart Contract Audit Agent | ignite"
