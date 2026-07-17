@@ -92,45 +92,36 @@ def _aggregate_usage(results: dict[str, StepResult]) -> dict:
 def from_dict(cls, data):
     if data is None:
         return None
-
     if not is_dataclass(cls):
         return data
 
     kwargs = {}
-
-    for field in fields(cls):
-        value = data.get(field.name)
-        typ = field.type
-
+    for f in fields(cls):
+        if f.name not in data:
+            continue  # let the dataclass's own default / default_factory apply
+        value = data[f.name]
+        typ = f.type
         origin = get_origin(typ)
 
         if is_dataclass(typ):
-            kwargs[field.name] = from_dict(typ, value)
-
+            kwargs[f.name] = from_dict(typ, value)
         elif origin is list:
             inner = get_args(typ)[0]
-            if is_dataclass(inner):
-                kwargs[field.name] = [from_dict(inner, v) for v in value]
-            else:
-                kwargs[field.name] = value
-
+            kwargs[f.name] = (
+                [from_dict(inner, v) for v in value] if is_dataclass(inner) else value
+            )
         elif origin is dict:
-            kwargs[field.name] = value
-
+            kwargs[f.name] = value
         elif origin is Union:
             args = [a for a in get_args(typ) if a is not type(None)]
             if len(args) == 1 and is_dataclass(args[0]):
-                kwargs[field.name] = (
-                    None if value is None else from_dict(args[0], value)
-                )
+                kwargs[f.name] = None if value is None else from_dict(args[0], value)
             else:
-                kwargs[field.name] = value
-
+                kwargs[f.name] = value
         else:
-            kwargs[field.name] = value
+            kwargs[f.name] = value
 
     return cls(**kwargs)
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
