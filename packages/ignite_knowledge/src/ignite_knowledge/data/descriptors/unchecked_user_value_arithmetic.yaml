@@ -1,0 +1,145 @@
+id: unchecked_accounting_overflow_underflow
+name: Silent Arithmetic Wraparound on User-Controlled or Accounting Values
+granularity: contract
+
+tags:
+  - unchecked_user_value_arithmetic
+
+scenario: |
+  Solidity's default checked arithmetic (>=0.8.0) reverts on overflow and
+  underflow — but two escape hatches remove that protection: an explicit
+  `unchecked { ... }` block, or targeting a pre-0.8.0 compiler version
+  without importing a SafeMath-style library. In either case, arithmetic on
+  a value that is user-controlled or represents shared accounting state can
+  silently wrap around the full uint256 range instead of reverting.
+
+  This is the opposite failure mode from `checked_arithmetic_griefing_dos`:
+  that descriptor covers checked arithmetic reverting when it shouldn't
+  (denial of service); this one covers unchecked arithmetic wrapping when it
+  should have reverted (fund creation or fabricated balance). Both can
+  appear in the same codebase targeting different variables — do not
+  conflate them.
+
+  Two concrete failure shapes, both valid under this hypothesis:
+    - OVERFLOW creating value: an addition or multiplication on a
+      user-supplied amount wraps past 2^256-1 back down to a small number,
+      passing a `require` check that runs AFTER the wrapped value is
+      computed, while the original (pre-wrap) amount is still what actually
+      gets transferred/credited elsewhere in the function. Canonical
+      real-world example: the 2018 BeautyChain (BEC) token's
+      `batchTransfer(address[] receivers, uint256 value)` computed
+      `amount = receivers.length * value`; a sufficiently large `value`
+      overflowed `amount` down to a tiny number, satisfying
+      `require(balances[msg.sender] >= amount)`, while each receiver still
+      received the full, un-overflowed `value` — minting tokens from
+      nothing.
+    - UNDERFLOW fabricating balance: a subtraction on a balance or
+      accounting variable (`balances[from] -= amount`) with no preceding
+      `require(balances[from] >= amount)` wraps below zero to a number near
+      2^256-1 when the caller's real balance is less than `amount`,
+      handing the caller an apparently enormous balance to spend elsewhere.
+
+properties:
+  - id: unsafe_context_confirmed
+    check: |
+      Confirm which unsafe-math context actually applies: either the
+      pragma/solc version targets <0.8.0 with no SafeMath (or equivalent)
+      import actually used at the relevant call site, or the specific
+      arithmetic operation sits inside an `unchecked { }` block under
+      >=0.8.0. If neither holds — the contract is >=0.8.0 with no
+      surrounding unchecked block, or a pre-0.8.0 contract that does apply
+      SafeMath to this exact operation — reject the hypothesis immediately.
+    confirm_with: |
+      shell: rg "^pragma solidity" src/ -n
+      shell: rg "unchecked\s*\{" src/ -B3 -A8 -n
+      shell: rg "using SafeMath|SafeMath\." src/ -n
+      Confirm SafeMath (if present) is actually applied to the specific
+      variable/operation in question, not just imported and used elsewhere.
+    severity: critical
+
+  - id: target_is_value_not_loop_counter
+    check: |
+      Confirm the arithmetic operates on a user-controlled amount, a
+      balance mapping entry, or a shared accounting total — NOT a loop
+      index/counter whose range is already bounded by the loop's own
+      condition. If the only unchecked/unguarded arithmetic found is a loop
+      counter increment, reject this hypothesis; that is a standard,
+      correct optimization.
+    confirm_with: |
+      shell: rg "unchecked\s*\{" src/ -A5 -n
+      For each hit, check whether the block's contents reference `i`/a
+      declared loop variable already bounded by an enclosing `for`
+      condition, versus a balance/amount/total variable.
+    severity: high
+
+  - id: no_preceding_bounds_check
+    check: |
+      Confirm there is no `require`/`if`-revert immediately preceding the
+      operation that would already prevent the wrap — for underflow:
+      `require(balance >= amount)` before the subtraction; for overflow:
+      an explicit max-value or max-supply check before the addition/
+      multiplication. If such a guard exists and genuinely executes before
+      the flagged operation on every path, reject as a false positive.
+    confirm_with: |
+      shell: rg -B5 "\-=|\+=" src/ -n
+      shell: rg "require\(.*>=.*\)|require\(.*<=.*\)" src/ -n
+      Manually confirm the guard, if any, precedes the flagged operation on
+      every code path that reaches it — not just somewhere earlier in the
+      file.
+    severity: critical
+
+  - id: wrapped_value_reaches_fund_flow
+    check: |
+      Trace where the (potentially wrapped) result is consumed. The
+      hypothesis is only exploitable, not just "technically unguarded", if
+      the wrapped value later determines a token transfer amount, an
+      allowance, a minted/burned quantity, or is compared against another
+      balance to authorize a withdrawal. A wrapped value that is only
+      stored and never used to move funds or gate an authorization is lower
+      priority — note this distinction rather than defaulting to critical.
+    confirm_with: |
+      shell: rg -A5 "\-=|\+=" src/ -n
+      Follow the flagged variable forward to its next read: a `transfer`,
+      `_mint`, `_burn`, or a comparison feeding an `if`/`require` that gates
+      a payout.
+    severity: critical
+
+exploitation_context: |
+  Foundry PoC shape depends on which failure mode applies:
+
+  OVERFLOW variant:
+    1. Identify the exact multiplication/addition producing the wrapped
+       check value (e.g. `count * value`).
+    2. Choose an input (`value`, or whichever operand is attacker-supplied)
+       such that the product wraps to a number at or below the caller's
+       actual balance/allowance — solve `count * value mod 2^256 <=
+       balances[attacker]`.
+    3. Call the vulnerable function with that input and show the `require`
+       check passes.
+    4. Show the actual downstream transfer/credit uses the un-wrapped,
+       original large value — quantify tokens created relative to what the
+       attacker actually held or paid.
+
+  UNDERFLOW variant:
+    1. Call the vulnerable function with `amount` greater than the caller's
+       real balance, with no prior approval/deposit establishing that
+       balance.
+    2. Show the subtraction wraps rather than reverting (a Foundry trace
+       showing the resulting balance near `type(uint256).max` is direct
+       evidence).
+    3. Use the fabricated balance in a subsequent call (transfer, withdraw)
+       to show it's not merely a display-layer bug — the wrapped value is
+       actually spendable.
+
+  Fix: add an explicit bounds check before the operation
+  (`require(balance >= amount)` for subtraction; a max-supply/max-value
+  check for addition/multiplication), or remove the `unchecked` block /
+  upgrade to >=0.8.0 with no unchecked wrapper around this specific
+  operation. Do not blanket-remove all `unchecked` usage in the contract —
+  only the call site(s) actually operating on user-controlled or accounting
+  values need it; loop-counter unchecked blocks are fine as-is.
+
+references:
+  - https://consensys.io/diligence/blog/2018/04/beautychain-bec-token-integer-overflow/
+  - https://docs.soliditylang.org/en/latest/control-structures.html#checked-or-unchecked-arithmetic
+  - https://swcregistry.io/docs/SWC-101
