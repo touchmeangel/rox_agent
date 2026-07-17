@@ -98,7 +98,7 @@ def from_dict(cls, data):
     kwargs = {}
     for f in fields(cls):
         if f.name not in data:
-            continue  # let the dataclass's own default / default_factory apply
+            continue
         value = data[f.name]
         typ = f.type
         origin = get_origin(typ)
