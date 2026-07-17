@@ -146,7 +146,7 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
 
     output = {
         "generated_at": datetime.now().isoformat(),
-        "missions": to_jsonable(all_missions),
+        "missions": [mission.to_dict() for mission in all_missions],
         "steps": {
             name: {
                 "success": r.success,

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
+from pathlib import Path
 
 from ignite_core.debug_logger import DebugLogger, default_debug_logger
-from ignite_core.mission import Mission
+from ignite_core.mission import Mission, MissionLeg
 from ignite_core.reporting import Reporter
 from ignite_core.repository_knowledge import InvestigationScope, RepositoryKnowledge
 from ignite_core.steps.base import BaseStep
@@ -25,7 +26,33 @@ class _Candidate:
     static_hints: list[str]
     known_issue_hints: list[str]
     audit_delta_hint: str | None
+    cross_reference_hints: list[str] = field(default_factory=list)
+    confirmed_related: list[str] = field(default_factory=list) 
 
+def _confirmed_chain_pairs(
+    semantic_tags: dict[str, list[str]], documentation: dict
+) -> dict[str, list[str]]:
+    risk_matrix = documentation.get("contract_risk_matrix", [])
+    calls_by_contract = {
+        row.get("contract", ""): (row.get("external_calls") or "").lower()
+        for row in risk_matrix
+    }
+    consumers = [c for c, t in semantic_tags.items() if "external_rate_price_consumer" in t]
+    sources = [c for c, t in semantic_tags.items() if "pooled_share_vault" in t]
+
+    pairs: dict[str, list[str]] = {}
+    for consumer in consumers:
+        calls_text = calls_by_contract.get(consumer, "")
+        matched = [s for s in sources if s != consumer and Path(s).stem.lower() in calls_text]
+        if matched:
+            pairs[consumer] = matched
+    return pairs
+
+def _index_of(candidates: list[_Candidate], contract: str, descriptor_id: str) -> int | None:
+    return next(
+        (i for i, c in enumerate(candidates) if c.contract == contract and c.descriptor.id == descriptor_id),
+        None,
+    )
 
 def _candidates_for_context(context: dict) -> list[_Candidate]:
     semantic = context.get("semantic_tagging", {}).get("findings", {})
@@ -182,6 +209,14 @@ def _fmt_candidate(i: int, c: _Candidate) -> str:
         )
 
     lines.append("  </properties>")
+    
+    exploitation_context = getattr(c.descriptor, "exploitation_context", "") or ""
+    if exploitation_context.strip():
+        lines.extend([
+            "  <exploitation_context>",
+            "  " + exploitation_context.strip()[:800].replace("\n", "\n  "),
+            "  </exploitation_context>",
+        ])
 
     if c.static_hints:
         lines.append("  <static_analysis_hits>")
@@ -250,21 +285,34 @@ _SUBMIT_SPEC: dict = {
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "required": [
-                        "candidate_index",
-                        "property_ids",
-                        "hints",
-                        "rationale",
-                    ],
+                    "required": ["candidate_indices", "property_ids", "hints", "rationale"],
                     "properties": {
-                        "candidate_index": {
-                            "type": "integer",
-                            "description": "The 0-based index into the CANDIDATES list.",
+                        "candidate_indices": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "minItems": 1,
+                            "description": (
+                                "0-based indices into the CANDIDATES list. A single-element "
+                                "list is the normal case — one candidate, one worker. Include "
+                                "more than one ONLY when the candidates have a genuine "
+                                "directional dependency (typically: one candidate's `scenario` "
+                                "or `exploitation_context` explicitly references another "
+                                "descriptor by name — e.g. 'see X for whether the source side "
+                                "ALSO has...', 'assume Y works correctly and focus only on...'). "
+                                "Bundling means ONE worker verifies the full chain end-to-end "
+                                "and returns ONE combined verdict, not two independent ones. "
+                                "Do not bundle candidates just because they share a file or a "
+                                "vague theme — the dependency should be explicit in the "
+                                "descriptor text, not inferred from proximity."
+                            ),
                         },
                         "property_ids": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "Specific property IDs within the descriptor to target. Use [] for all.",
+                            "description": (
+                                "Specific property IDs to target, from any bundled descriptor's "
+                                "properties. Use [] for all."
+                            ),
                         },
                         "hints": {
                             "type": "array",
@@ -276,7 +324,12 @@ _SUBMIT_SPEC: dict = {
                         },
                         "rationale": {
                             "type": "string",
-                            "description": "One sentence stating why this candidate warrants a full investigation.",
+                            "description": (
+                                "One sentence. For bundled candidates, name the dependency "
+                                "explicitly: which is upstream/source, which is downstream/"
+                                "consumer, and why one combined mission is more efficient than "
+                                "two isolated ones."
+                            ),
                         },
                     },
                 },
@@ -288,10 +341,7 @@ _SUBMIT_SPEC: dict = {
                     "required": ["candidate_index", "reason"],
                     "properties": {
                         "candidate_index": {"type": "integer"},
-                        "reason": {
-                            "type": "string",
-                            "description": "Clear structural justification for skipping this candidate.",
-                        },
+                        "reason": {"type": "string", "description": "Clear structural justification for skipping this candidate."},
                     },
                 },
             },
@@ -357,17 +407,20 @@ class PlanningStep(BaseStep):
 
         candidates = getattr(self, "_candidates", [])
         n_candidates = len(candidates)
-        covered_indices = set()
+        covered_indices: set[int] = set()
 
         for i, m in enumerate(missions):
             if not isinstance(m, dict):
                 return f"Mission at index {i} must be a JSON object."
-            idx = m.get("candidate_index")
-            if not isinstance(idx, int) or idx < 0 or idx >= n_candidates:
-                return f"Mission at index {i} has an out-of-bounds or invalid 'candidate_index'."
-            if idx in covered_indices:
-                return f"Candidate index {idx} is duplicated across selections."
-            covered_indices.add(idx)
+            idxs = m.get("candidate_indices")
+            if not isinstance(idxs, list) or not idxs:
+                return f"Mission at index {i} must have a non-empty 'candidate_indices' list."
+            for idx in idxs:
+                if not isinstance(idx, int) or idx < 0 or idx >= n_candidates:
+                    return f"Mission at index {i} has an out-of-bounds or invalid candidate index: {idx!r}."
+                if idx in covered_indices:
+                    return f"Candidate index {idx} is duplicated across selections."
+                covered_indices.add(idx)
 
         for i, s in enumerate(skipped):
             if not isinstance(s, dict):
@@ -467,6 +520,25 @@ group. A tool result stays valid for every candidate sharing that file; scroll u
 reuse it rather than re-issuing the same read_file call.
 </investigation_capabilities>
 
+<bundling_guidance>
+Most missions are one candidate → one worker. Occasionally two candidates describe a
+genuine two-part attack chain rather than two independent bugs — one candidate's flaw only
+matters, or matters much more, because of the other. Descriptor authors signal this
+directly in a candidate's `scenario` or `exploitation_context` text: phrases like "see X
+for whether the source side ALSO has...", "assume Y works correctly", or an explicit
+reference to another descriptor's id or name.
+
+When you see this pattern AND both referenced candidates are present in this candidate
+list, consider bundling them into ONE mission by listing both indices in
+`candidate_indices`. State the dependency explicitly in `rationale` — which is upstream,
+which is downstream, and why testing them together beats two isolated missions. The
+bundled worker will verify the full chain end-to-end and return a single combined verdict.
+
+Do not bundle on vibes or shared theme alone — only when the cross-reference is explicit
+in the descriptor text, or `read_file`/`graph_query` gives you concrete evidence of a real
+call-path dependency between the two contracts.
+</bundling_guidance>
+
 <output_format>
 When ready, call `submit_missions` exactly once. Every single candidate index must appear exactly once across your selections.
 
@@ -558,36 +630,47 @@ def _build_missions(
 ) -> list[Mission]:
     missions: list[Mission] = []
     for raw in raw_missions:
-        idx = raw.get("candidate_index")
-        if not isinstance(idx, int) or idx < 0 or idx >= len(candidates):
-            default_debug_logger.log_event(
-                "coordinator_invalid_candidate_index",
-                step=step_name,
-                candidate_index=idx,
-                candidate_count=len(candidates),
-            )
+        idxs = raw.get("candidate_indices", [])
+        valid_idxs = []
+        for idx in idxs:
+            if not isinstance(idx, int) or idx < 0 or idx >= len(candidates):
+                default_debug_logger.log_event(
+                    "coordinator_invalid_candidate_index",
+                    step=step_name,
+                    candidate_index=idx,
+                    candidate_count=len(candidates),
+                )
+                continue
+            valid_idxs.append(idx)
+
+        if not valid_idxs:
             continue
 
-        candidate = candidates[idx]
-        knowledge = _build_knowledge(context, candidate)
+        legs = []
+        for idx in valid_idxs:
+            candidate = candidates[idx]
+            knowledge = _build_knowledge(context, candidate)
+            legs.append(
+                MissionLeg(
+                    contract=candidate.contract,
+                    vulnerability=candidate.descriptor.name,
+                    descriptor=candidate.descriptor,
+                    knowledge=knowledge,
+                    hints=[
+                        *candidate.static_hints,
+                        *candidate.known_issue_hints,
+                        *([] if not candidate.audit_delta_hint else [candidate.audit_delta_hint]),
+                    ],
+                )
+            )
 
-        mission = Mission(
-            id=f"M-{uuid.uuid4().hex[:32].upper()}",
-            contract=candidate.contract,
-            vulnerability=candidate.descriptor.name,
-            descriptor=candidate.descriptor,
-            knowledge=knowledge,
-            hints=[
-                *candidate.static_hints,
-                *candidate.known_issue_hints,
-                *(
-                    []
-                    if not candidate.audit_delta_hint
-                    else [candidate.audit_delta_hint]
-                ),
-                *raw.get("hints", []),
-            ],
+        missions.append(
+            Mission(
+                id=f"M-{uuid.uuid4().hex[:32].upper()}",
+                legs=legs,
+                planner_rationale=raw.get("rationale", ""),
+                shared_hints=raw.get("hints", []),
+            )
         )
-        missions.append(mission)
 
     return missions
