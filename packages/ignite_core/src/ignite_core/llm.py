@@ -21,28 +21,6 @@ def _draw(pool: list[ModelConfig]) -> ModelConfig:
     return random.choices(pool, weights=weights, k=1)[0]  # noqa: S311 This is simple random selection, not security-sensitive
 
 
-def _is_transient(exc: Exception) -> bool:
-    # import openai as _openai_mod
-    # import anthropic as _anthropic_mod
-    # try:
-    #     if isinstance(exc, _openai_mod.RateLimitError):      return True
-    #     if isinstance(exc, _openai_mod.APIConnectionError):  return True
-    #     if isinstance(exc, _openai_mod.InternalServerError): return True
-    #     if isinstance(exc, _openai_mod.BadRequestError): return True
-    # except Exception:
-    #     pass
-    # try:
-    #     if isinstance(exc, _anthropic_mod.RateLimitError):      return True
-    #     if isinstance(exc, _anthropic_mod.APIConnectionError):  return True
-    #     if isinstance(exc, _anthropic_mod.InternalServerError): return True
-    # except Exception:
-    #     pass
-    # if isinstance(exc, (ConnectionError, TimeoutError, OSError)):
-    #     return True
-    # Each provider handle them differently so it would be a headache
-    return True
-
-
 @dataclass
 class ToolResultEntry:
     tool_call_id: str
@@ -188,9 +166,7 @@ class LLMClient:
                 last_exc = exc
 
                 if remaining:
-                    if _is_transient(exc):
-                        continue
-                    raise
+                    continue
 
                 debug_logger.log_event(
                     "alloy_pool_exhausted",
