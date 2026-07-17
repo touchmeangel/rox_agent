@@ -68,12 +68,18 @@ tags:
       block.number, or block.coinbase to generate entropy or random numbers. 
       Do NOT use this tag for external randomness oracles like Chainlink VRF.
 
-  - id: unsafe_math_context
+  - id: unchecked_user_value_arithmetic
     description: >
-      Contract operates in an environment where arithmetic underflow/overflow 
-      silently wraps instead of reverting. Apply this tag if the contract uses 
-      Solidity < 0.8.0 without importing/using a SafeMath library, OR if it 
-      uses `unchecked { ... }` blocks for arithmetic operations in Solidity 0.8.0+.
+      Contract performs arithmetic — in Solidity <0.8.0 without SafeMath, or
+      inside an `unchecked { }` block in Solidity >=0.8.0 — on a value that
+      is either a user-controlled/user-supplied amount, a balance, or a
+      shared accounting total (totalSupply, a mapping entry, a reward
+      accrual). Do NOT apply this tag when the only unchecked/unguarded
+      arithmetic present is a bounded loop counter increment/decrement
+      whose range is already enforced by the loop's own condition (e.g.
+      `for (uint i; i < arr.length;) { unchecked { ++i; } }`) — that pattern
+      cannot overflow within its own bound and is a standard gas
+      optimization, not a vulnerability signal.
 
   - id: unsafe_explicit_cast
     description: >
