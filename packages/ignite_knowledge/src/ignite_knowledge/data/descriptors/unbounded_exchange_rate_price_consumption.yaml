@@ -1,0 +1,114 @@
+id: unbounded_exchange_rate_price_consumption
+name: Pooled-Share Exchange Rate Consumed as an Unbounded, Absolute Price
+granularity: contract
+tags:
+  - oracle_dependency
+
+scenario: |
+  This contract — typically a price-oracle adapter, a lending pool's price
+  getter, or any protocol pricing a position/collateral directly — determines
+  a USD or reference value by calling a live, mutable ratio function on
+  ANOTHER contract (most often ERC-4626 convertToAssets()/convertToShares()/
+  previewRedeem(), but the same bug class applies to any equivalent under
+  different naming: pricePerShare(), getExchangeRate(), exchangeRateStored(),
+  getRate(), sharesToAssets(), etc.) and uses the return value directly as an
+  absolute price, with no time-weighting, no per-update deviation clamp, and
+  no independent second source.
+
+  This is orthogonal to whether the SOURCE contract's ratio math is correct.
+  A vault can have flawless, fully-compliant ERC-4626 accounting (or even
+  virtual-offset inflation-attack protection) and this bug is still live,
+  because the exploit doesn't require the ratio calculation to be wrong —
+  only that it can move meaningfully within a single transaction and that
+  something trusts it unconditionally the instant it moves. Conversely, see
+  `vault_donation_attack` for whether the source side ALSO has the cheaper,
+  donation-only version of this problem (raw balanceOf() as totalAssets()).
+  Both can be true on the same target and compound: cheap manipulation cost
+  (vault_donation_attack) feeding into zero-resistance consumption (this
+  descriptor) is the exact Edel Finance wGOOGLx pattern (July 2026) — a
+  40-round borrow/resupply loop concentrated a large share position, then a
+  single redeem+direct-transfer donation moved convertToAssets() ~78x in one
+  transaction, and the lending pool's oracle adapter read that new value
+  unconditionally.
+
+properties:
+  - id: live_rate_used_as_price
+    check: |
+      Find every call this contract makes to a rate/ratio-style function on
+      an external contract, and check what happens to the return value.
+      VULNERABLE: the value flows straight into a price/value calculation, a
+      health-factor/LTV/liquidation check, or is returned directly from a
+      latestAnswer()/getAssetPrice()/getPrice()-style function — with no
+      surrounding smoothing.
+      SAFE-ish signals to look for and their absence is the finding:
+        - time-weighting across multiple blocks/observations (a TWAP/
+          cumulative accumulator, an observation window)
+        - a stored previous value compared against the new one with a
+          max-deviation-per-update revert (a "circuit breaker")
+        - a minimum elapsed time/block count before a new value is honored
+        - a second, independent price source cross-checked against this one
+      If none of the above appear near the call site, flag it regardless of
+      how "correct" the source contract's own ratio math is.
+    confirm_with: |
+      shell: rg "convertToAssets\(|convertToShares\(|previewRedeem\(|pricePerShare\(|exchangeRateStored\(|getRate\(|sharesToAssets\(" src/ -n
+      For each hit, view the surrounding function and trace where the return
+      value is used:
+      shell: rg "latestAnswer|getAssetPrice|getPrice|healthFactor|liquidat" src/ -n
+      shell: rg "TWAP|cumulative|maxDeviation|staleness|heartbeat|circuitBreaker" src/ -n
+      If the second/third command turns up nothing near the rate-consuming
+      function found by the first, treat this as unmitigated.
+    severity: critical
+
+  - id: source_manipulation_cost
+    check: |
+      Identify the source contract being called (the vault/pool whose rate
+      is being consumed) and determine how cheaply its ratio can be moved
+      within one transaction:
+        - CHEAPEST: source is tagged pooled_share_vault AND its totalAssets()
+          reads balanceOf(address(this)) directly (see vault_donation_attack)
+          — manipulation cost is a single ERC20 transfer, no deposit/redeem
+          needed.
+        - MODERATE: source uses correct internal accounting, so moving the
+          ratio requires an actual deposit/redeem large relative to
+          totalSupply — still exploitable, but the attacker must first
+          concentrate a large share position (e.g. via a recursive borrow-
+          then-resupply loop against a lending market that accepts the same
+          share token as collateral) before triggering the rate move, since
+          the payoff scales with how much of totalSupply the attacker's
+          position represents at the moment of the move.
+      Either way this property is true regardless of cost; cost only affects
+      how cheap/likely the attack is, not whether the underlying design flaw
+      exists.
+    confirm_with: |
+      Open the source contract identified above and check its totalAssets()
+      (or equivalent) implementation per vault_donation_attack's
+      confirm_with. If this is a genuinely separate contract/file from the
+      one being scanned, this check requires cross-contract context — flag
+      for the coordinator to fetch/fork-analyze the source contract too
+      rather than assuming this file is self-contained.
+    severity: high
+
+exploitation_context: |
+  Canonical PoC shape, two phases, independent of which cost tier applies:
+    1. Concentrate exposure: acquire (via legitimate deposit, or via a
+       recursive borrow-and-resupply loop through a lending market that
+       treats the same share token as collateral) a share position that
+       represents a large fraction of the source vault's totalSupply.
+    2. Move the rate: donate directly to the source contract (cheap, if
+       source_manipulation_cost is CHEAPEST) or execute a deposit/redeem
+       large enough to shift the ratio meaningfully, then immediately call
+       into the vulnerable consumer while the moved rate is still live —
+       borrow against inflated collateral, withdraw against inflated share
+       value, or trigger favorable liquidation math.
+  Fix belongs on the CONSUMER, not (only) the source: rate-limit consumption
+  with a TWAP or a bounded-per-update circuit breaker, and/or cross-check
+  against an independent price source before trusting a large single-block
+  move. Fixing only the source vault's balanceOf()-accounting (per
+  vault_donation_attack) reduces manipulation cost but does not eliminate
+  this bug class, since a well-funded attacker can still move a correctly-
+  accounted ratio via genuine deposits/redeems if the consumer has zero
+  resistance to it.
+
+references:
+  - https://samczsun.com/so-you-want-to-use-a-price-oracle/
+  - https://owasp.org/www-project-smart-contract-top-10/2026/en/src/SC03-price-oracle-manipulation.html
