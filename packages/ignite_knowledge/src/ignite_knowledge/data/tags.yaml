@@ -75,8 +75,18 @@ tags:
       Solidity < 0.8.0 without importing/using a SafeMath library, OR if it 
       uses `unchecked { ... }` blocks for arithmetic operations in Solidity 0.8.0+.
 
-  - id: arithmetic_revert_surface
+  - id: unsafe_explicit_cast
+    description: >
+      Contract performs an explicit type conversion between integer types —
+      narrowing (uint256 -> uint128), or same-width sign change
+      (uint128 -> int128) — on a value that is not independently range-
+      checked (e.g. via OpenZeppelin's SafeCast) before the conversion.
+      Solidity's checked-arithmetic protections (0.8.0+) apply ONLY to the
+      arithmetic operators (+, -, *, /, %) and never to explicit
+      conversions, which silently truncate or reinterpret bits with no
+      revert regardless of compiler version.
 
+  - id: arithmetic_revert_surface
     description: >
       Contract performs checked arithmetic (Solidity >=0.8 or SafeMath)
       where overflow/underflow causes an automatic revert. Apply whenever

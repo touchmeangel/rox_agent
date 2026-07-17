@@ -1,0 +1,115 @@
+id: unsafe_cast_sign_reinterpretation
+name: Unchecked Same-Width uint→int Cast Flips Credit/Debit Direction
+granularity: contract
+tags:
+  - unsafe_explicit_cast
+  - arithmetic_revert_surface
+
+scenario: |
+  The contract performs internal accounting where a user-suppliable or
+  otherwise unbounded uintN amount is explicitly cast to the same-width
+  signed type (uint128 -> int128, uint256 -> int256, etc.) and the signed
+  result is then used as a balance delta — commonly negated to represent a
+  debit, or added/subtracted directly against a signed running balance.
+
+  This is NOT an arithmetic overflow. Checked math in Solidity >=0.8.0 only
+  instruments +, -, *, /, % — it does nothing for explicit conversions,
+  which are a pure bit-reinterpretation. A same-width uint->int cast never
+  reverts, no matter how large the input, because there is no "correct"
+  bounded range being enforced — the compiler just reinterprets the top bit
+  as a sign bit. Any uintN value >= 2^(N-1) becomes negative once cast.
+
+  The reason this is critical rather than merely "wrong magnitude" is what
+  typically happens next: the now-negative cast result gets negated to
+  produce a debit. Negating an already-negative number produces a large
+  POSITIVE number, which routes through the credit code path instead of the
+  debit path — the contract ends up paying the caller instead of charging
+  them, or crediting a receiver amount so large it can drain a shared
+  reserve on withdrawal.
+
+  Canonical real-world shape: an early Radicle/Drips-lineage DripsHub-style
+  contract's give(receiver, amt) internally calls a Splits/accounting step
+  that credits the receiver for amt, then debits the giver via
+  `_transfer(user, -int128(amt))`. Passing a uint128 amt >= 2^127 makes
+  int128(amt) negative; negating it makes the signed transfer positive, so
+  the "debit" call instead pays the caller out of the pooled reserve. Public
+  write-ups describe this exact give()-function integer-conversion flaw
+  being used to drain roughly five figures of DAI from a Drips Network
+  deployment before it was patched — treat the dollar figure as approximate
+  since it comes from secondary reporting rather than an official
+  post-mortem, but the mechanism itself is exactly this bug class.
+
+properties:
+  - id: unchecked_cast_of_unbounded_amount
+    check: |
+      Find every explicit narrowing or sign-changing integer cast
+      (int128(x), int256(x), int64(x), uint128(x) on a uint256, etc.)
+      applied to a value that either comes directly from a public/external
+      function parameter, or from arithmetic on such a parameter, with NO
+      prior range check and NO SafeCast usage guarding that specific value.
+      Same-width sign-changing casts (uintN -> intN) are the more dangerous
+      variant since they never truncate visibly — the bit pattern is
+      identical, only the interpretation changes.
+    confirm_with: |
+      shell: rg "int128\(|int256\(|int64\(|int32\(|int8\(" src/ -n
+      For each hit, check the argument's origin (function parameter vs.
+      already-validated internal state) and confirm no guard precedes it:
+      shell: rg "SafeCast|toInt128|toInt256|type\(int128\)\.max|type\(int256\)\.max" src/ -n
+      If a hit from the first command has no corresponding SafeCast/explicit
+      bound check nearby, treat it as unmitigated.
+    severity: critical
+
+  - id: cast_result_feeds_signed_negation_or_delta
+    check: |
+      Trace where the cast's result is consumed. The vulnerability is only
+      exploitable (not just "wrong value") if the signed result is later
+      negated (unary `-`) or otherwise used to select between two logically
+      opposite operations — crediting vs. debiting, minting vs. burning,
+      transferring in vs. out — rather than merely being stored or compared.
+      This is the step that turns a wrapped/reinterpreted magnitude into a
+      reversed fund-flow direction.
+    confirm_with: |
+      shell: rg -B3 -A3 "int128\(|int256\(" src/ -n
+      Look specifically for the cast result appearing inside a unary minus,
+      or being passed into a function whose sign determines credit vs.
+      debit (e.g. `_transfer(user, -int128(amt))`,
+      `balance += delta` where delta can be either sign).
+    severity: critical
+
+  - id: no_upstream_range_validation
+    check: |
+      Confirm there is no earlier `require(amt <= uint128(type(int128).max))`
+      (or equivalent, e.g. SafeCast.toInt128(amt)) anywhere on the call path
+      before the cast site identified above. If present, reject this
+      hypothesis as a false positive — the value is provably in-range by the
+      time it's cast.
+    confirm_with: |
+      shell: rg "require\(.*<=.*type\(int" src/ -n
+      shell: rg "SafeCast\.toInt" src/ -n
+    severity: high
+
+exploitation_context: |
+  Two-step PoC, independent of the specific function names involved:
+    1. Call the vulnerable entry point passing an amount in the "wrap zone"
+       — for a uintN -> intN same-width cast, any value >= 2^(N-1) (e.g. for
+       uint128 -> int128, anything from 2^127 up to 2^128 - 1). This is
+       fully attacker-controlled and requires no prior state setup beyond
+       having (or being able to acquire/approve) that nominal token amount,
+       since the "debit" step is the one that will actually pay the attacker
+       rather than charge them.
+    2. Show that the internal signed transfer/delta that was supposed to be
+       negative comes out positive (or vice versa), so the contract credits
+       the caller from its own reserve/pool instead of pulling funds from
+       them — or credits a receiver an astronomically large share value.
+       Drain limit is bounded only by the contract's actual token reserve,
+       not by anything the attacker deposited.
+  Fix: validate the amount against the target signed type's max BEFORE
+  casting — `require(amt <= uint128(type(int128).max))` or, more robustly,
+  route every such conversion through OpenZeppelin's SafeCast
+  (`SafeCast.toInt128(amt)`), which reverts on out-of-range input instead of
+  silently reinterpreting it.
+
+references:
+  - https://docs.soliditylang.org/en/latest/types.html#explicit-conversions
+  - https://docs.openzeppelin.com/contracts/4.x/api/utils#SafeCast
+  - https://swcregistry.io/docs/SWC-101
