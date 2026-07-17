@@ -2,7 +2,7 @@ id: naive_spot_price_oracle_manipulation
 name: Naive Spot Price / AMM Reserve Manipulation via Flash Loan
 granularity: contract
 tags:
-  - oracle_dependency
+  - amm_spot_price_consumption
 
 scenario: |
   The contract calculates asset prices, minting amounts, or swap outputs based on the 

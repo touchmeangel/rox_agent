@@ -33,6 +33,33 @@ tags:
       Contract reads an external price or data feed (Chainlink, a TWAP,
       a custom oracle contract) to make decisions.
 
+  - id: amm_spot_price_consumption
+    description: >
+      Contract computes a price, exchange rate, swap output, or mint/redeem
+      amount directly from the instantaneous state of an AMM pool/pair
+      contract — getReserves(), slot0(), or balanceOf() on a pool address —
+      with no TWAP, cumulative observation window, or independent oracle
+      cross-check. Do NOT apply for contracts only consuming a TWAP or a
+      Chainlink-style feed; use oracle_dependency for those.
+
+  - id: token_balanceof_accounting
+    description: >
+      Contract determines an internal accounting total (total pooled
+      assets, total staked, collateral backing) via balanceOf(address(this))
+      on an ERC-20/777/1155 token, rather than an explicitly incremented/
+      decremented internal variable. Distinct from strict_balance_dependency,
+      which is native ETH balance only — this is token balance.
+
+  - id: atomically_manipulable_valuation
+    description: >
+      A critical valuation/price/exchange-rate calculation reads state that
+      can be driven to an extreme (and back) entirely within one
+      transaction — flash loan, large donation, large deposit/redeem — and
+      is trusted immediately with no time-weighting, deviation clamp, or
+      independent cross-check. Cross-cutting: pair with whichever tag
+      describes the manipulable state itself (amm_spot_price_consumption,
+      token_balanceof_accounting, pooled_share_vault, oracle_dependency).
+
   - id: onchain_pseudorandomness
     description: >
       Contract derives a value used for selection, allocation, ordering, or

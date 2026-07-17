@@ -2,7 +2,9 @@ id: unbounded_exchange_rate_price_consumption
 name: Pooled-Share Exchange Rate Consumed as an Unbounded, Absolute Price
 granularity: contract
 tags:
-  - oracle_dependency
+  - amm_spot_price_consumption
+  - token_balanceof_accounting
+  - atomically_manipulable_valuation
 
 scenario: |
   This contract — typically a price-oracle adapter, a lending pool's price
@@ -11,7 +13,7 @@ scenario: |
   ANOTHER contract (most often ERC-4626 convertToAssets()/convertToShares()/
   previewRedeem(), but the same bug class applies to any equivalent under
   different naming: pricePerShare(), getExchangeRate(), exchangeRateStored(),
-  getRate(), sharesToAssets(), etc.) and uses the return value directly as an
+  getRate(), sharesToAssets() and even slot0 that gives spot price) and uses the return value directly as an
   absolute price, with no time-weighting, no per-update deviation clamp, and
   no independent second source.
 

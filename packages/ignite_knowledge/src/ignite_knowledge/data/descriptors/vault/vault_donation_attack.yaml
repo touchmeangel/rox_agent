@@ -3,6 +3,7 @@ name: Vault Donation / balanceOf()-Style Accounting Manipulation
 granularity: contract
 tags:
   - pooled_share_vault
+  - token_balanceof_accounting
 
 scenario: |
   The contract pools an underlying asset and computes its pooled-total (the
