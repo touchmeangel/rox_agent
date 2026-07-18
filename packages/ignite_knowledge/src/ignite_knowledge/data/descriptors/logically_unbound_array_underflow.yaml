@@ -2,7 +2,7 @@ id: logically_unbound_array_underflow
 name: Logically Unbound Array Decrement (Storage Collision)
 granularity: contract
 tags:
-  - unsafe_math_context
+  - unchecked_user_value_arithmetic
   - manual_array_length_mutation
 
 scenario: |
