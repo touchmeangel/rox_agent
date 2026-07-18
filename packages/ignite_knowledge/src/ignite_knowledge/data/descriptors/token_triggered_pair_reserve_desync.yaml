@@ -1,0 +1,144 @@
+id: token_triggered_pair_reserve_desync
+name: Token-Hook-Triggered Unilateral AMM Reserve Desync
+granularity: contract
+tags:
+  - token_hook_interaction
+  - amm_spot_price_consumption
+  - reserve_balance_direct_mutation
+  - atomically_manipulable_valuation
+
+scenario: |
+  The token contract's transfer hook (_update/_transfer override) classifies a
+  transfer as a taxable "sell" or "buy" purely by checking whether `to`/`from`
+  equals a known AMM pair address — treating custody (a token landing at that
+  address) as proof that a priced trade occurred, with no verification that an
+  actual swap() was executed or that any price-impact/invariant check applied.
+
+  A fee or "burn" amount computed from that classification is not deducted from
+  the actor who triggered it. Instead it is booked into a global/shared ledger
+  variable (e.g. accumulatedBurnAmount, pendingBurn, reflectionDebt) and settled
+  later by a SEPARATE function that burns/transfers tokens directly out of the
+  PAIR'S OWN balance — not the original actor's balance — and then calls sync()
+  (or equivalent) to force the AMM to accept the new, artificially reduced
+  balance as its reserve. Because only one side of the pair moves, the paired
+  asset's reserve is untouched, and the constant-product invariant the AMM's
+  own price and swap math depends on is broken without ever going through
+  swap().
+
+  The settlement function is typically wired into the hook's generic/"ordinary
+  transfer" branch (neither side is the pair), meaning it fires as a side
+  effect of ANY qualifying transfer, with no access control tying it to the
+  protocol or to the original fee-generating actor. This makes it
+  permissionlessly, repeatably triggerable — an attacker can manufacture cheap
+  "sell" events via raw transfer() calls (bypassing per-sender cooldowns with
+  fresh throwaway contracts if needed), immediately detonate settlement to
+  drain the pair's reserve on one side, and repeat within a single atomic
+  transaction, then cash out the resulting imbalance via one real swap at the
+  end.
+
+properties:
+
+  - id: custody_classified_as_trade
+    check: |
+      Determine whether the transfer hook decides "this is a sell/buy" using
+      only address comparison (to == pair / from == pair) rather than any
+      verification that a genuine swap() call or priced exchange occurred.
+
+      If true, a bare ERC-20 transfer() aimed at the pair (no router, no
+      swap, no slippage) is sufficient to trigger the same taxable-event
+      logic as a real trade — at zero cost and with no market impact.
+    confirm_with: |
+      shell: rg "isToPair|isFromPair|== .*[Pp]air\b|to == pair|from == pair" src/ -n
+      shell: rg "function _update|function _transfer" src/ -A 40 -n
+      Trace the branch reached when to/from equals the pair address. Confirm
+      no check exists that the call originated from swap() or that reserves
+      changed as part of a matched two-sided operation.
+    severity: high
+
+  - id: deferred_debt_settled_against_pool_balance
+    check: |
+      Identify whether a fee/tax/burn amount computed at transfer time is (a)
+      deducted immediately from the triggering actor's own balance, or (b)
+      added to a global accumulator and later subtracted from a DIFFERENT
+      balance — particularly the pair's own balance — by a separate function
+      invoked at an arbitrary later time.
+
+      Vulnerable pattern:
+          accumulatedBurnAmount += amount * rate / DENOM;   // booked, not paid
+          super._update(from, to, amount - fee);            // actor pays less than booked
+
+      ...settled later via:
+          super._update(pair, deadWallet, accumulatedBurnAmount);
+
+      If the party whose balance is ultimately debited (the pair) is not the
+      party whose action generated the debt (the seller), this property holds.
+    confirm_with: |
+      shell: rg "accumulated|pending.*[Bb]urn|debt" src/ -n -i
+      Find every read and write of the accumulator variable. Confirm the
+      write site (debt creation) and the balance-mutation site (debt
+      settlement) act on two different addresses.
+    severity: critical
+
+  - id: unilateral_reserve_burn_with_forced_sync
+    check: |
+      Confirm the settlement function burns or transfers tokens directly out
+      of the PAIR CONTRACT'S balance for only one of the two paired assets,
+      then calls sync() (or otherwise causes the pair to adopt its current
+      balance as reserve) without any corresponding movement of the other
+      asset and without going through swap()/proportional mint()/burn().
+
+      This is the step that actually breaks the AMM: reserve0 (or reserve1)
+      drops while its counterpart is untouched, so price = reserveOut/reserveIn
+      moves with no trade behind it.
+    confirm_with: |
+      shell: rg "\.sync\(\)" src/ -B 15 -n
+      shell: rg "_update\(.*[Pp]air.*,.*(dead|burn|0x0)" src/ -n
+      For each sync() call, walk backward to confirm what balance change
+      immediately preceded it, and whether it touched one asset or two.
+    severity: critical
+
+  - id: permissionless_settlement_trigger
+    check: |
+      Determine whether the settlement function (property 3) is reachable
+      without any access control (no onlyOwner/role check), specifically as
+      a side effect embedded in the generic/"ordinary transfer" branch of
+      the token's own hook — meaning it fires on any qualifying transfer
+      between two arbitrary addresses, not just protocol-internal calls.
+
+      Also check whether any per-sender rate limit (cooldown mapping) can be
+      bypassed by using a freshly deployed contract as the sender, since a
+      cooldown keyed by msg.sender/from with no minimum-age or code-size
+      check resets to zero for any new address.
+    confirm_with: |
+      shell: rg "function _executeAccumulatedBurn|function _settle|function _process.*[Bb]urn" src/ -B 5 -A 20 -n
+      shell: rg "lastSell|cooldown" src/ -n -i
+      Confirm the settlement call site has no modifier restricting msg.sender,
+      and confirm any cooldown mapping has no defense against fresh contract
+      deployment.
+    severity: high
+
+exploitation_context: |
+  Build the PoC as a single atomic transaction (flash loan optional, used
+  only for capital efficiency, not required by the bug):
+
+  1. Acquire a modest amount of the token via one real, honest swap.
+  2. Loop N times: send tokens directly to the pair via raw transfer() (or a
+     fresh throwaway helper contract if a per-sender cooldown exists) to
+     book debt into the global accumulator at zero cost; if any residual
+     balance lands on the pair without being absorbed into reserves, use
+     skim() (permissionless on any Uniswap-V2-style pair) to recover it;
+     then trigger any ordinary non-pair-to-non-pair transfer (e.g. a tiny
+     removeLiquidity call, which forwards the router's token balance to the
+     caller) to detonate settlement and burn real reserve out of the pair.
+  3. Confirm via trace that the paired asset's reserve is unchanged across
+     every iteration while the target asset's reserve monotonically shrinks.
+  4. Execute one final real swap of remaining tokens through the router.
+     Because reserveIn is now near-dust, amountOut approaches the entire
+     remaining reserveOut — capturing value that was never matched by any
+     trade, only by the forced desync.
+  5. Profit = (final swap proceeds) − (own honest capital deployed) −
+     (any flash loan fees).
+
+references:
+  - https://docs.uniswap.org/contracts/v2/reference/smart-contracts/pair
+  - https://github.com/Uniswap/v2-core/blob/master/contracts/UniswapV2Pair.sol

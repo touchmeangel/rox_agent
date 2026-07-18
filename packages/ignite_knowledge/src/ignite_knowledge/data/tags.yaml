@@ -81,6 +81,26 @@ tags:
       cannot overflow within its own bound and is a standard gas
       optimization, not a vulnerability signal.
 
+  - id: reserve_balance_direct_mutation
+    description: >
+      Contract transfers, mints, or burns a token directly against an AMM pool
+      contract's own balanceOf(pool) — not through the pool's own swap() or a
+      properly-accounted two-sided mint()/burn() — where that pool's pricing
+      model treats its own token balance as the reserve (reserves are read via
+      balanceOf() and/or made canonical via a sync()-style call). Applies to
+      any constant-product or stableswap-style pool with balance-derived
+      reserves, regardless of vendor: Uniswap V2, PancakeSwap V2, SushiSwap,
+      Solidly/Velodrome/Aerodrome-family pairs, and similar xy=k forks.
+
+      Do NOT apply to concentrated-liquidity pools (Uniswap V3/V4, Algebra)
+      where price is an independent state variable (sqrtPriceX96 or
+      equivalent) updated only through internal swap()/mint()/burn() math —
+      donating or burning tokens against those pools' balances does not move
+      price, though it may create a separate insolvency/accounting-mismatch
+      risk worth tagging on its own. Distinct from amm_spot_price_consumption,
+      which is about READING a pool's reserves; this tag is about WRITING to a
+      pool's balance in a way the pool's own logic will treat as truth.
+
   - id: unsafe_explicit_cast
     description: >
       Contract performs an explicit type conversion between integer types —
