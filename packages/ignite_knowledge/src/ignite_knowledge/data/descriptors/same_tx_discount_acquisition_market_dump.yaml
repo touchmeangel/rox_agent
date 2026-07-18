@@ -1,0 +1,98 @@
+id: same_tx_discount_acquisition_market_dump
+name: Same-Transaction Below-Market Acquisition, Dumped Into a Live Market
+granularity: contract
+tags:
+  - static_price_no_time_lock
+  - priority_dependent_outcome
+
+scenario: |
+  A contract (presale, reward distributor, migration claim, discounted
+  allocation sale, etc.) lets a user acquire an asset at a fixed,
+  market-independent price and then release that asset in fully liquid form
+  with no vesting, cliff, or time-lock separating "paid" from "transferable."
+  Independently, a live, deeper-priced market (typically an AMM pool) already
+  exists for the same asset, priced meaningfully higher than the fixed sale
+  price — even after accounting for any transfer tax the asset charges.
+
+  Neither the fixed price nor the missing vesting is a bug in isolation —
+  presales are supposed to sell below market, and instant-claim schemes are
+  fine before any market exists. The vulnerability is the CONJUNCTION: both
+  conditions holding at the same time turn a routine discount mechanism into
+  a same-transaction, near-capital-free arbitrage. Any quantity limits meant
+  to bound this are frequently denominated in the wrong asset (the payment
+  currency, not the asset being distributed), so they fail to bind when the
+  price gap is large.
+
+properties:
+
+  - id: market_independent_fixed_price
+    check: |
+      Confirm the acquisition price is a static or owner-set variable with no
+      read of any AMM pair, oracle, or TWAP in the acquisition path.
+    confirm_with: |
+      shell: rg "uint256 public price|setPrice|function buy\(" src/ -n
+      Trace the pricing variable's assignment sites. Confirm it is never
+      derived from getReserves(), slot0(), or an oracle call.
+    severity: informational
+
+  - id: no_vesting_between_acquire_and_transfer
+    check: |
+      Confirm the function that releases the asset to the user (claim,
+      withdraw, redeem) has NO require() tied to elapsed block.timestamp or
+      block.number since the acquisition call, no cliff/vesting-percentage
+      logic, and no restriction preventing the acquisition and release
+      functions from being called in the same transaction.
+    confirm_with: |
+      shell: rg "function claim|function withdraw|function redeem" src/ -A 25 -n
+      shell: rg "vestingStart|cliff|lockup|claimableAfter" src/ -n -i
+      If the release function's only guards are boolean flags
+      (claimEnabled, hasClaimed) and balance checks, with nothing
+      time-based, this property holds.
+    severity: high
+
+  - id: live_deeper_priced_venue_exists
+    check: |
+      Confirm an independent, currently-live pricing venue (AMM pool or
+      other market) exists for the same asset, and that its price —
+      net of any sell tax the asset charges — is materially above the
+      fixed acquisition price. Without this, the missing vesting is inert:
+      there is nowhere to realize the discount yet.
+    confirm_with: |
+      Identify the asset's paired pool (if any) via factory lookup or known
+      pair address. Read live reserves and compare implied price against
+      the fixed acquisition price, net of any transfer tax.
+    severity: critical
+
+  - id: caps_denominated_in_wrong_asset
+    check: |
+      Confirm per-user or global acquisition caps (maxBuy, hardcap,
+      allocation limits) are denominated in the payment/quote asset rather
+      than the asset being distributed. Combined with a large price gap,
+      compute whether the cap actually bounds the share of total available
+      inventory a single acquirer can sweep.
+    confirm_with: |
+      shell: rg "maxBuy|hardcap|allocationCap" src/ -n
+      Compute (cap / fixed_price) as a share of total distributable
+      inventory. If this share is large (able to acquire most or all
+      inventory within the cap), the cap is not an effective bound.
+    severity: medium
+
+exploitation_context: |
+  Build the PoC as a single atomic transaction:
+
+  1. Read the fixed acquisition price and the live venue's implied price for
+     the same asset; confirm a material gap survives any transfer tax.
+  2. Read total distributable inventory in the acquisition contract; compute
+     the payment-asset cost to acquire all (or as much as caps allow) of it.
+  3. Acquire the funds needed for that cost — flash loan/swap if capital
+     efficiency is desired, but not required by the bug itself.
+  4. In one call sequence: acquire() the full inventory at the fixed price,
+     then immediately call the release/claim function — no delay needed
+     since none is enforced.
+  5. Sell the released asset into the live venue (accounting for any sell
+     tax by using a fee-on-transfer-supporting swap path if needed).
+  6. Repay any flash loan/fee. Profit = market-venue proceeds − fixed-price
+     cost − flash fee.
+
+references:
+  - https://github.com/Uniswap/v2-core

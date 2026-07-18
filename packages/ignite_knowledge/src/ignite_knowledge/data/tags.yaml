@@ -257,3 +257,15 @@ tags:
       under review plays — the FACTORY that deploys clones, the
       IMPLEMENTATION/logic contract every clone delegates to, or the clone
       instance itself.
+
+  - id: static_price_no_time_lock
+    description: >
+      Contract allows a user to acquire an asset at an administratively fixed
+      or otherwise market-independent price (not derived from an oracle, AMM
+      pool, or other live reference), and the acquired asset becomes fully
+      transferable/liquid with no vesting schedule, cliff, minimum holding
+      period, or block/timestamp-based delay between the acquisition call and
+      the transfer-out call. Apply regardless of whether acquisition and
+      transfer-out are literally the same function or two separate functions
+      (e.g. buy() then claim()) — what matters is whether anything enforces
+      elapsed time or a future condition between them.
