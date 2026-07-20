@@ -9,11 +9,11 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "ignite-agent",
     "ignite-coordinator",
     "ignite-core",
     "ignite-knowledge",
     "ignite-worker",
+    "ignite-workspace",
 ]
 
 [[package]]
@@ -1388,41 +1388,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ignite-agent"
-version = "0.0.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "slither-analyzer" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "bandit" },
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "pytest-mock" },
-    { name = "ruff" },
-    { name = "types-requests" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "slither-analyzer", specifier = ">=0.11.5" }]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "bandit", extras = ["toml"], specifier = ">=1.7.0" },
-    { name = "mypy", specifier = ">=1.8.0" },
-    { name = "pytest", specifier = ">=8.0.0" },
-    { name = "pytest-asyncio", specifier = ">=0.23.0" },
-    { name = "pytest-cov", specifier = ">=4.1.0" },
-    { name = "pytest-mock", specifier = ">=3.12.0" },
-    { name = "ruff", specifier = ">=0.3.0" },
-    { name = "types-requests" },
-]
-
-[[package]]
 name = "ignite-coordinator"
 version = "0.1.0"
 source = { editable = "packages/ignite_coordinator" }
@@ -1491,6 +1456,41 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "ignite-core", editable = "packages/ignite_core" }]
+
+[[package]]
+name = "ignite-workspace"
+version = "0.0.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "slither-analyzer" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "bandit" },
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pytest-mock" },
+    { name = "ruff" },
+    { name = "types-requests" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "slither-analyzer", specifier = ">=0.11.5" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "bandit", extras = ["toml"], specifier = ">=1.7.0" },
+    { name = "mypy", specifier = ">=1.8.0" },
+    { name = "pytest", specifier = ">=8.0.0" },
+    { name = "pytest-asyncio", specifier = ">=0.23.0" },
+    { name = "pytest-cov", specifier = ">=4.1.0" },
+    { name = "pytest-mock", specifier = ">=3.12.0" },
+    { name = "ruff", specifier = ">=0.3.0" },
+    { name = "types-requests" },
+]
 
 [[package]]
 name = "iniconfig"
