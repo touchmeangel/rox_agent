@@ -1,0 +1,23 @@
+[project]
+name = "rox-coordinator"
+version = "0.1.0"
+description = "Coordinator pipeline — documentation, static analysis, and reporting steps"
+requires-python = ">=3.11"
+dependencies = [
+    "rox-core",
+    "rox-knowledge",
+]
+
+[tool.uv.sources]
+rox-core = { workspace = true }
+rox-knowledge = { workspace = true }
+
+[project.scripts]
+rox-coordinator = "rox_coordinator.pipeline:main"
+
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

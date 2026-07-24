@@ -1,9 +1,10 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:venv",
     "python.analysis.extraPaths": [
-        "${workspaceFolder}/packages/ignite_core/src",
-        "${workspaceFolder}/packages/ignite_coordinator/src",
-        "${workspaceFolder}/packages/ignite_knowledge/src",
-        "${workspaceFolder}/packages/ignite_worker/src"
+        "${workspaceFolder}/packages/rox_core/src",
+        "${workspaceFolder}/packages/rox_coordinator/src",
+        "${workspaceFolder}/packages/rox_knowledge/src",
+        "${workspaceFolder}/packages/rox_worker/src",
+        "${workspaceFolder}/packages/rox_agent/src"
     ]
 }

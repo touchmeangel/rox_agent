@@ -1,4 +1,4 @@
-name: Deploy Ignite Agent
+name: Deploy RoX Agent
 
 on:
   workflow_run:
@@ -34,7 +34,7 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            touchmeangel/ignite_agent:latest
-            touchmeangel/ignite_agent:${{ github.event.workflow_run.head_sha }}
+            touchmeangel/rox_agent:latest
+            touchmeangel/rox_agent:${{ github.event.workflow_run.head_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
