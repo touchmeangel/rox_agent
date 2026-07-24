@@ -5,17 +5,22 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ignite_coordinator.pipeline import MODELS, PIPELINE
+from ignite_core.cli_common import (
+    IGNITE_COLOR,
+    REPO_URL,
+    add_common_run_args,
+    aggregate_usage,
+    console,
+)
+from ignite_core.serialization import to_jsonable
+from ignite_core.steps.base import StepResult
+from ignite_core.workflow import Workflow
 from rich import box
 from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-
-from ignite_coordinator.pipeline import MODELS, PIPELINE
-from ignite_core.cli_common import IGNITE_COLOR, REPO_URL, add_common_run_args, aggregate_usage, console
-from ignite_core.serialization import to_jsonable
-from ignite_core.steps.base import StepResult
-from ignite_core.workflow import Workflow
 
 ASCII_LOGO = r"""   __
 __(o )>
@@ -25,7 +30,9 @@ __(o )>
 def add_coordinator_args(parser) -> None:
     add_common_run_args(parser)
     parser.add_argument(
-        "--skip-build", action="store_true", help="Skip forge build verification.",
+        "--skip-build",
+        action="store_true",
+        help="Skip forge build verification.",
     )
 
 

@@ -4,7 +4,11 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from ignite_core.cli_common import add_common_run_args, aggregate_usage, print_role_banner
+from ignite_core.cli_common import (
+    add_common_run_args,
+    aggregate_usage,
+    print_role_banner,
+)
 from ignite_core.mission import Mission
 from ignite_core.serialization import from_dict
 from ignite_core.steps.base import StepResult
@@ -15,11 +19,13 @@ from ignite_worker.pipeline import PIPELINE
 def add_worker_args(parser) -> None:
     add_common_run_args(parser)
     parser.add_argument(
-        "--missions-file", required=True,
+        "--missions-file",
+        required=True,
         help="Path to coordinator results JSON containing missions[].",
     )
     parser.add_argument(
-        "--mission-id", required=True,
+        "--mission-id",
+        required=True,
         help="ID of the mission within --missions-file this worker should run.",
     )
 
@@ -53,14 +59,18 @@ def run_worker(args) -> None:
     missions = data.get("missions", [])
     mission_data = next((m for m in missions if m["id"] == args.mission_id), None)
     if mission_data is None:
-        raise SystemExit(f"mission id '{args.mission_id}' not found in {args.missions_file}")
+        raise SystemExit(
+            f"mission id '{args.mission_id}' not found in {args.missions_file}"
+        )
 
     mission = from_dict(Mission, mission_data)
 
     workflow = Workflow(PIPELINE)
     results: dict = {}
     try:
-        results = workflow.run(args.repo_path, args.work_path, context={"mission": mission})
+        results = workflow.run(
+            args.repo_path, args.work_path, context={"mission": mission}
+        )
     except Exception:
         results = workflow.results
         raise
