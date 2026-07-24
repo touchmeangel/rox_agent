@@ -39,7 +39,7 @@ def add_coordinator_args(parser) -> None:
 def _print_welcome_banner() -> None:
     logo = Text(ASCII_LOGO, style=ROX_COLOR)
     header = Text.from_markup(
-        "[bold white]rox[/bold white][dim]  ·  EVM Smart Contract Security Research Agent[/dim]\n\n"
+        "[bold white]rox[/bold white][dim]  ·  Solidity Smart Contract Security Research Agent[/dim]\n\n"
         "[white]Welcome back — point me at a repo and I'll start digging.[/white]\n"
     )
 

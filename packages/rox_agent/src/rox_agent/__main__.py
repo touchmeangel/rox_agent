@@ -8,7 +8,7 @@ from rox_core.debug_logger import default_debug_logger
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="rox",
-        description="EVM Smart Contract Audit Agent | rox",
+        description="Solidity Smart Contract Audit Agent | rox",
     )
     subparsers = parser.add_subparsers(dest="role", required=True)
 
