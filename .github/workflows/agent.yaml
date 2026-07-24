@@ -1,4 +1,4 @@
-name: Deploy Ignite Worker
+name: Deploy Ignite Agent
 
 on:
   workflow_run:
@@ -31,10 +31,10 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./docker/worker.Dockerfile
+          file: ./Dockerfile
           push: true
           tags: |
-            ${{ secrets.DOCKER_NAME }}/${{ vars.WORKER_IMAGE_NAME }}:latest
-            ${{ secrets.DOCKER_NAME }}/${{ vars.WORKER_IMAGE_NAME }}:${{ github.event.workflow_run.head_sha }}
+            touchmeangel/ignite_agent:latest
+            touchmeangel/ignite_agent:${{ github.event.workflow_run.head_sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

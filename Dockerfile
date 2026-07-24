@@ -90,4 +90,4 @@ RUN uv run playwright install --with-deps chromium && chmod -R 777 /home/shared
 
 VOLUME ["/project"]
 
-ENTRYPOINT ["uv", "run", "--no-sync", "python", "-m", "ignite_worker.agent"]
+ENTRYPOINT ["uv", "run", "--no-sync", "python", "-m", "ignite_agent"]
