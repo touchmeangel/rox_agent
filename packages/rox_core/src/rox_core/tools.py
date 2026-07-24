@@ -18,6 +18,7 @@ from pathlib import Path
 import docx
 import openpyxl
 from ddgs import DDGS
+from playwright.sync_api import sync_playwright
 from rox_core.debug_logger import DebugLogger, default_debug_logger
 from rox_core.graph import Graph
 from rox_core.reporting import Reporter, RichReporter
@@ -26,7 +27,6 @@ from rox_core.search_state import SearchState
 from rox_core.storages.download_store import DownloadStore
 from rox_core.storages.overflow_store import OverflowStore
 from rox_core.tool_result import ToolResult
-from playwright.sync_api import sync_playwright
 
 _overflow_store = OverflowStore()
 

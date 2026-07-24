@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 from rox_core.tool_result import ToolResult
 
 if TYPE_CHECKING:
-    from rox_core.rolling_window import RollingWindow
     from rich.console import Console
+    from rox_core.rolling_window import RollingWindow
 
 
 class Reporter(ABC):

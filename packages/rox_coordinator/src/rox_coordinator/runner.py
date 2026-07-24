@@ -5,10 +5,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from rich import box
+from rich.console import Group
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 from rox_coordinator.pipeline import MODELS, PIPELINE
 from rox_core.cli_common import (
-    ROX_COLOR,
     REPO_URL,
+    ROX_COLOR,
     add_common_run_args,
     aggregate_usage,
     console,
@@ -16,11 +21,6 @@ from rox_core.cli_common import (
 from rox_core.serialization import to_jsonable
 from rox_core.steps.base import StepResult
 from rox_core.workflow import Workflow
-from rich import box
-from rich.console import Group
-from rich.panel import Panel
-from rich.table import Table
-from rich.text import Text
 
 ASCII_LOGO = r"""   __
 __(o )>
