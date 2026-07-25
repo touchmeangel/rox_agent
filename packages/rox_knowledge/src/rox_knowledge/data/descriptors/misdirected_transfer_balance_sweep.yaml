@@ -1,0 +1,86 @@
+id: misdirected_transfer_balance_sweep
+name: Unowned Balance Sweep via Direct Transfer to Pool/Vault
+granularity: contract
+tags:
+  - unattributed_self_balance_redemption
+  - pooled_share_vault
+ 
+scenario: |
+  Uniswap V2-style AMM pairs (and similarly-shaped vaults/staking pools)
+  implement burn()/redeem() as fully permissionless: anyone can call it, and
+  the payout is computed from balanceOf(address(this)) on the pool's own
+  LP/share token — not from a record of who deposited it. This is
+  intentional design: the standard flow is "transfer LP tokens to the pool,
+  then call burn() in the same or a later tx, receive underlying assets."
+  The invariant "whatever LP balance the pool holds belongs to whoever calls
+  burn()" holds ONLY as long as LP tokens reach the pool exclusively through
+  that intended path (typically the router, atomically). If a user or an
+  integrating contract instead sends LP tokens via a raw transfer() directly
+  to the pool address — bypassing removeLiquidity() — those tokens become
+  indistinguishable from correctly-deposited ones. The next caller of
+  burn(), regardless of who they are, redeems the entire balance and can
+  route the underlying assets to any address of their choosing.
+ 
+properties:
+  - id: redemption_keyed_to_self_balance_not_caller
+    check: |
+      Identify the redemption function (burn, withdraw, redeem, skim).
+      Confirm the payout amount is derived from balanceOf(address(this)) on
+      the share/LP token — not from a caller-specific mapping — and that the
+      function accepts an arbitrary `to` address with no check that
+      msg.sender (or `to`) matches whoever transferred the balance in.
+    confirm_with: |
+      shell: rg "balanceOf\(address\(this\)\)" src/ -n
+      shell: rg "function burn\(|function redeem\(|function skim\(" src/ -n -A 15
+      Trace whether payout math ties back to a mapping(address => uint) of
+      depositor entitlements, or purely to live self-balance.
+    severity: critical
+ 
+  - id: reachable_via_raw_token_transfer
+    check: |
+      Confirm the share/LP token is a standard ERC20 (or 777/1155) with an
+      unrestricted transfer(), meaning any holder can send it directly to
+      the pool/vault address without going through the intended deposit
+      function. This is a property of the token, not something the pool can
+      block.
+    severity: informational
+ 
+  - id: no_atomicity_requirement_between_deposit_and_redeem
+    check: |
+      Confirm burn() does not require the deposit and redemption to happen
+      in the same transaction (e.g. no check that the caller is also the
+      address that just transferred in one call earlier). If burn() can be
+      called in any later, unrelated transaction against whatever balance
+      has accumulated, misdirected transfers stay exposed indefinitely.
+    severity: critical
+ 
+exploitation_context: |
+  No flash loan or special setup needed — the bug is triggered by
+  user/integrator error, not by the attacker:
+ 
+  1. Fork at a block after the victim's mistaken direct transfer() of LP
+     tokens to the pool address (confirm via balanceOf(pool) on the LP
+     token).
+  2. From any attacker-controlled contract, call pool.burn(attackerAddr) —
+     no LP tokens need to be held or approved by the attacker; the pool
+     redeems whatever balance it already holds.
+  3. Show the attacker receives both underlying assets proportional to the
+     entire mistakenly-transferred balance.
+  4. Optional: model the realistic payout split if racing other searchers
+     for the same public opportunity — most extracted value typically goes
+     to the block builder/validator as a priority-inclusion payment, since
+     burn() is equally callable by anyone who notices the stray balance
+     first.
+ 
+mitigation_note: |
+  Largely a UX/integration-safety issue rather than a code defect in a
+  correctly-implemented Uniswap V2-style pair — the real fix is steering
+  integrators/users to removeLiquidity() via the router (atomic
+  transfer+burn) rather than raw transfers. For custom pools/vaults written
+  from scratch, prefer keying redemption to an explicit
+  mapping(address => uint256) recorded at deposit time rather than trusting
+  balanceOf(address(this)) as ground truth.
+ 
+references:
+  - https://github.com/sanbir/evm-hack-registry/blob/main/2026-06-ATM_LP_Burn_exp/output.txt
+  - https://docs.uniswap.org/contracts/v2/reference/smart-contracts/pair

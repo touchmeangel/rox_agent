@@ -101,6 +101,30 @@ tags:
       which is about READING a pool's reserves; this tag is about WRITING to a
       pool's balance in a way the pool's own logic will treat as truth.
 
+  - id: unattributed_self_balance_redemption
+    description: >
+      Contract exposes a permissionless function that computes a payout
+      (assets to release, tokens to mint/burn, shares to redeem) purely from
+      the token balance the CONTRACT ITSELF currently holds — via
+      balanceOf(address(this)) — and sends the resulting value to a
+      caller-supplied recipient, with no internal ledger crediting a specific
+      depositor. The invariant "balance present == amount owed to caller" is
+      only safe when the ONLY way tokens can reach the contract's balance is
+      through the function's own paired deposit step within the same
+      transaction (e.g. a router transferring LP tokens to a pair immediately
+      before calling burn()). It breaks the moment tokens can arrive via any
+      other path — a raw/direct transfer, a misdirected send, a prior
+      unrelated transaction, dust left over from a partial fill — because the
+      contract cannot distinguish "tokens the caller is entitled to" from
+      "tokens that happen to be sitting here." Apply to burn()/redeem()/
+      claim()/skim()/sweep()-style functions in AMM pairs (Uniswap V2/
+      PancakeSwap V2/Solidly-family and similar), vaults, staking contracts,
+      or any pooled-share design where redemption trusts present balance
+      instead of a stored owner->amount mapping. Distinct from
+      token_balanceof_accounting, which flags balanceOf-derived VALUATION
+      drift (share price manipulation); this tag flags balanceOf-derived
+      OWNERSHIP ambiguity — the payout math is correct, the attribution isn't.
+
   - id: unsafe_explicit_cast
     description: >
       Contract performs an explicit type conversion between integer types —
