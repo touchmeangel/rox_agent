@@ -1,0 +1,87 @@
+id: eoa_gate_bypass_stale_dividend_claim
+name: extcodesize()==0 Deposit Gate Bypass Enables Retroactive Dividend Claim
+granularity: contract
+tags:
+  - extcodesize_zero_eoa_check
+  - unbacked_checkpoint_on_pool_entry
+  - pooled_share_vault
+ 
+scenario: |
+  Contracts that try to block "contract depositors" (often to deter
+  flash-loan or sybil abuse) frequently gate their receive()/fallback()/
+  deposit() with a check like require(extcodesize(msg.sender) == 0) (or the
+  modern msg.sender.code.length == 0 spelling) to reject anything that
+  "looks like" a smart contract. This check is unreliable: during a
+  contract's OWN constructor, its runtime bytecode has not yet been
+  persisted to state, so extcodesize(address(this)) returns 0 for the
+  duration of construction — even though the caller is unambiguously a
+  contract, fully capable of arbitrary logic before or after the gated call.
+ 
+  An attacker exploits this by performing the gated deposit call from inside
+  a purpose-built contract's constructor. The deposit succeeds, and if the
+  target then treats "successfully deposited" as sufficient grounds to add
+  the caller to a rewards/dividend distribution list, the attacker is now a
+  first-class participant despite having existed for a fraction of a
+  transaction. If that distribution list computes payouts from a GLOBAL
+  per-share accumulator (e.g. cumulative ETH dividends per token held)
+  without snapshotting the accumulator's current value as the new
+  participant's personal baseline at the moment they join, the attacker's
+  very first withdrawal redeems their proportional share of dividends that
+  accrued over the pool's ENTIRE HISTORY — not just the near-zero time
+  they've actually held a balance. A flash loan is typically layered on top
+  purely to size the deposit as large as possible, maximizing the
+  retroactive dividend slice; it is not what defeats the gate — the
+  constructor trick is, and the missing checkpoint is what turns "bypassed a
+  gate" into an actual loss of funds.
+ 
+properties:
+  - id: identity_gate_uses_raw_codesize
+    check: |
+      Search receive()/fallback()/deposit()-style entry points for a check
+      against extcodesize(msg.sender), msg.sender.code.length, or an
+      equivalent isContract()/hasNoCode() helper used as an EOA/anti-contract
+      gate on a state-changing action.
+    confirm_with: |
+      shell: rg "extcodesize|\.code\.length|isContract\(" src/ -n -B 5 -A 5
+      For each hit, confirm it's used as a require()/revert gate on a
+      state-changing entry point, not just informational.
+    severity: critical
+ 
+  - id: join_path_omits_accumulator_checkpoint
+    check: |
+      Locate the function that adds a new address to the reward/dividend
+      distribution set (often triggered automatically by a successful
+      deposit/transfer). Confirm whether it writes the current value of the
+      global per-share accumulator into a per-user checkpoint/"already
+      credited" variable at the moment of joining. If withdrawal payout is
+      computed as (userBalance * currentAccumulator) - alreadyWithdrawn, with
+      alreadyWithdrawn left at its zero-value default for new joiners, the
+      checkpoint is missing.
+    confirm_with: |
+      shell: rg "dividendsPerShare|accRewardPerToken|magnifiedDividend" src/ -n -B 5 -A 15
+      Trace the join/deposit path specifically — does it write to a
+      per-user checkpoint mapping, or only to balance/holder-list state?
+    severity: critical
+ 
+exploitation_context: |
+  1. Deploy an attack contract whose constructor performs the entire
+     attack: take a flash loan (sized to maximize deposit), call the
+     target's deposit path with that amount, then immediately call the
+     withdrawal function — all before the constructor returns, i.e. while
+     extcodesize(address(this)) == 0.
+  2. Confirm the deposit call is accepted despite the caller being a
+     contract, by asserting the depositor was added to the dividend/holder
+     list (check event logs or the storage slot backing that list).
+  3. Confirm the withdrawal amount exceeds what could possibly have accrued
+     during the single transaction — i.e. it includes dividends already
+     sitting in the pool BEFORE this deposit occurred. Compare the pool's
+     per-share accumulator immediately before vs. after the attacker's join
+     to show the full historical accumulator was paid out, not just the
+     marginal amount contributed by the attacker's own capital.
+  4. Repay the flash loan from the withdrawn funds and settle on the
+     residual profit.
+ 
+references:
+  - https://solidity-by-example.org/hacks/contract-size/
+  - https://www.cyfrin.io/glossary/bypass-contract-size-check-hack-solidity-code-example
+  - https://mixbytes.io/blog/pitfalls-of-using-cteate-cteate2-and-extcodesize-opcodes

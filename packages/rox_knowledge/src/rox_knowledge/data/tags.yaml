@@ -293,3 +293,47 @@ tags:
       transfer-out are literally the same function or two separate functions
       (e.g. buy() then claim()) — what matters is whether anything enforces
       elapsed time or a future condition between them.
+
+  - id: extcodesize_zero_eoa_check
+    description: >
+      Contract gates a state-changing action (deposit eligibility, whitelist
+      entry, referral bonus, fallback/receive acceptance, etc.) on the caller
+      being an externally-owned account, using extcodesize(addr) == 0
+      (directly via inline assembly, or indirectly via addr.code.length == 0
+      or an isContract()/hasNoCode()-style helper) as the test. This check is
+      unreliable: during a contract's OWN constructor execution, its runtime
+      bytecode has not yet been persisted to state, so
+      extcodesize(address(this)) returns 0 even though the caller is
+      unambiguously a contract, fully capable of arbitrary logic before and
+      after the gated call. Any attacker can perform the gated interaction
+      from inside a purpose-built contract's constructor and pass the check
+      every time. Distinct from a tx.origin == msg.sender check, which is NOT
+      bypassable this way (tx.origin is fixed for the whole transaction
+      regardless of call depth) though it has its own, different weaknesses
+      (a malicious top-level contract phishing a user into initiating the
+      call). Apply this tag whenever extcodesize / .code.length is used as an
+      identity/eligibility gate rather than purely informational logging.
+ 
+  - id: unbacked_checkpoint_on_pool_entry
+    description: >
+      Contract maintains a cumulative-per-share (or similarly globally-
+      accruing) accounting variable that grows over time or with each
+      deposit/fee event (e.g. dividendsPerShare, rewardIndex,
+      accRewardPerToken, magnifiedDividendPerShare), and pays out a
+      participant's share as (participant balance * current global
+      accumulator) minus what they've already been paid — but the code path
+      that adds a NEW participant to the distribution set does not snapshot
+      the CURRENT value of the global accumulator into that participant's
+      personal checkpoint/"already credited" baseline. Without that
+      snapshot, a newly-joined holder is retroactively credited for the
+      entire historical accumulator, including rewards/dividends/fees that
+      accrued before they ever held a balance — paid out of funds actually
+      earned by longstanding holders. Apply to any staking/dividend/fee-
+      distribution/rebasing design that tracks rewards via a global per-share
+      accumulator; look specifically at the join/deposit/addHolder code path
+      for a missing checkpoint[user] = globalAccumulator (or equivalent)
+      assignment. Distinct from pooled_share_vault, which concerns the
+      soundness of the aggregate assets/claims ratio — this concerns whether
+      each individual participant's personal baseline is correctly
+      initialized at entry, independent of whether the aggregate ratio
+      itself is ever manipulated.
