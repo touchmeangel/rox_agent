@@ -1,0 +1,77 @@
+id: self_attested_signer_identity
+name: Attacker-Supplied Signer Identity Used as Its Own Verification Target
+granularity: function
+tags:
+  - signature_authorized_action
+  - access_control
+  - makes_untrusted_calls
+
+scenario: |
+  A signature-validation function (ecrecover-based, ERC-1271-aware, or a
+  SignatureChecker.isValidSignatureNow-style dispatcher) accepts the address
+  it will treat as "the signer" from the SAME untrusted payload it is trying
+  to authenticate — a byte range sliced out of the calldata/signature blob,
+  a struct field, or any other caller-supplied parameter — rather than
+  reading it from protocol-controlled storage (an owner/guardian/session-key
+  variable set at account creation or by a prior privileged call). The check
+  then asks only "does this proof validate against the identity the caller
+  just told me to use," never "is the identity the caller told me to use
+  actually who I expect." An attacker who controls both halves — the claimed
+  identity AND the proof — trivially satisfies both.
+
+  Commonly compounds with a soft-failing recovery path: if ECDSA recovery
+  returns a wrong-but-non-reverting address instead of reverting on bad
+  input, verification falls through to an ERC-1271 staticcall against the
+  attacker-declared "signer" address — which is, by construction, a contract
+  the attacker deployed and can make return the magic value unconditionally.
+
+properties:
+  - id: no_binding_to_stored_identity
+    check: |
+      Find the function's SIG_VALIDATION / bool / recovered-address result.
+      Trace the "expected signer" value backward: is it read from a state
+      variable (owner, guardian mapping, session-key registry) that only a
+      prior authenticated action could have set, or is it parsed straight
+      out of the calldata/signature bytes being validated in THIS call? If
+      the latter, this property holds regardless of whether the cryptographic
+      check on the proof itself is technically sound.
+    confirm_with: |
+      shell: rg "isValidSignatureNow|isValidSignature\(" src/ -n -B5
+      shell: rg "signature\[.{0,20}\]|bytesToAddress|abi\.decode\(.*signature" src/ -n
+      shell: rg "\.owner\(\)|owner ==|storedOwner|guardian\[" src/ -n
+      For each signature-checking function, confirm whether the "signer"
+      value is ever compared against a hit from the third grep anywhere in
+      the call path. If it's used directly as the verification target with
+      no such comparison, flag it — critical, not just a hardening gap.
+    severity: critical
+
+  - id: soft_fail_recovery_fallback
+    check: |
+      Confirm what happens when ECDSA recovery fails on malformed/adversarial
+      input. OpenZeppelin's ECDSA.tryRecover returns (address, RecoverError)
+      without reverting; if the caller doesn't check the error code and
+      pipes the (possibly wrong) address into a SignatureChecker-style
+      dispatcher, a failed EOA recovery silently becomes an ERC-1271
+      contract check against an address the attacker also controls.
+    confirm_with: |
+      shell: rg "tryRecover" src/ -n -A5
+      shell: rg "SignatureChecker" src/ -n
+      Confirm whether the RecoverError return is checked/reverted on, or
+      silently discarded before falling into the ERC-1271 branch.
+    severity: high
+
+exploitation_context: |
+  1. Deploy an attacker contract implementing ERC-1271 whose
+     isValidSignature unconditionally returns 0x1626ba7e.
+  2. Craft a signature blob embedding that contract's address as "signer"
+     in whatever format the target expects (e.g. {sigType}||{signer}||{sig}).
+  3. Call the target's validation function with any hash and dummy proof
+     bytes; ECDSA recovery on garbage input fails soft, falls through to
+     the ERC-1271 staticcall, and the attacker's contract returns success.
+  4. Assert validation succeeds despite no real owner key ever signing
+     anything, then chain into whatever it gates (ERC-4337 UserOp
+     execution, multisig approval, permit-based transfer, etc.).
+
+references:
+  - https://eips.ethereum.org/EIPS/eip-1271
+  - https://eips.ethereum.org/EIPS/eip-4337
