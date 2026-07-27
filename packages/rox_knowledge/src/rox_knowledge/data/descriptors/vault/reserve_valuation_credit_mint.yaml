@@ -1,0 +1,80 @@
+id: reserve_valuation_credit_mint
+name: Reserve-Derived Valuation Feeding a Privileged Credit/Reward Mint
+granularity: contract
+tags:
+  - amm_spot_price_consumption
+  - atomically_manipulable_valuation
+  - reserve_balance_direct_mutation
+
+scenario: |
+  A sibling/privileged contract (rewards, hashrate, staking-credit, vesting,
+  etc.) accepts reserve-derived numbers (a quote-side reserve, a pool's
+  totalSupply, a "current price") as plain function arguments from a
+  trusted caller — gated by onlyX/onlyController-style modifiers — rather
+  than reading them itself via getReserves()/balanceOf(). Because the
+  values arrive as ordinary uint256 parameters, a file-local grep for
+  getReserves()/balanceOf() inside the vulnerable contract finds nothing;
+  the live-state read happened one hop away, in the caller. The privileged
+  function then uses those numbers directly in a valuation formula that
+  feeds a _mint()/mintReward()-style credit, with no staleness check,
+  deviation clamp, or TWAP.
+
+  Distinct from naive_spot_price_oracle_manipulation: that descriptor
+  covers a SWAP OUTPUT computed from reserves, where the fix is adding a
+  price-impact term. This descriptor covers a CREDIT/REWARD/SHARE VALUE
+  computed from reserves and minted as new supply — there's no "correct AMM
+  formula" to diff against; the fix is time-buffering the valuation or
+  removing the live-reserve dependency entirely.
+
+properties:
+  - id: cross_contract_trust_boundary
+    check: |
+      Do not scope the search to one file. First find every externally-
+      callable function gated by an onlyX modifier (onlyLBP, onlyController,
+      onlyVault, ...) that takes a uint256 parameter and feeds it into a
+      mint/credit/reward calculation. Then walk OUT to the call site: does
+      the caller derive that argument from getReserves(), balanceOf(), or
+      totalSupply(), read in the SAME transaction as the privileged call?
+      If so, spot-price consumption applies to this function even though
+      the function itself never touches the AMM.
+    confirm_with: |
+      shell: rg "only[A-Z][a-zA-Z]*" src/ -n
+      shell: rg "_mint\(|mintReward\(|notifyCredit\(" src/ -n
+      For each hit, trace backward to the CALL SITE (not the definition):
+      shell: rg "getReserves\(\)|balanceOf\(address\(this\)\)|totalSupply\(\)" src/ -B3 -A3 -n
+      If a value from one of those reads flows, same-transaction, into a
+      parameter of an onlyX-gated mint/credit function with no staleness
+      check in between, flag it.
+    severity: critical
+
+  - id: no_time_buffer_on_valuation
+    check: |
+      Don't look for a "missing +amount" pattern — there's no swap here.
+      Ask instead: does anything about this valuation reference a point in
+      time other than "right now, in this transaction"? A stage-time
+      snapshot, a minimum holding period, a TWAP window, or a require()
+      bounding reserve movement since a prior checkpoint all count as
+      mitigation. Total absence of all of them is the bug.
+    confirm_with: |
+      shell: rg "TWAP|twap|snapshot|checkpoint|stageTs" src/ -n
+      Also check comments/commit history for a removed snapshot mechanism —
+      a real-world tell (LBP's own source comments admit deleting one "for
+      code simplicity").
+    severity: critical
+
+exploitation_context: |
+  Check what mintReward (or equivalent) does with the freshly minted supply:
+  if it can land in an address whose balance the AMM pool itself treats as
+  reserve, this compounds into a directly extractable exploit rather than
+  a dilution bug — no second step needed, the attacker sells straight into
+  the pool they just manipulated (see reserve_balance_direct_mutation).
+  Also check whether newly-credited holders get a correct reward-per-share
+  checkpoint on entry — a fresh inflated balance plus a missing checkpoint
+  (unbacked_checkpoint_on_pool_entry) means the payout isn't bounded to
+  rewards accrued since crediting, it retroactively claims the entire
+  historical emission curve in one shot. In this incident that combination
+  is likely what turned a several-hundred-thousand-dollar bookkeeping error
+  into the actual realized loss.
+
+references:
+  - https://www.darknavy.org/web3/exploits/little-boy-plus-lp-share-hashrate-reserve-manipulation/
