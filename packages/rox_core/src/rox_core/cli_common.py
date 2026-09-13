@@ -12,11 +12,6 @@ REPO_URL = "https://github.com/touchmeangel/rox_agent"
 def add_common_run_args(parser) -> None:
     """Arguments shared by every rox role."""
     parser.add_argument(
-        "--repo-path",
-        required=True,
-        help="Path to the pre-cloned repository (read-only source of truth).",
-    )
-    parser.add_argument(
         "--work-path",
         required=True,
         help="Path to the writable workspace for build artifacts and results.",
@@ -67,11 +62,10 @@ def aggregate_usage(results: dict) -> dict:
     }
 
 
-def print_role_banner(role_label: str, repo_path: str) -> None:
+def print_role_banner(role_label: str) -> None:
     console.print()
     console.print(
         f"[{ROX_COLOR}]rox[/] [dim]{role_label}[/dim]  [dim]•[/dim]  "
-        f"[white]{Path(repo_path).name}[/white]"
     )
     console.print(f"[dim]{REPO_URL}[/dim]")
     console.print()

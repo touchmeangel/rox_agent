@@ -8,6 +8,7 @@ from rox_core.cli_common import (
     add_common_run_args,
     aggregate_usage,
     print_role_banner,
+    REPO_URL
 )
 from rox_core.mission import Mission
 from rox_core.serialization import from_dict
@@ -53,7 +54,7 @@ def _write_results(results: dict[str, StepResult], output_path: str) -> None:
 
 
 def run_worker(args) -> None:
-    print_role_banner("worker", args.repo_path)
+    print_role_banner("worker")
 
     data = json.loads(Path(args.missions_file).read_text())
     missions = data.get("missions", [])
