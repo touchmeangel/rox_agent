@@ -121,7 +121,7 @@ def run_coordinator(args) -> None:
     workflow = Workflow(PIPELINE)
     results: dict = {}
     try:
-        results = workflow.run(args.repo_path, args.work_path)
+        results = workflow.run(args.work_path)
     except Exception:
         results = workflow.results
         raise

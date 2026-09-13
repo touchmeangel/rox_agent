@@ -69,7 +69,7 @@ def run_worker(args) -> None:
     results: dict = {}
     try:
         results = workflow.run(
-            args.repo_path, args.work_path, context={"mission": mission}
+            args.work_path, context={"mission": mission}
         )
     except Exception:
         results = workflow.results

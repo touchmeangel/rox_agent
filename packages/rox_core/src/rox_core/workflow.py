@@ -24,7 +24,7 @@ class Workflow:
         self.results: dict[str, StepResult] = {}
 
     def run(
-        self, repo_path: str, work_path: str, context: dict | None = None
+        self, work_path: str, context: dict | None = None
     ) -> dict[str, StepResult]:
         if context is None:
             context = {}
@@ -33,13 +33,13 @@ class Workflow:
         try:
             default_debug_logger.log_event(
                 "agent_run_start",
-                repo_path=repo_path,
+                github_repo_path=work_path,
                 work_path=work_path,
             )
 
             for step in self.pipeline:
                 if isinstance(step, GitHistoryAccessMixin):
-                    step.github_repo_path = repo_path
+                    step.github_repo_path = work_path
                 step.project_path = work_path
 
                 self.reporter.step_started(
@@ -109,7 +109,7 @@ class Workflow:
 
             default_debug_logger.log_event(
                 "agent_run_complete",
-                repo_path=repo_path,
+                github_repo_path=work_path,
                 work_path=work_path,
                 succeeded=succeeded,
                 failed=failed,
