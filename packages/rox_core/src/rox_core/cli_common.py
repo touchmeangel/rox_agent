@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from rich.console import Console
 
 console = Console()
@@ -64,8 +62,6 @@ def aggregate_usage(results: dict) -> dict:
 
 def print_role_banner(role_label: str) -> None:
     console.print()
-    console.print(
-        f"[{ROX_COLOR}]rox[/] [dim]{role_label}[/dim]  [dim]•[/dim]  "
-    )
+    console.print(f"[{ROX_COLOR}]rox[/] [dim]{role_label}[/dim]  [dim]•[/dim]  ")
     console.print(f"[dim]{REPO_URL}[/dim]")
     console.print()

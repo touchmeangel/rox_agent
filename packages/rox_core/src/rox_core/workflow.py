@@ -23,9 +23,7 @@ class Workflow:
         self.reporter = reporter
         self.results: dict[str, StepResult] = {}
 
-    def run(
-        self, work_path: str, context: dict | None = None
-    ) -> dict[str, StepResult]:
+    def run(self, work_path: str, context: dict | None = None) -> dict[str, StepResult]:
         if context is None:
             context = {}
         self.results = {}

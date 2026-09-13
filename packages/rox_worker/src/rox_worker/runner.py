@@ -8,7 +8,6 @@ from rox_core.cli_common import (
     add_common_run_args,
     aggregate_usage,
     print_role_banner,
-    REPO_URL
 )
 from rox_core.mission import Mission
 from rox_core.serialization import from_dict
@@ -69,9 +68,7 @@ def run_worker(args) -> None:
     workflow = Workflow(PIPELINE)
     results: dict = {}
     try:
-        results = workflow.run(
-            args.work_path, context={"mission": mission}
-        )
+        results = workflow.run(args.work_path, context={"mission": mission})
     except Exception:
         results = workflow.results
         raise
