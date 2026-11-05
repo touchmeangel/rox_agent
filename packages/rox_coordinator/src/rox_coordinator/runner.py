@@ -10,6 +10,7 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from rox_core.result import publish_results, results_payload
 from rox_coordinator.pipeline import MODELS, PIPELINE
 from rox_core.cli_common import (
     REPO_URL,
@@ -126,5 +127,7 @@ def run_coordinator(args) -> None:
         results = workflow.results
         raise
     finally:
-        if args.output:
-            _write_results(results, args.output)
+        missions = [m.to_dict() for r in results.values() for m in _missions_from_findings(r.findings)]
+        uploaded = publish_results(results_payload(results, missions=missions), args.output)
+    if not uploaded:
+        raise SystemExit("result upload failed")

@@ -9,6 +9,7 @@ from rox_core.cli_common import (
     aggregate_usage,
     print_role_banner,
 )
+from rox_core.result import results_payload, publish_results
 from rox_core.mission import Mission
 from rox_core.serialization import from_dict
 from rox_core.steps.base import StepResult
@@ -73,5 +74,6 @@ def run_worker(args) -> None:
         results = workflow.results
         raise
     finally:
-        if args.output:
-            _write_results(results, args.output)
+        uploaded = publish_results(results_payload(results), args.output)
+    if not uploaded:
+        raise SystemExit("result upload failed")
