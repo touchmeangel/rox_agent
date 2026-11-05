@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from rich import box
@@ -10,7 +8,6 @@ from rich.console import Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-from rox_core.result import publish_results, results_payload
 from rox_coordinator.pipeline import MODELS, PIPELINE
 from rox_core.cli_common import (
     REPO_URL,
@@ -18,8 +15,7 @@ from rox_core.cli_common import (
     add_common_run_args,
     console,
 )
-from rox_core.serialization import to_jsonable
-from rox_core.steps.base import StepResult
+from rox_core.result import publish_results, results_payload
 from rox_core.workflow import Workflow
 
 ASCII_LOGO = r"""   __
@@ -98,7 +94,13 @@ def run_coordinator(args) -> None:
         results = workflow.results
         raise
     finally:
-        missions = [m.to_dict() for r in results.values() for m in _missions_from_findings(r.findings)]
-        uploaded = publish_results(results_payload(results, missions=missions), args.output)
+        missions = [
+            m.to_dict()
+            for r in results.values()
+            for m in _missions_from_findings(r.findings)
+        ]
+        uploaded = publish_results(
+            results_payload(results, missions=missions), args.output
+        )
     if not uploaded:
         raise SystemExit("result upload failed")

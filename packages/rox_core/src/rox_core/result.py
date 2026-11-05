@@ -53,11 +53,11 @@ def publish_results(payload: dict, output_path: str | None) -> bool:
 
 def _put_with_retry(url: str, body: bytes, attempts: int = 4) -> bool:
     for attempt in range(1, attempts + 1):
-        req = urllib.request.Request(
+        req = urllib.request.Request(  # noqa: S310
             url, data=body, method="PUT", headers={"Content-Type": "application/json"}
         )
         try:
-            with urllib.request.urlopen(req, timeout=120):
+            with urllib.request.urlopen(req, timeout=120):  # noqa: S310
                 return True
         except urllib.error.HTTPError as exc:
             if exc.code < 500 and exc.code != 429:
@@ -66,7 +66,10 @@ def _put_with_retry(url: str, body: bytes, attempts: int = 4) -> bool:
             err = f"HTTP {exc.code}"
         except OSError as exc:
             err = repr(exc)
-        print(f"rox: result upload attempt {attempt}/{attempts} failed: {err}", file=sys.stderr)
+        print(
+            f"rox: result upload attempt {attempt}/{attempts} failed: {err}",
+            file=sys.stderr,
+        )
         if attempt < attempts:
             time.sleep(2**attempt)
     return False
