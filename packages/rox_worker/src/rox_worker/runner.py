@@ -31,28 +31,6 @@ def add_worker_args(parser) -> None:
     )
 
 
-def _write_results(results: dict[str, StepResult], output_path: str) -> None:
-    output = {
-        "generated_at": datetime.now().isoformat(),
-        "steps": {
-            name: {
-                "success": r.success,
-                "iterations": r.iterations_used,
-                "summary": r.summary,
-                "findings": r.findings,
-                "plan": r.plan,
-                "blockers": r.blockers,
-                "model_usage": r.model_usage,
-            }
-            for name, r in results.items()
-        },
-        "usage_summary": aggregate_usage(results),
-    }
-    path = Path(output_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(output, indent=2))
-
-
 def run_worker(args) -> None:
     print_role_banner("worker")
 

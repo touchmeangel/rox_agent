@@ -16,7 +16,6 @@ from rox_core.cli_common import (
     REPO_URL,
     ROX_COLOR,
     add_common_run_args,
-    aggregate_usage,
     console,
 )
 from rox_core.serialization import to_jsonable
@@ -86,34 +85,6 @@ def _missions_from_findings(findings: dict) -> list[Any]:
     if not isinstance(findings, dict):
         return []
     return findings.get("missions", []) or []
-
-
-def _write_results(results: dict[str, StepResult], output_path: str) -> None:
-    all_missions: list[Any] = []
-    for r in results.values():
-        all_missions.extend(_missions_from_findings(r.findings))
-
-    output = {
-        "generated_at": datetime.now().isoformat(),
-        "missions": [mission.to_dict() for mission in all_missions],
-        "steps": {
-            name: {
-                "success": r.success,
-                "iterations": r.iterations_used,
-                "summary": r.summary,
-                "findings": r.findings,
-                "plan": r.plan,
-                "blockers": r.blockers,
-                "model_usage": r.model_usage,
-            }
-            for name, r in results.items()
-        },
-        "usage_summary": aggregate_usage(results),
-    }
-
-    path = Path(output_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(to_jsonable(output), indent=2))
 
 
 def run_coordinator(args) -> None:
